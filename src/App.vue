@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { bootstrapWallet } from './services/wallet-bootstrap'
+import SplitBillSheet from './components/SplitBillSheet.vue'
+
+const splitOpen = ref(false)
 
 onMounted(async () => {
   await bootstrapWallet()
@@ -19,10 +22,15 @@ onMounted(async () => {
       <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
         <span class="nav-icon">👥</span><span>Contacts</span>
       </router-link>
+      <button type="button" class="nav-item nav-split" @click="splitOpen = true">
+        <span class="nav-split-icon">🍕</span><span>Split</span>
+      </button>
       <router-link to="/me" class="nav-item" :class="{ active: $route.path === '/me' }">
         <span class="nav-icon">🪪</span><span>Profile</span>
       </router-link>
     </nav>
+
+    <SplitBillSheet :open="splitOpen" @close="splitOpen = false" />
   </div>
 </template>
 
@@ -61,6 +69,14 @@ onMounted(async () => {
 }
 .nav-item.active { color: var(--nq-gold-dark); }
 .nav-icon { font-size: 20px; line-height: 1; }
+.nav-split { background: none; border: none; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.nav-split-icon {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; margin-top: -14px; border-radius: 18px;
+  font-size: 18px; line-height: 1;
+  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  box-shadow: 0 3px 10px rgba(233, 178, 19, 0.4);
+}
 .page-enter-active, .page-leave-active { transition: opacity 0.15s ease; }
 .page-enter-from, .page-leave-to { opacity: 0; }
 </style>

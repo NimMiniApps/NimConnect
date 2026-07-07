@@ -8,7 +8,7 @@ import ActionSheet from './ActionSheet.vue'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
 
-const props = defineProps<{ profile: Profile; open: boolean }>()
+const props = defineProps<{ profile?: Profile; open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const store = useProfilesStore()
@@ -16,7 +16,7 @@ const store = useProfilesStore()
 const total = ref<number | null>(null)
 const note = ref('')
 const includeMe = ref(true)
-const selected = ref<Set<string>>(new Set([props.profile.id]))
+const selected = ref<Set<string>>(new Set(props.profile ? [props.profile.id] : []))
 const shares = ref<Record<string, number>>({})
 const expandedId = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
@@ -81,7 +81,7 @@ function close() {
   total.value = null
   note.value = ''
   includeMe.value = true
-  selected.value = new Set([props.profile.id])
+  selected.value = new Set(props.profile ? [props.profile.id] : [])
   expandedId.value = null
   emit('close')
 }
