@@ -1,13 +1,9 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
-import { useProfilesStore } from './stores/profiles'
-import { getMyAddress } from './services/nimiq'
+import { bootstrapWallet } from './services/wallet-bootstrap'
 
-const store = useProfilesStore()
 onMounted(async () => {
-  await store.load()
-  const address = await getMyAddress()
-  if (address) await store.ensureSelf(address)
+  await bootstrapWallet()
 })
 </script>
 

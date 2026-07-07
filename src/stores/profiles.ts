@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { db } from '../db/db'
 import type { ExportDocument, Profile, ProfileType } from '../types/profile'
+import { uuid } from '../utils/uuid'
 
 export interface NewProfile {
   address: string
@@ -41,7 +42,7 @@ export const useProfilesStore = defineStore('profiles', () => {
     if (profiles.value.some(p => p.address === address)) throw new Error('duplicate-address')
     const now = Date.now()
     const profile: Profile = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       address,
       name: input.name.trim(),
       type: input.type ?? 'person',
@@ -88,7 +89,16 @@ export const useProfilesStore = defineStore('profiles', () => {
     await update(id, { lastInteractionAt: Date.now() })
   }
 
+  let ensureSelfLock: Promise<Profile> | null = null
+
   async function ensureSelf(address: string): Promise<Profile> {
+    const existing = profiles.value.find(p => p.isSelf)
+    if (existing) return existing
+    ensureSelfLock ??= ensureSelfOnce(address).finally(() => { ensureSelfLock = null })
+    return ensureSelfLock
+  }
+
+  async function ensureSelfOnce(address: string): Promise<Profile> {
     const existing = profiles.value.find(p => p.isSelf)
     if (existing) return existing
     const normalized = normalize(address)
@@ -99,7 +109,7 @@ export const useProfilesStore = defineStore('profiles', () => {
     }
     const now = Date.now()
     const self: Profile = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       address: normalized,
       name: 'Me',
       type: 'person',
@@ -110,9 +120,20 @@ export const useProfilesStore = defineStore('profiles', () => {
       createdAt: now,
       updatedAt: now,
     }
-    await db.profiles.add(self)
-    profiles.value.push(self)
-    return self
+    try {
+      await db.profiles.add(self)
+      profiles.value.push(self)
+      return self
+    } catch {
+      // Concurrent ensureSelf or import may have added this address first
+      const raced = await db.profiles.where('address').equals(normalized).first()
+      if (raced) {
+        if (!raced.isSelf) await update(raced.id, { isSelf: true })
+        if (!profiles.value.some(p => p.id === raced.id)) profiles.value.push(raced)
+        return getById(raced.id) ?? raced
+      }
+      throw new Error('duplicate-address')
+    }
   }
 
   const self = computed(() => profiles.value.find(p => p.isSelf) ?? null)

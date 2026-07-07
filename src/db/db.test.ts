@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { db } from './db'
 import type { Profile } from '../types/profile'
+import { uuid } from '../utils/uuid'
 
 function makeProfile(over: Partial<Profile> = {}): Profile {
   return {
-    id: crypto.randomUUID(),
+    id: uuid(),
     address: 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000',
     name: 'Alice',
     type: 'person',

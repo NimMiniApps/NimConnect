@@ -1,23 +1,40 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
-import { getMyAddress } from '../services/nimiq'
+import { walletStatus } from '../services/nimiq'
+import { bootstrapWallet, retryWalletBootstrap } from '../services/wallet-bootstrap'
 import ProfileView from '../components/ProfileView.vue'
 import EmptyState from '../components/EmptyState.vue'
 
 const router = useRouter()
 const store = useProfilesStore()
-const checking = ref(true)
+const ready = ref(false)
+const retrying = ref(false)
+
+const statusHint = computed(() => {
+  if (walletStatus.value === 'connecting') {
+    return 'Approve wallet access in Nimiq Pay…'
+  }
+  return 'Connecting…'
+})
 
 onMounted(async () => {
-  await store.load()
-  if (!store.self) {
-    const address = await getMyAddress()
-    if (address) await store.ensureSelf(address)
+  try {
+    await bootstrapWallet()
+  } finally {
+    ready.value = true
   }
-  checking.value = false
 })
+
+async function retry() {
+  retrying.value = true
+  try {
+    await retryWalletBootstrap()
+  } finally {
+    retrying.value = false
+  }
+}
 </script>
 
 <template>
@@ -27,7 +44,7 @@ onMounted(async () => {
       <router-link to="/settings" class="settings-link" aria-label="Settings">⚙</router-link>
     </header>
 
-    <p v-if="checking" class="hint">Connecting…</p>
+    <p v-if="!ready || retrying" class="hint">{{ statusHint }}</p>
 
     <ProfileView
       v-else-if="store.self"
@@ -36,12 +53,16 @@ onMounted(async () => {
       @edit="router.push(`/edit/${store.self!.id}`)"
     />
 
-    <EmptyState
-      v-else
-      icon="🪪"
-      title="No wallet connected"
-      hint="Open NimConnect inside Nimiq Pay to create your profile."
-    />
+    <template v-else>
+      <EmptyState
+        icon="🪪"
+        title="No wallet connected"
+        hint="Tap Connect below when Nimiq Pay asks for wallet access."
+      />
+      <button type="button" class="retry" :disabled="retrying" @click="retry">
+        Connect wallet
+      </button>
+    </template>
   </div>
 </template>
 
@@ -51,4 +72,11 @@ onMounted(async () => {
 .header h1 { font-size: 28px; margin: 8px 0 12px; }
 .settings-link { font-size: 22px; text-decoration: none; color: var(--text-2); min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 .hint { color: var(--text-2); }
+.retry {
+  display: block; width: 100%; height: 48px; margin-top: 16px;
+  border: none; border-radius: 24px; cursor: pointer;
+  font-weight: 700; font-size: 16px; color: #fff;
+  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+}
+.retry:disabled { opacity: 0.5; }
 </style>
