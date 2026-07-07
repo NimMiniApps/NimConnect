@@ -4,10 +4,11 @@ export function nimToLunas(nim: number): number {
   return Math.round(nim * 1e5)
 }
 
-export function makeRequestLink(address: string, amountNim?: number): string {
+export function makeRequestLink(address: string, amountNim?: number, message?: string): string {
   return createNimiqRequestLink(address, {
     type: NimiqRequestLinkType.URI,
     ...(amountNim ? { amount: nimToLunas(amountNim) } : {}),
+    ...(message?.trim() ? { message: message.trim() } : {}),
   })
 }
 

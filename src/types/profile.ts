@@ -23,9 +23,24 @@ export interface Profile {
   x?: string
 }
 
+export type InvoiceStatus = 'pending' | 'paid'
+
+export interface Invoice {
+  id: string
+  /** Normalized NQ address of the payer — survives profile re-import/deletion */
+  address: string
+  amountNim: number
+  description: string
+  status: InvoiceStatus
+  createdAt: number
+  paidAt?: number
+}
+
 export interface ExportDocument {
   app: 'NimConnect'
-  version: 1
+  /** v1 exports had profiles only; v2 adds invoices */
+  version: 1 | 2
   exportedAt: number
   profiles: Profile[]
+  invoices?: Invoice[]
 }

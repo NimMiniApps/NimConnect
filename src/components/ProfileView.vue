@@ -8,13 +8,16 @@ import { fetchHistory, type HistoryItem } from '../services/history'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
 import ActionSheet from './ActionSheet.vue'
+import TipSheet from './TipSheet.vue'
+import SplitBillSheet from './SplitBillSheet.vue'
+import InvoiceSheet from './InvoiceSheet.vue'
 
 const props = defineProps<{ profile: Profile; own?: boolean }>()
 defineEmits<{ edit: []; remove: [] }>()
 
 const store = useProfilesStore()
 const insidePay = ref(false)
-const sheet = ref<'send' | 'request' | 'history' | null>(null)
+const sheet = ref<'send' | 'request' | 'history' | 'tip' | 'split' | 'invoice' | null>(null)
 const amount = ref<number | null>(null)
 const message = ref('')
 const messageTooLong = computed(() => messageBytes(message.value) > MESSAGE_MAX_BYTES)
@@ -40,7 +43,7 @@ async function copyAddress() {
   setTimeout(() => (copied.value = false), 1500)
 }
 
-function openSheet(which: 'send' | 'request' | 'history') {
+function openSheet(which: 'send' | 'request' | 'history' | 'tip' | 'split' | 'invoice') {
   amount.value = null
   message.value = ''
   sendResult.value = null
@@ -118,12 +121,14 @@ async function loadHistory() {
     <div v-if="!own" class="actions">
       <button class="action live" @click="openSheet('send')">💸<span>Send</span></button>
       <button class="action live" @click="openSheet('request')">📥<span>Request</span></button>
+      <button class="action live" @click="openSheet('tip')">💛<span>Tip</span></button>
+    </div>
+    <div v-if="!own" class="actions">
+      <button class="action live" @click="openSheet('split')">🍕<span>Split Bill</span></button>
+      <button class="action live" @click="openSheet('invoice')">🧾<span>Invoice</span></button>
       <button class="action live" @click="openSheet('history')">🕘<span>History</span></button>
     </div>
     <div v-if="!own" class="actions future">
-      <button class="action" disabled>🧾<span>Invoice</span></button>
-      <button class="action" disabled>🍕<span>Split Bill</span></button>
-      <button class="action" disabled>💛<span>Tip</span></button>
       <button class="action" disabled>💬<span>Message</span></button>
     </div>
 
@@ -179,6 +184,10 @@ async function loadHistory() {
       </button>
     </ActionSheet>
 
+    <TipSheet v-if="!own" :profile="profile" :open="sheet === 'tip'" @close="sheet = null" />
+    <SplitBillSheet v-if="!own" :profile="profile" :open="sheet === 'split'" @close="sheet = null" />
+    <InvoiceSheet v-if="!own" :profile="profile" :open="sheet === 'invoice'" @close="sheet = null" />
+
     <ActionSheet :open="sheet === 'history'" title="Payment history" @close="sheet = null">
       <p v-if="historyError" class="hint">History is unavailable right now{{ store.self ? '' : ' — connect inside Nimiq Pay first' }}.</p>
       <p v-else-if="history === null" class="hint">Loading…</p>
@@ -220,6 +229,7 @@ async function loadHistory() {
 .meta { font-size: 12px; color: var(--text-2); }
 .actions { display: flex; gap: 10px; }
 .actions.future { opacity: 0.45; }
+.actions.future .action { flex: 0 0 calc((100% - 20px) / 3); }
 .action {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 12px 4px; min-height: 64px; font-size: 20px;

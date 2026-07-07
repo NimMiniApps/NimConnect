@@ -20,8 +20,12 @@ async function doBootstrap() {
   }
 }
 
-export async function retryWalletBootstrap(): Promise<void> {
+export function resetBootstrap() {
   resetWalletConnection()
   bootstrapPromise = null
+}
+
+export async function retryWalletBootstrap(): Promise<void> {
+  resetBootstrap()
   await bootstrapWallet()
 }

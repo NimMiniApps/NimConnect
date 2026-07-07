@@ -4,6 +4,7 @@ import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { db } from '../db/db'
 import type { ExportDocument, Profile, ProfileType } from '../types/profile'
 import { uuid } from '../utils/uuid'
+import { useInvoicesStore } from './invoices'
 
 export interface NewProfile {
   address: string
@@ -195,18 +196,36 @@ export const useProfilesStore = defineStore('profiles', () => {
     )
   }
 
-  function exportDocument(): ExportDocument {
+  async function exportDocument(): Promise<ExportDocument> {
+    const invoicesStore = useInvoicesStore()
+    await invoicesStore.load()
     return {
       app: 'NimConnect',
-      version: 1,
+      version: 2,
       exportedAt: Date.now(),
       profiles: JSON.parse(JSON.stringify(profiles.value)),
+      invoices: JSON.parse(JSON.stringify(invoicesStore.invoices)),
     }
+  }
+
+  async function resetAll() {
+    ensureSelfLock = null
+    await db.invoices.clear()
+    const invoicesStore = useInvoicesStore()
+    invoicesStore.invoices = []
+    await db.profiles.clear()
+    if (await db.profiles.count() > 0) {
+      await db.delete()
+      await db.open()
+    }
+    profiles.value = []
+    loaded.value = false
+    await load()
   }
 
   async function importDocument(doc: unknown): Promise<{ added: number; skipped: number }> {
     const d = doc as ExportDocument
-    if (!d || typeof d !== 'object' || d.app !== 'NimConnect' || d.version !== 1 || !Array.isArray(d.profiles)) {
+    if (!d || typeof d !== 'object' || d.app !== 'NimConnect' || ![1, 2].includes(d.version) || !Array.isArray(d.profiles)) {
       throw new Error('invalid-export')
     }
     let added = 0
@@ -230,6 +249,11 @@ export const useProfilesStore = defineStore('profiles', () => {
         skipped++
       }
     }
+    if (Array.isArray(d.invoices)) {
+      const invoicesStore = useInvoicesStore()
+      await invoicesStore.load()
+      await invoicesStore.importMany(d.invoices)
+    }
     return { added, skipped }
   }
 
@@ -237,6 +261,6 @@ export const useProfilesStore = defineStore('profiles', () => {
     profiles, loaded, self, contacts,
     sortedContacts, favorites, recent, allTags, search,
     load, getById, getByAddress, add, update, remove, toggleFavorite, touchInteraction, ensureSelf,
-    exportDocument, importDocument,
+    exportDocument, importDocument, resetAll,
   }
 })

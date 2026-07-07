@@ -55,6 +55,18 @@ describe('profiles store', () => {
     expect(await db.profiles.get(p.id)).toBeUndefined()
   })
 
+  it('resetAll clears profiles from memory and IndexedDB', async () => {
+    const store = useProfilesStore()
+    await store.load()
+    await store.add({ address: ADDR_A, name: 'Alice' })
+    await store.ensureSelf(ADDR_B)
+    expect(store.profiles).toHaveLength(2)
+    await store.resetAll()
+    expect(store.profiles).toHaveLength(0)
+    expect(store.loaded).toBe(true)
+    expect(await db.profiles.count()).toBe(0)
+  })
+
   it('ensureSelf creates one self profile and is idempotent', async () => {
     const store = useProfilesStore()
     await store.load()

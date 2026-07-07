@@ -28,8 +28,22 @@ function decodeMessage(hex?: string): string | undefined {
   }
 }
 
+const CACHE_PREFIX = 'nimconnect:'
+
 function cacheKey(me: string, other: string) {
-  return `nimconnect:history:${compact(me)}:${compact(other)}`
+  return `${CACHE_PREFIX}history:${compact(me)}:${compact(other)}`
+}
+
+/** Remove all NimConnect localStorage entries (e.g. on app reset). */
+export function clearHistoryCache() {
+  const storage = globalThis.localStorage
+  if (!storage) return
+  const keys: string[] = []
+  for (let i = 0; i < storage.length; i++) {
+    const key = storage.key(i)
+    if (key?.startsWith(CACHE_PREFIX)) keys.push(key)
+  }
+  for (const key of keys) storage.removeItem(key)
 }
 
 function readCache(key: string): HistoryItem[] | null {

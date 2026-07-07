@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchHistory } from './history'
+import { fetchHistory, clearHistoryCache } from './history'
 
 const ME = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 const OTHER = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
@@ -44,5 +44,22 @@ describe('fetchHistory', () => {
   it('throws when the network fails and no cache exists', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     await expect(fetchHistory(ME, OTHER)).rejects.toThrow()
+  })
+
+  it('clearHistoryCache removes nimconnect localStorage keys', () => {
+    const storage = {
+      data: {} as Record<string, string>,
+      get length() { return Object.keys(this.data).length },
+      key(i: number) { return Object.keys(this.data)[i] ?? null },
+      getItem(k: string) { return this.data[k] ?? null },
+      setItem(k: string, v: string) { this.data[k] = v },
+      removeItem(k: string) { delete this.data[k] },
+    }
+    vi.stubGlobal('localStorage', storage)
+    storage.setItem('nimconnect:history:AB:CD', '[]')
+    storage.setItem('other', 'keep')
+    clearHistoryCache()
+    expect(storage.getItem('nimconnect:history:AB:CD')).toBeNull()
+    expect(storage.getItem('other')).toBe('keep')
   })
 })

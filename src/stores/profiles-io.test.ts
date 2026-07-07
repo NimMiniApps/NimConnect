@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { db } from '../db/db'
 import { useProfilesStore } from './profiles'
+import { useInvoicesStore } from './invoices'
 
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 const B = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
@@ -10,6 +11,33 @@ describe('import/export', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     await db.profiles.clear()
+    await db.invoices.clear()
+  })
+
+  it('round-trips invoices in a v2 export and accepts v1 without them', async () => {
+    const store = useProfilesStore()
+    const invoicesStore = useInvoicesStore()
+    await store.load()
+    await invoicesStore.load()
+    await store.add({ address: A, name: 'Alice' })
+    await invoicesStore.create({ address: A, amountNim: 12, description: 'Logo' })
+    const doc = await store.exportDocument()
+    expect(doc.invoices).toHaveLength(1)
+
+    await db.profiles.clear()
+    await db.invoices.clear()
+    setActivePinia(createPinia())
+    const store2 = useProfilesStore()
+    const invoices2 = useInvoicesStore()
+    await store2.load()
+    await invoices2.load()
+    await store2.importDocument(JSON.parse(JSON.stringify(doc)))
+    expect(invoices2.byAddress(A)).toHaveLength(1)
+    expect(invoices2.byAddress(A)[0].description).toBe('Logo')
+
+    // v1 doc (no invoices key) still imports
+    await expect(store2.importDocument({ app: 'NimConnect', version: 1, exportedAt: 1, profiles: [] }))
+      .resolves.toEqual({ added: 0, skipped: 0 })
   })
 
   it('round-trips through export → import', async () => {
@@ -19,9 +47,9 @@ describe('import/export', () => {
       address: A, name: 'Alice', tags: ['family'], notes: 'n', favorite: true,
       bio: 'Sister', website: 'https://alice.example', github: 'alice', x: 'alice',
     })
-    const doc = store.exportDocument()
+    const doc = await store.exportDocument()
     expect(doc.app).toBe('NimConnect')
-    expect(doc.version).toBe(1)
+    expect(doc.version).toBe(2)
     expect(doc.profiles).toHaveLength(1)
 
     await db.profiles.clear()

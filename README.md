@@ -14,7 +14,10 @@ Nimiq Pay Mini App SDK.
 - 👥 Profiles with identicons, favorites, tags, private notes
 - 🔍 Smart search across name, address, notes, tags
 - 🕘 Recent / Favorites / All sections
-- 💸 Send NIM (inside Nimiq Pay), 📥 request via `nimiq:` link + QR
+- 💸 Send NIM with an optional message (inside Nimiq Pay), 📥 request via `nimiq:` link + QR
+- 💛 One-tap tips with preset amounts
+- 🍕 Split bills — equal or custom shares, per-person request QR/link
+- 🧾 Tracked invoices per contact (pending/paid), backed by a Dexie v2 migration
 - 📷 Add contacts by QR scan, share your own profile QR
 - 💾 Local-first: IndexedDB, works offline, JSON import/export
 - 🌗 Light/dark, mobile-first, no backend

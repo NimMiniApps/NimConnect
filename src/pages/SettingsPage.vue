@@ -3,10 +3,14 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { loadSampleContacts } from '../services/samples'
+import { clearHistoryCache } from '../services/history'
+import { resetBootstrap } from '../services/wallet-bootstrap'
 
 const router = useRouter()
 const store = useProfilesStore()
 const message = ref('')
+const confirmReset = ref(false)
+const resetting = ref(false)
 
 async function seedSamples() {
   const added = await loadSampleContacts()
@@ -16,8 +20,8 @@ async function seedSamples() {
 }
 const fileInput = ref<HTMLInputElement>()
 
-function exportJson() {
-  const doc = store.exportDocument()
+async function exportJson() {
+  const doc = await store.exportDocument()
   const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -40,6 +44,31 @@ async function importJson(event: Event) {
   }
   if (fileInput.value) fileInput.value.value = ''
 }
+
+async function resetApp() {
+  if (!confirmReset.value) {
+    confirmReset.value = true
+    message.value = ''
+    return
+  }
+  resetting.value = true
+  confirmReset.value = false
+  try {
+    await store.resetAll()
+    clearHistoryCache()
+    resetBootstrap()
+    message.value = 'All local data deleted.'
+    await router.replace('/')
+  } catch {
+    message.value = 'Could not reset — try again.'
+  } finally {
+    resetting.value = false
+  }
+}
+
+function cancelReset() {
+  confirmReset.value = false
+}
 </script>
 
 <template>
@@ -53,6 +82,20 @@ async function importJson(event: Event) {
       <button class="item" @click="fileInput?.click()">⬆ Import contacts (JSON)</button>
       <input ref="fileInput" type="file" accept="application/json" hidden @change="importJson" />
       <button class="item" @click="seedSamples">✨ Add sample contacts</button>
+      <p v-if="message" class="message">{{ message }}</p>
+    </div>
+
+    <div class="card group">
+      <h2>Data</h2>
+      <template v-if="confirmReset">
+        <p class="warn">Delete all contacts and local data? This cannot be undone.</p>
+        <button type="button" class="item danger" :disabled="resetting" @click="resetApp">
+          {{ resetting ? 'Deleting…' : 'Yes, delete everything' }}
+        </button>
+        <button type="button" class="item" :disabled="resetting" @click="cancelReset">Cancel</button>
+      </template>
+      <button v-else type="button" class="item danger" @click="resetApp">🗑 Reset app</button>
+      <p class="hint">Deletes all contacts and cached history from this device.</p>
       <p v-if="message" class="message">{{ message }}</p>
     </div>
 
@@ -86,7 +129,10 @@ h1 { font-size: 28px; margin: 0 0 16px; }
   color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border);
 }
 .item:last-of-type { border-bottom: none; }
+.item.danger { color: var(--nq-red); }
 a.item { text-decoration: none; border-bottom: none; display: flex; align-items: center; }
 .message { color: var(--nq-green); font-size: 14px; }
+.warn { color: var(--nq-red); font-size: 14px; margin: 0 0 8px; line-height: 1.4; }
+.hint { color: var(--text-2); font-size: 13px; margin: 4px 0 0; line-height: 1.4; }
 .about { color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0; }
 </style>
