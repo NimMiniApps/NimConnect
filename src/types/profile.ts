@@ -34,6 +34,9 @@ export interface Invoice {
   status: InvoiceStatus
   createdAt: number
   paidAt?: number
+  /** Original fiat entry when the invoice was priced in fiat (converted to NIM at creation) */
+  fiatAmount?: number
+  fiatCurrency?: string
 }
 
 export interface ExportDocument {

@@ -7,6 +7,7 @@ import { splitAmount } from '../utils/split'
 import ActionSheet from './ActionSheet.vue'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
+import CurrencyAmountInput from './CurrencyAmountInput.vue'
 
 const props = defineProps<{ profile?: Profile; open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -14,6 +15,7 @@ const emit = defineEmits<{ close: [] }>()
 const store = useProfilesStore()
 
 const total = ref<number | null>(null)
+const totalInput = ref<InstanceType<typeof CurrencyAmountInput>>()
 const note = ref('')
 const includeMe = ref(true)
 const selected = ref<Set<string>>(new Set(props.profile ? [props.profile.id] : []))
@@ -86,6 +88,7 @@ async function copyLink(p: Profile) {
 
 function close() {
   total.value = null
+  totalInput.value?.reset()
   note.value = ''
   filter.value = ''
   includeMe.value = true
@@ -100,8 +103,8 @@ function close() {
     <p v-if="!store.self" class="hint">Connect inside Nimiq Pay first — split requests are paid to your address.</p>
     <template v-else>
       <label class="amount-label">
-        Total (NIM)
-        <input v-model.number="total" type="number" min="0.00001" step="any" placeholder="0.00" />
+        Total
+        <CurrencyAmountInput ref="totalInput" placeholder="0.00" @update:model-value="total = $event" />
       </label>
       <label class="message-label">
         What for? (optional)
@@ -112,7 +115,7 @@ function close() {
         <span class="who-title">Who's in?</span>
         <label class="me-row">
           <input v-model="includeMe" type="checkbox" />
-          <span>Include me<template v-if="includeMe && total"> — my share {{ myShareNim }} NIM</template></span>
+          <span>Include me<template v-if="includeMe && total"> — my share {{ myShareNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM</template></span>
         </label>
         <label v-for="p in participants" :key="p.id" class="person-row">
           <input type="checkbox" checked @change="toggle(p.id)" />
@@ -145,7 +148,7 @@ function close() {
       </div>
 
       <p v-if="total && participants.length && !valid" class="err">
-        Shares must be positive and add up to {{ total }} NIM{{ includeMe ? ' (your share covers the rest)' : '' }}.
+        Shares must be positive and add up to {{ total.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM{{ includeMe ? ' (your share covers the rest)' : '' }}.
       </p>
 
       <template v-if="valid">

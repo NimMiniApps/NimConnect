@@ -20,7 +20,13 @@ export const useInvoicesStore = defineStore('invoices', () => {
       .sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  async function create(input: { address: string; amountNim: number; description: string }): Promise<Invoice> {
+  async function create(input: {
+    address: string
+    amountNim: number
+    description: string
+    fiatAmount?: number
+    fiatCurrency?: string
+  }): Promise<Invoice> {
     if (!(input.amountNim > 0)) throw new Error('invalid-amount')
     const invoice: Invoice = {
       id: uuid(),
@@ -29,6 +35,9 @@ export const useInvoicesStore = defineStore('invoices', () => {
       description: input.description.trim(),
       status: 'pending',
       createdAt: Date.now(),
+      ...(input.fiatAmount && input.fiatCurrency
+        ? { fiatAmount: input.fiatAmount, fiatCurrency: input.fiatCurrency }
+        : {}),
     }
     await db.invoices.add(invoice)
     invoices.value.push(invoice)
@@ -66,6 +75,9 @@ export const useInvoicesStore = defineStore('invoices', () => {
         status: raw.status === 'paid' ? 'paid' : 'pending',
         createdAt: Number(raw.createdAt) || Date.now(),
         ...(raw.paidAt ? { paidAt: Number(raw.paidAt) } : {}),
+        ...(raw.fiatAmount && raw.fiatCurrency
+          ? { fiatAmount: Number(raw.fiatAmount), fiatCurrency: String(raw.fiatCurrency) }
+          : {}),
       }
       await db.invoices.add(invoice)
       invoices.value.push(invoice)

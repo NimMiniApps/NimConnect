@@ -6,6 +6,7 @@ import { useInvoicesStore } from '../stores/invoices'
 import { makeRequestLink } from '../services/links'
 import ActionSheet from './ActionSheet.vue'
 import QrCode from './QrCode.vue'
+import CurrencyAmountInput from './CurrencyAmountInput.vue'
 
 const props = defineProps<{ profile: Profile; open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
@@ -14,6 +15,8 @@ const store = useProfilesStore()
 const invoicesStore = useInvoicesStore()
 
 const amount = ref<number | null>(null)
+const fiat = ref<{ amount: number; currency: string } | null>(null)
+const amountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
 const description = ref('')
 const creating = ref(false)
 const expandedId = ref<string | null>(null)
@@ -35,9 +38,13 @@ async function create() {
       address: props.profile.address,
       amountNim: amount.value,
       description: description.value,
+      fiatAmount: fiat.value?.amount,
+      fiatCurrency: fiat.value?.currency,
     })
     await store.touchInteraction(props.profile.id)
     amount.value = null
+    fiat.value = null
+    amountInput.value?.reset()
     description.value = ''
     expandedId.value = inv.id
   } finally {
@@ -65,7 +72,12 @@ function close() {
     <template v-else>
       <form class="new-invoice" @submit.prevent="create">
         <div class="new-fields">
-          <input v-model.number="amount" type="number" min="0.00001" step="any" placeholder="Amount (NIM)" required />
+          <CurrencyAmountInput
+            ref="amountInput"
+            placeholder="Amount"
+            @update:model-value="amount = $event"
+            @fiat="fiat = $event"
+          />
           <input v-model="description" maxlength="64" placeholder="What for? e.g. Logo design" />
         </div>
         <button type="submit" class="primary" :disabled="!amount || creating">Create invoice</button>
@@ -77,7 +89,10 @@ function close() {
           <button type="button" class="invoice-row" @click="expandedId = expandedId === inv.id ? null : inv.id">
             <span class="status" :class="inv.status">{{ inv.status === 'paid' ? '✓ Paid' : 'Pending' }}</span>
             <span class="desc">{{ inv.description || 'Invoice' }}</span>
-            <span class="amount">{{ inv.amountNim }} NIM</span>
+            <span class="amount">
+              {{ inv.amountNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+              <span v-if="inv.fiatAmount" class="fiat">({{ inv.fiatAmount }} {{ inv.fiatCurrency }})</span>
+            </span>
           </button>
           <div v-if="expandedId === inv.id" class="detail">
             <p class="when">Created {{ new Date(inv.createdAt).toLocaleDateString() }}<template v-if="inv.paidAt"> · Paid {{ new Date(inv.paidAt).toLocaleDateString() }}</template></p>
@@ -122,7 +137,8 @@ function close() {
 .status.pending { background: rgba(233, 178, 19, 0.15); color: var(--nq-gold-dark); }
 .status.paid { background: rgba(33, 188, 165, 0.15); color: var(--nq-green); }
 .desc { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.amount { font-weight: 700; }
+.amount { font-weight: 700; text-align: right; }
+.fiat { display: block; font-weight: 400; font-size: 12px; color: var(--text-2); }
 .detail { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .when { margin: 0; font-size: 13px; color: var(--text-2); }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
