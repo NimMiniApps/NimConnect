@@ -36,6 +36,25 @@ export const useProfilesStore = defineStore('profiles', () => {
     return profiles.value.find(p => p.address === address)
   }
 
+  /** Only http(s) URLs survive persistence — blocks javascript:/data: from form or imported files. */
+  function safeUrl(url?: string): string | undefined {
+    if (!url) return undefined
+    try {
+      const u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(url) ? url : `https://${url}`)
+      return u.protocol === 'http:' || u.protocol === 'https:' ? u.toString() : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  const GITHUB_HANDLE = /^[A-Za-z0-9-]{1,39}$/
+  const X_HANDLE = /^[A-Za-z0-9_]{1,15}$/
+
+  function safeHandle(handle: string | undefined, pattern: RegExp): string | undefined {
+    const h = handle?.trim().replace(/^@/, '')
+    return h && pattern.test(h) ? h : undefined
+  }
+
   function normalize(address: string): string {
     if (!ValidationUtils.isValidAddress(address)) throw new Error('invalid-address')
     return ValidationUtils.normalizeAddress(address)
@@ -57,9 +76,9 @@ export const useProfilesStore = defineStore('profiles', () => {
       createdAt: now,
       updatedAt: now,
       ...(input.bio ? { bio: input.bio } : {}),
-      ...(input.website ? { website: input.website } : {}),
-      ...(input.github ? { github: input.github } : {}),
-      ...(input.x ? { x: input.x } : {}),
+      ...(safeUrl(input.website) ? { website: safeUrl(input.website) } : {}),
+      ...(safeHandle(input.github, GITHUB_HANDLE) ? { github: safeHandle(input.github, GITHUB_HANDLE) } : {}),
+      ...(safeHandle(input.x, X_HANDLE) ? { x: safeHandle(input.x, X_HANDLE) } : {}),
     }
     await db.profiles.add(profile)
     profiles.value.push(profile)
@@ -78,6 +97,9 @@ export const useProfilesStore = defineStore('profiles', () => {
       if (profiles.value.some(p => p.address === address && p.id !== id)) throw new Error('duplicate-address')
       patch = { ...patch, address }
     }
+    if ('website' in patch) patch = { ...patch, website: safeUrl(patch.website) }
+    if ('github' in patch) patch = { ...patch, github: safeHandle(patch.github, GITHUB_HANDLE) }
+    if ('x' in patch) patch = { ...patch, x: safeHandle(patch.x, X_HANDLE) }
     const updated: Profile = plainProfile({ ...existing, ...patch, id, updatedAt: Date.now() })
     await db.profiles.put(updated)
     profiles.value = profiles.value.map(p => (p.id === id ? updated : p))

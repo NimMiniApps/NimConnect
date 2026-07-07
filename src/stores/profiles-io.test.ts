@@ -33,7 +33,7 @@ describe('import/export', () => {
     expect(store2.profiles[0].name).toBe('Alice')
     expect(store2.profiles[0].favorite).toBe(true)
     expect(store2.profiles[0].bio).toBe('Sister')
-    expect(store2.profiles[0].website).toBe('https://alice.example')
+    expect(store2.profiles[0].website).toBe('https://alice.example/')
     expect(store2.profiles[0].github).toBe('alice')
     expect(store2.profiles[0].x).toBe('alice')
   })
@@ -52,6 +52,27 @@ describe('import/export', () => {
     const result = await store.importDocument(doc)
     expect(result).toEqual({ added: 1, skipped: 1 })
     expect(store.getByAddress(B)!.isSelf).toBe(false)
+  })
+
+  it('strips unsafe URLs and handles on save/import', async () => {
+    const store = useProfilesStore()
+    await store.load()
+    const p = await store.add({
+      address: A, name: 'Evil',
+      website: 'javascript:alert(1)', github: 'a/../b', x: '@way_too_long_for_an_x_handle',
+    })
+    expect(p.website).toBeUndefined()
+    expect(p.github).toBeUndefined()
+    expect(p.x).toBeUndefined()
+
+    await store.update(p.id, { website: 'example.com', github: '@octocat', x: 'jack' })
+    const updated = store.getById(p.id)!
+    expect(updated.website).toBe('https://example.com/')
+    expect(updated.github).toBe('octocat')
+    expect(updated.x).toBe('jack')
+
+    await store.update(p.id, { website: 'data:text/html,x' })
+    expect(store.getById(p.id)!.website).toBeUndefined()
   })
 
   it('rejects malformed documents', async () => {

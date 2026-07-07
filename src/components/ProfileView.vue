@@ -103,8 +103,8 @@ async function loadHistory() {
       </div>
       <div v-if="profile.website || profile.github || profile.x" class="link-row">
         <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener" class="link-chip">🌐 Website</a>
-        <a v-if="profile.github" :href="`https://github.com/${profile.github}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
-        <a v-if="profile.x" :href="`https://x.com/${profile.x}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
+        <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
+        <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
       </div>
       <div class="meta">
         <span>Added {{ dateAdded }}</span>
