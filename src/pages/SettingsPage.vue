@@ -2,10 +2,18 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
+import { loadSampleContacts } from '../services/samples'
 
 const router = useRouter()
 const store = useProfilesStore()
 const message = ref('')
+
+async function seedSamples() {
+  const added = await loadSampleContacts()
+  message.value = added
+    ? `Added ${added} sample contact${added === 1 ? '' : 's'}.`
+    : 'Sample contacts are already in your list.'
+}
 const fileInput = ref<HTMLInputElement>()
 
 function exportJson() {
@@ -44,6 +52,7 @@ async function importJson(event: Event) {
       <button class="item" @click="exportJson">⬇ Export contacts (JSON)</button>
       <button class="item" @click="fileInput?.click()">⬆ Import contacts (JSON)</button>
       <input ref="fileInput" type="file" accept="application/json" hidden @change="importJson" />
+      <button class="item" @click="seedSamples">✨ Add sample contacts</button>
       <p v-if="message" class="message">{{ message }}</p>
     </div>
 
