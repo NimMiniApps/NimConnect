@@ -36,7 +36,8 @@ export async function fetchHistory(myAddress: string, otherAddress: string): Pro
         jsonrpc: '2.0',
         id: 1,
         method: 'getTransactionsByAddress',
-        params: [otherAddress, 200],
+        // The node requires all 3 positional params: address, max, start_at
+        params: [otherAddress, 200, null],
       }),
     })
     if (!res.ok) throw new Error(`rpc ${res.status}`)
