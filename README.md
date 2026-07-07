@@ -2,6 +2,8 @@
 
 A relationship manager for your wallet — a Nimiq Pay Mini App.
 
+**Live demo:** https://nimminiapps.github.io/NimConnect/
+
 People don't remember addresses; they remember people. NimConnect turns every
 wallet address into a Profile: avatar (Nimiq identicon), name, tags, notes —
 with live **Send**, **Request payment**, and **payment History** built on the
@@ -24,7 +26,17 @@ npm install
 npm run dev     # plain-browser mode: everything works except live Send
 npm run test    # vitest unit tests
 npm run build
+npm run build:pages   # production build for GitHub Pages (/NimConnect/ base)
 ```
+
+## GitHub Pages
+
+Pushes to `main` deploy automatically via [GitHub Actions](.github/workflows/pages.yml).
+
+1. In the repo on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**
+2. After the first successful workflow run, the site is at https://nimminiapps.github.io/NimConnect/
+
+The app uses hash routing, so deep links work without server rewrites. Open inside Nimiq Pay for live Send; the hosted demo works in a normal browser for everything else.
 
 ## Architecture
 
