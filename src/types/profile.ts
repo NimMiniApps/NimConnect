@@ -15,6 +15,12 @@ export interface Profile {
   updatedAt: number
   /** Set by Send/Request/History; powers the Recent section */
   lastInteractionAt?: number
+  // Identity fields — optional, unindexed, so no Dexie migration needed
+  bio?: string
+  website?: string
+  github?: string
+  /** X / Twitter handle without @ */
+  x?: string
 }
 
 export interface ExportDocument {

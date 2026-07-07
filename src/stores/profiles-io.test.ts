@@ -15,7 +15,10 @@ describe('import/export', () => {
   it('round-trips through export → import', async () => {
     const store = useProfilesStore()
     await store.load()
-    await store.add({ address: A, name: 'Alice', tags: ['family'], notes: 'n', favorite: true })
+    await store.add({
+      address: A, name: 'Alice', tags: ['family'], notes: 'n', favorite: true,
+      bio: 'Sister', website: 'https://alice.example', github: 'alice', x: 'alice',
+    })
     const doc = store.exportDocument()
     expect(doc.app).toBe('NimConnect')
     expect(doc.version).toBe(1)
@@ -29,6 +32,10 @@ describe('import/export', () => {
     expect(result).toEqual({ added: 1, skipped: 0 })
     expect(store2.profiles[0].name).toBe('Alice')
     expect(store2.profiles[0].favorite).toBe(true)
+    expect(store2.profiles[0].bio).toBe('Sister')
+    expect(store2.profiles[0].website).toBe('https://alice.example')
+    expect(store2.profiles[0].github).toBe('alice')
+    expect(store2.profiles[0].x).toBe('alice')
   })
 
   it('skips duplicates and strips isSelf on import', async () => {

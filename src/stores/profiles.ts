@@ -12,6 +12,10 @@ export interface NewProfile {
   tags?: string[]
   favorite?: boolean
   type?: ProfileType
+  bio?: string
+  website?: string
+  github?: string
+  x?: string
 }
 
 export const useProfilesStore = defineStore('profiles', () => {
@@ -52,6 +56,10 @@ export const useProfilesStore = defineStore('profiles', () => {
       favorite: input.favorite ?? false,
       createdAt: now,
       updatedAt: now,
+      ...(input.bio ? { bio: input.bio } : {}),
+      ...(input.website ? { website: input.website } : {}),
+      ...(input.github ? { github: input.github } : {}),
+      ...(input.x ? { x: input.x } : {}),
     }
     await db.profiles.add(profile)
     profiles.value.push(profile)
@@ -190,6 +198,10 @@ export const useProfilesStore = defineStore('profiles', () => {
           tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
           favorite: !!raw.favorite,
           type: raw.type,
+          bio: raw.bio ? String(raw.bio) : undefined,
+          website: raw.website ? String(raw.website) : undefined,
+          github: raw.github ? String(raw.github) : undefined,
+          x: raw.x ? String(raw.x) : undefined,
         })
         added++
       } catch {

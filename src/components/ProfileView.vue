@@ -93,12 +93,18 @@ async function loadHistory() {
           {{ profile.favorite ? '★' : '☆' }}
         </button>
       </h1>
+      <p v-if="profile.bio" class="bio">{{ profile.bio }}</p>
       <button class="address" @click="copyAddress">
         {{ profile.address }}
         <span class="copy-hint">{{ copied ? 'Copied!' : 'Tap to copy' }}</span>
       </button>
       <div v-if="profile.tags.length" class="tag-row">
         <span v-for="t in profile.tags" :key="t" class="tag">{{ t }}</span>
+      </div>
+      <div v-if="profile.website || profile.github || profile.x" class="link-row">
+        <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener" class="link-chip">🌐 Website</a>
+        <a v-if="profile.github" :href="`https://github.com/${profile.github}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
+        <a v-if="profile.x" :href="`https://x.com/${profile.x}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
       </div>
       <div class="meta">
         <span>Added {{ dateAdded }}</span>
@@ -191,6 +197,13 @@ async function loadHistory() {
   font-family: monospace; font-size: 13px; line-height: 1.5; word-break: break-all; padding: 4px;
 }
 .copy-hint { display: block; font-family: 'Mulish', sans-serif; font-size: 11px; color: var(--nq-light-blue); }
+.bio { margin: 0; color: var(--text-2); font-size: 14px; max-width: 320px; }
+.link-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.link-chip {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 16px;
+  color: var(--nq-light-blue); font-size: 13px; font-weight: 700; text-decoration: none;
+}
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .tag { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 3px 10px; font-size: 12px; }
 .meta { font-size: 12px; color: var(--text-2); }

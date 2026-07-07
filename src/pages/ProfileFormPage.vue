@@ -18,6 +18,10 @@ const isSelf = ref(false)
 const name = ref('')
 const address = ref('')
 const notes = ref('')
+const bio = ref('')
+const website = ref('')
+const github = ref('')
+const x = ref('')
 const tags = ref<string[]>([])
 const favorite = ref(false)
 const type = ref<ProfileType>('person')
@@ -32,6 +36,10 @@ onMounted(async () => {
     name.value = p.name
     address.value = p.address
     notes.value = p.notes
+    bio.value = p.bio ?? ''
+    website.value = p.website ?? ''
+    github.value = p.github ?? ''
+    x.value = p.x ?? ''
     tags.value = [...p.tags]
     favorite.value = p.favorite
     type.value = p.type
@@ -58,16 +66,24 @@ function onScan(text: string) {
 async function save() {
   error.value = ''
   try {
+    const identity = {
+      bio: bio.value.trim() || undefined,
+      website: website.value.trim() || undefined,
+      github: github.value.trim() || undefined,
+      x: x.value.trim().replace(/^@/, '') || undefined,
+    }
     if (editId) {
       await store.update(editId, {
         name: name.value.trim(), address: address.value, notes: notes.value,
         tags: tags.value, favorite: favorite.value, type: type.value,
+        ...identity,
       })
       router.back()
     } else {
       const p = await store.add({
         name: name.value.trim(), address: address.value, notes: notes.value,
         tags: tags.value, favorite: favorite.value, type: type.value,
+        ...identity,
       })
       router.replace(`/profile/${p.id}`)
     }
@@ -122,6 +138,27 @@ async function save() {
         <textarea v-model="notes" rows="3" placeholder="Met at Nimiq meetup…" />
       </label>
 
+      <label class="field">
+        <span>Bio</span>
+        <textarea v-model="bio" rows="2" :placeholder="isSelf ? 'A line about you…' : 'A line about them…'" />
+      </label>
+
+      <label class="field">
+        <span>Website</span>
+        <input v-model="website" type="url" inputmode="url" placeholder="https://…" />
+      </label>
+
+      <div class="field-pair">
+        <label class="field">
+          <span>GitHub</span>
+          <input v-model="github" placeholder="username" autocapitalize="none" />
+        </label>
+        <label class="field">
+          <span>X</span>
+          <input v-model="x" placeholder="handle" autocapitalize="none" />
+        </label>
+      </div>
+
       <div class="field">
         <span>Tags</span>
         <TagChips v-model="tags" :suggestions="store.allTags" />
@@ -157,6 +194,8 @@ async function save() {
 }
 .address-row { display: flex; gap: 8px; }
 .locked-hint { font-size: 12px; font-weight: 400; color: var(--text-2); }
+.field-pair { display: flex; gap: 12px; }
+.field-pair .field { flex: 1; min-width: 0; }
 .field input:disabled { opacity: 0.6; }
 .address-row input { flex: 1; }
 .scan-btn {
