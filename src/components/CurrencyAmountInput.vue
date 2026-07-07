@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
 import { getRates, fiatToNim, FIAT_CURRENCIES, type NimRates } from '../services/rates'
+import { preferredCurrency } from '../services/prefs'
 
 defineProps<{ placeholder?: string }>()
 const emit = defineEmits<{
@@ -11,7 +12,7 @@ const emit = defineEmits<{
 }>()
 
 const raw = ref<number | null>(null)
-const currency = ref<string>('NIM')
+const currency = ref<string>(preferredCurrency.value)
 const rates = ref<NimRates | null>(null)
 
 onMounted(async () => {
@@ -36,7 +37,7 @@ watch([nimValue, currency, raw], () => {
 
 function reset() {
   raw.value = null
-  currency.value = 'NIM'
+  currency.value = preferredCurrency.value
 }
 defineExpose({ reset })
 </script>

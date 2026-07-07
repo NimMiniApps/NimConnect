@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { loadSampleContacts } from '../services/samples'
+import { preferredCurrency } from '../services/prefs'
+import { FIAT_CURRENCIES } from '../services/rates'
 import { clearHistoryCache } from '../services/history'
 import { resetBootstrap } from '../services/wallet-bootstrap'
 
@@ -77,6 +79,18 @@ function cancelReset() {
     <h1>Settings</h1>
 
     <div class="card group">
+      <h2>Preferences</h2>
+      <label class="pref-row">
+        <span>Enter amounts in</span>
+        <select v-model="preferredCurrency">
+          <option value="NIM">NIM</option>
+          <option v-for="c in FIAT_CURRENCIES" :key="c" :value="c">{{ c }}</option>
+        </select>
+      </label>
+      <p class="hint">Default currency for splits and invoices — always converted to NIM at the day's rate.</p>
+    </div>
+
+    <div class="card group">
       <h2>Backup</h2>
       <button class="item" @click="exportJson">⬇ Export contacts (JSON)</button>
       <button class="item" @click="fileInput?.click()">⬆ Import contacts (JSON)</button>
@@ -123,6 +137,11 @@ function cancelReset() {
 h1 { font-size: 28px; margin: 0 0 16px; }
 .group { padding: 16px 20px; margin-bottom: 16px; }
 .group h2 { font-size: 14px; color: var(--text-2); margin: 0 0 8px; }
+.pref-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-weight: 600; }
+.pref-row select {
+  font: inherit; font-weight: 700; padding: 8px 10px; min-height: 44px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+}
 .item {
   display: block; width: 100%; text-align: left; background: none; border: none;
   padding: 12px 0; min-height: 44px; font: inherit; font-weight: 600;
