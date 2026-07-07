@@ -1,0 +1,34 @@
+{
+  "name": "nimconnect",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc -b && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@fontsource/mulish": "^5.2.5",
+    "@nimiq/identicons": "^1.6.2",
+    "@nimiq/mini-app-sdk": "^0.1.0",
+    "@nimiq/utils": "^0.12.4",
+    "dexie": "^4.0.11",
+    "pinia": "^3.0.1",
+    "qrcode": "^1.5.4",
+    "qr-scanner": "^1.4.2",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.5",
+    "@vitejs/plugin-vue": "^5.2.3",
+    "@vue/tsconfig": "^0.7.0",
+    "fake-indexeddb": "^6.0.0",
+    "typescript": "~5.7.2",
+    "vite": "^6.2.0",
+    "vitest": "^3.0.8",
+    "vue-tsc": "^2.2.8"
+  }
+}

@@ -1,0 +1,48 @@
+@import '@fontsource/mulish/400.css';
+@import '@fontsource/mulish/600.css';
+@import '@fontsource/mulish/700.css';
+
+:root {
+  --nq-blue: #1f2348;
+  --nq-gold: #e9b213;
+  --nq-gold-dark: #ec991c;
+  --nq-light-blue: #0582ca;
+  --nq-green: #21bca5;
+  --nq-red: #d94432;
+
+  --bg: #f4f4f5;
+  --card: #ffffff;
+  --text: #1f2348;
+  --text-2: rgba(31, 35, 72, 0.6);
+  --border: rgba(31, 35, 72, 0.1);
+  --radius: 16px;
+  --shadow: 0 2px 12px rgba(31, 35, 72, 0.07);
+  --nav-h: 64px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14162e;
+    --card: #1f2348;
+    --text: #f4f4f5;
+    --text-2: rgba(244, 244, 245, 0.6);
+    --border: rgba(244, 244, 245, 0.12);
+    --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Mulish', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; }
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
