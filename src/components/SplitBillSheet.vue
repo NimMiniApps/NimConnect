@@ -21,8 +21,15 @@ const shares = ref<Record<string, number>>({})
 const expandedId = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
 
+const filter = ref('')
+
 const participants = computed(() =>
   store.sortedContacts.filter(p => selected.value.has(p.id)),
+)
+
+// Selected pinned on top; the rest searchable so long lists stay usable
+const pickable = computed(() =>
+  store.search(filter.value).filter(p => !selected.value.has(p.id)),
 )
 
 function toggle(id: string) {
@@ -80,6 +87,7 @@ async function copyLink(p: Profile) {
 function close() {
   total.value = null
   note.value = ''
+  filter.value = ''
   includeMe.value = true
   selected.value = new Set(props.profile ? [props.profile.id] : [])
   expandedId.value = null
@@ -106,12 +114,12 @@ function close() {
           <input v-model="includeMe" type="checkbox" />
           <span>Include me<template v-if="includeMe && total"> — my share {{ myShareNim }} NIM</template></span>
         </label>
-        <label v-for="p in store.sortedContacts" :key="p.id" class="person-row">
-          <input type="checkbox" :checked="selected.has(p.id)" @change="toggle(p.id)" />
+        <label v-for="p in participants" :key="p.id" class="person-row">
+          <input type="checkbox" checked @change="toggle(p.id)" />
           <Identicon :address="p.address" :size="32" />
           <span class="person-name">{{ p.name }}</span>
           <input
-            v-if="selected.has(p.id) && total"
+            v-if="total"
             class="share-input"
             type="number"
             min="0.00001"
@@ -120,6 +128,20 @@ function close() {
             @input="shares = { ...shares, [p.id]: Number(($event.target as HTMLInputElement).value) }"
           />
         </label>
+
+        <input
+          v-if="store.sortedContacts.length > participants.length"
+          v-model="filter"
+          type="search"
+          class="filter-input"
+          placeholder="Search contacts to add…"
+        />
+        <label v-for="p in pickable" :key="p.id" class="person-row">
+          <input type="checkbox" @change="toggle(p.id); filter = ''" />
+          <Identicon :address="p.address" :size="32" />
+          <span class="person-name">{{ p.name }}</span>
+        </label>
+        <p v-if="filter && pickable.length === 0" class="hint">No matches.</p>
       </div>
 
       <p v-if="total && participants.length && !valid" class="err">
@@ -158,6 +180,10 @@ function close() {
 .who-title { font-size: 13px; font-weight: 700; color: var(--text-2); }
 .me-row, .person-row { display: flex; align-items: center; gap: 10px; min-height: 44px; }
 .person-name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.filter-input {
+  font: inherit; padding: 10px 12px; min-height: 44px; margin: 4px 0;
+  border: 1px solid var(--border); border-radius: 22px; background: var(--bg); color: var(--text);
+}
 .share-input {
   width: 96px; font: inherit; padding: 6px 8px; text-align: right;
   border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
