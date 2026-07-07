@@ -14,6 +14,7 @@ const router = useRouter()
 const store = useProfilesStore()
 
 const editId = route.params.id as string | undefined
+const isSelf = ref(false)
 const name = ref('')
 const address = ref('')
 const notes = ref('')
@@ -34,6 +35,7 @@ onMounted(async () => {
     tags.value = [...p.tags]
     favorite.value = p.favorite
     type.value = p.type
+    isSelf.value = p.isSelf
   }
 })
 
@@ -97,9 +99,10 @@ async function save() {
       <label class="field">
         <span>Nimiq address</span>
         <div class="address-row">
-          <input v-model="address" required placeholder="NQ…" spellcheck="false" autocapitalize="characters" />
-          <button type="button" class="scan-btn" aria-label="Scan QR" @click="scanning = !scanning">▣</button>
+          <input v-model="address" required placeholder="NQ…" spellcheck="false" autocapitalize="characters" :disabled="isSelf" />
+          <button v-if="!isSelf" type="button" class="scan-btn" aria-label="Scan QR" @click="scanning = !scanning">▣</button>
         </div>
+        <span v-if="isSelf" class="locked-hint">Your address comes from your connected wallet.</span>
       </label>
 
       <QrScanner v-if="scanning" @scan="onScan" @error="scanning = false; error = 'Camera unavailable — paste the address instead.'" />
@@ -153,6 +156,8 @@ async function save() {
   background: var(--bg); color: var(--text);
 }
 .address-row { display: flex; gap: 8px; }
+.locked-hint { font-size: 12px; font-weight: 400; color: var(--text-2); }
+.field input:disabled { opacity: 0.6; }
 .address-row input { flex: 1; }
 .scan-btn {
   width: 44px; border: 1px solid var(--border); border-radius: 10px;

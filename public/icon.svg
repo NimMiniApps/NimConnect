@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ec991c"/>
+      <stop offset="1" stop-color="#e9b213"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="#1f2348"/>
+  <!-- Nimiq-style hexagon -->
+  <path d="M50 16 78 33v34L50 84 22 67V33z" fill="url(#g)"/>
+  <!-- person silhouette: head + shoulders -->
+  <circle cx="50" cy="43" r="9" fill="#1f2348"/>
+  <path d="M33 66c0-9.4 7.6-15 17-15s17 5.6 17 15v2H33z" fill="#1f2348"/>
+</svg>

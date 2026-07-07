@@ -43,6 +43,7 @@ function openSheet(which: 'send' | 'request' | 'history') {
   sendResult.value = null
   sheet.value = which
   if (which === 'history') loadHistory()
+  if (which === 'request') store.touchInteraction(props.profile.id)
 }
 
 async function doSend() {
@@ -140,7 +141,12 @@ async function loadHistory() {
         </label>
         <p v-if="sendResult === 'ok'" class="ok">✓ Sent to {{ profile.name }}</p>
         <p v-else-if="sendResult" class="err">{{ sendResult }}</p>
-        <button class="primary" :disabled="!amount || sending" @click="doSend">
+        <button
+          v-if="sendResult === 'ok'"
+          class="primary"
+          @click="sheet = null"
+        >Done</button>
+        <button v-else class="primary" :disabled="!amount || sending" @click="doSend">
           {{ sending ? 'Waiting for confirmation…' : `Send to ${profile.name}` }}
         </button>
       </template>

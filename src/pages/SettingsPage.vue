@@ -53,6 +53,14 @@ async function importJson(event: Event) {
         NimConnect — a relationship manager for your wallet.<br />
         Version 0.1.0 · Built for the Nimiq Pay Mini App competition.
       </p>
+      <a class="item" href="https://github.com/NimMiniApps/NimConnect" target="_blank" rel="noopener">
+        ↗ Source code on GitHub
+      </a>
+      <p class="about">
+        Open source under the MIT license. Built with Vue, Dexie and the official
+        Nimiq libraries (@nimiq/mini-app-sdk, @nimiq/utils, @nimiq/identicons) —
+        all Apache-2.0/MIT licensed.
+      </p>
     </div>
   </div>
 </template>
@@ -69,6 +77,7 @@ h1 { font-size: 28px; margin: 0 0 16px; }
   color: var(--text); cursor: pointer; border-bottom: 1px solid var(--border);
 }
 .item:last-of-type { border-bottom: none; }
+a.item { text-decoration: none; border-bottom: none; display: flex; align-items: center; }
 .message { color: var(--nq-green); font-size: 14px; }
 .about { color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0; }
 </style>
