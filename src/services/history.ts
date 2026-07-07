@@ -7,11 +7,26 @@ export interface HistoryItem {
   timestamp: number
   valueNim: number
   incoming: boolean
+  /** UTF-8 message from the tx data field, when present and printable */
+  message?: string
 }
 
-interface RpcTx { hash: string; from: string; to: string; value: number; timestamp: number }
+interface RpcTx { hash: string; from: string; to: string; value: number; timestamp: number; recipientData?: string }
 
 const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
+
+/** Decode tx data hex as a human message; undefined for empty/binary payloads. */
+function decodeMessage(hex?: string): string | undefined {
+  if (!hex || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hex)) return undefined
+  try {
+    const bytes = Uint8Array.from(hex.match(/../g)!.map(b => parseInt(b, 16)))
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    const hasControlChars = [...text].some(c => c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)
+    return hasControlChars || !text.trim() ? undefined : text
+  } catch {
+    return undefined
+  }
+}
 
 function cacheKey(me: string, other: string) {
   return `nimconnect:history:${compact(me)}:${compact(other)}`
@@ -56,6 +71,7 @@ export async function fetchHistory(myAddress: string, otherAddress: string): Pro
         timestamp: t.timestamp,
         valueNim: t.value / 1e5,
         incoming: compact(t.to) === me,
+        ...(decodeMessage(t.recipientData) ? { message: decodeMessage(t.recipientData) } : {}),
       }))
       .sort((a, b) => b.timestamp - a.timestamp)
     try {

@@ -74,10 +74,29 @@ export async function getMyAddress(): Promise<string | null> {
   return connectWallet()
 }
 
-export async function sendNim(recipient: string, amountNim: number): Promise<string> {
+/** Max payload of a basic transaction's data field. */
+export const MESSAGE_MAX_BYTES = 64
+
+export function messageBytes(message: string): number {
+  return new TextEncoder().encode(message).length
+}
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
+}
+
+export async function sendNim(recipient: string, amountNim: number, message?: string): Promise<string> {
   const provider = await getProvider()
   if (!provider) throw new Error('Not running inside Nimiq Pay')
-  const result = await provider.sendBasicTransaction({ recipient, value: nimToLunas(amountNim) })
+  const value = nimToLunas(amountNim)
+  const msg = message?.trim()
+  const result = msg
+    ? await provider.sendBasicTransactionWithData({
+        recipient,
+        value,
+        data: toHex(new TextEncoder().encode(msg)),
+      })
+    : await provider.sendBasicTransaction({ recipient, value })
   if (isErrorResponse(result)) throw new Error(result.error.message)
   return result
 }

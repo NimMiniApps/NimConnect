@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
-import { getProvider, sendNim } from '../services/nimiq'
+import { getProvider, sendNim, messageBytes, MESSAGE_MAX_BYTES } from '../services/nimiq'
 import { makeRequestLink } from '../services/links'
 import { fetchHistory, type HistoryItem } from '../services/history'
 import Identicon from './Identicon.vue'
@@ -16,6 +16,8 @@ const store = useProfilesStore()
 const insidePay = ref(false)
 const sheet = ref<'send' | 'request' | 'history' | null>(null)
 const amount = ref<number | null>(null)
+const message = ref('')
+const messageTooLong = computed(() => messageBytes(message.value) > MESSAGE_MAX_BYTES)
 const sending = ref(false)
 const sendResult = ref<'ok' | string | null>(null)
 const history = ref<HistoryItem[] | null>(null)
@@ -40,6 +42,7 @@ async function copyAddress() {
 
 function openSheet(which: 'send' | 'request' | 'history') {
   amount.value = null
+  message.value = ''
   sendResult.value = null
   sheet.value = which
   if (which === 'history') loadHistory()
@@ -51,7 +54,7 @@ async function doSend() {
   sending.value = true
   sendResult.value = null
   try {
-    await sendNim(props.profile.address, amount.value)
+    await sendNim(props.profile.address, amount.value, message.value)
     sendResult.value = 'ok'
     await store.touchInteraction(props.profile.id)
   } catch (e) {
@@ -145,6 +148,11 @@ async function loadHistory() {
           Amount (NIM)
           <input v-model.number="amount" type="number" min="0.00001" step="any" placeholder="0.00" />
         </label>
+        <label class="message-label">
+          Message (optional, goes with the payment)
+          <input v-model="message" maxlength="64" placeholder="Thanks for lunch! 🍜" />
+          <span v-if="messageTooLong" class="err">Too long — max {{ MESSAGE_MAX_BYTES }} bytes (emoji count as more).</span>
+        </label>
         <p v-if="sendResult === 'ok'" class="ok">✓ Sent to {{ profile.name }}</p>
         <p v-else-if="sendResult" class="err">{{ sendResult }}</p>
         <button
@@ -152,7 +160,7 @@ async function loadHistory() {
           class="primary"
           @click="sheet = null"
         >Done</button>
-        <button v-else class="primary" :disabled="!amount || sending" @click="doSend">
+        <button v-else class="primary" :disabled="!amount || sending || messageTooLong" @click="doSend">
           {{ sending ? 'Waiting for confirmation…' : `Send to ${profile.name}` }}
         </button>
       </template>
@@ -178,7 +186,10 @@ async function loadHistory() {
       <ul v-else class="history">
         <li v-for="h in history" :key="h.hash">
           <span class="dir" :class="h.incoming ? 'in' : 'out'">{{ h.incoming ? '←' : '→' }}</span>
-          <span class="value">{{ h.incoming ? '+' : '−' }}{{ h.valueNim }} NIM</span>
+          <span class="value">
+            {{ h.incoming ? '+' : '−' }}{{ h.valueNim }} NIM
+            <span v-if="h.message" class="tx-message">“{{ h.message }}”</span>
+          </span>
           <span class="when">{{ new Date(h.timestamp * (h.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}</span>
         </li>
       </ul>
@@ -226,6 +237,11 @@ async function loadHistory() {
 .link { background: none; border: none; color: var(--nq-light-blue); font-weight: 700; cursor: pointer; min-height: 44px; }
 .link.danger { color: var(--nq-red); }
 .amount-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
+.message-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
+.message-label input {
+  font: inherit; padding: 10px 12px; min-height: 44px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+}
 .amount-label input {
   font: inherit; font-size: 24px; padding: 10px 12px; text-align: center;
   border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
@@ -244,5 +260,6 @@ async function loadHistory() {
 .dir.in { color: var(--nq-green); }
 .dir.out { color: var(--nq-red); }
 .value { flex: 1; font-weight: 700; }
+.tx-message { display: block; font-weight: 400; font-size: 13px; color: var(--text-2); }
 .when { color: var(--text-2); font-size: 13px; }
 </style>

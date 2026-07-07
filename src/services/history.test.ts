@@ -29,6 +29,18 @@ describe('fetchHistory', () => {
     ])
   })
 
+  it('decodes printable UTF-8 recipientData as a message, ignores binary', async () => {
+    const hex = (s: string) =>
+      Array.from(new TextEncoder().encode(s), b => b.toString(16).padStart(2, '0')).join('')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rpcResult([
+      { ...tx(ME, OTHER, 100000, 2000, 'a'), recipientData: hex('Thanks for lunch! 🍜') },
+      { ...tx(OTHER, ME, 50000, 3000, 'b'), recipientData: '00ff01' },
+    ])))
+    const items = await fetchHistory(ME, OTHER)
+    expect(items[1].message).toBe('Thanks for lunch! 🍜')
+    expect(items[0].message).toBeUndefined()
+  })
+
   it('throws when the network fails and no cache exists', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
     await expect(fetchHistory(ME, OTHER)).rejects.toThrow()
