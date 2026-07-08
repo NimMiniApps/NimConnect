@@ -2,7 +2,7 @@
 
 A relationship manager for your wallet — a Nimiq Pay Mini App.
 
-**Live demo:** https://nimminiapps.github.io/NimConnect/
+**Live:** https://nimconnect.maestroi.cc · **GitHub Pages demo:** https://nimminiapps.github.io/NimConnect/
 
 People don't remember addresses; they remember people. NimConnect turns every
 wallet address into a Profile: avatar (Nimiq identicon), name, tags, notes —
@@ -32,14 +32,24 @@ npm run build
 npm run build:pages   # production build for GitHub Pages (/NimConnect/ base)
 ```
 
-## GitHub Pages
+## Deployment
 
-Pushes to `main` deploy automatically via [GitHub Actions](.github/workflows/pages.yml).
+### Homelab (primary) — `nimconnect.maestroi.cc`
 
-1. In the repo on GitHub: **Settings → Pages → Build and deployment → Source: GitHub Actions**
-2. After the first successful workflow run, the site is at https://nimminiapps.github.io/NimConnect/
+Docker Swarm stack with Traefik, same pattern as [NimiqLens](https://github.com/NimMiniApps/NimiqLens):
 
-The app uses hash routing, so deep links work without server rewrites. Open inside Nimiq Pay for live Send; the hosted demo works in a normal browser for everything else.
+1. Set repo variable `VITE_API_BASE_URL=https://api-nimconnect.maestroi.cc`
+2. Push to `main` — [docker-build.yml](.github/workflows/docker-build.yml) publishes frontend + backend to GHCR
+3. `cp docker-compose.homelab.yml.example docker-compose.homelab.yml`
+4. `docker stack deploy -c docker-compose.homelab.yml nimconnect`
+
+See [backend/README.md](backend/README.md) for API details.
+
+### GitHub Pages (demo mirror)
+
+Pushes to `main` also deploy via [pages.yml](.github/workflows/pages.yml) when `VITE_API_BASE_URL` is set.
+
+The app uses hash routing, so deep links work without server rewrites. Open inside Nimiq Pay for live Send.
 
 ## Architecture
 

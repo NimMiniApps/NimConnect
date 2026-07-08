@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local homelab stack (real domains)
+docker-compose.homelab.yml

@@ -35,12 +35,14 @@ go run .
 
 Frontend dev proxy (see root `vite.config.ts`) forwards `/api` to `localhost:8787`.
 
-## Deployment
+## Deployment (Docker Swarm + Traefik)
 
-1. Copy `docker-compose.homelab.yml.example` → `docker-compose.homelab.yml`
-2. Set Traefik host to your API domain (e.g. `api-nimconnect.maestroi.cc`)
-3. `docker stack deploy -c docker-compose.homelab.yml nimconnect`
-4. Set GitHub repo variable `VITE_API_BASE_URL` for Pages builds
+1. Set GitHub repo variable `VITE_API_BASE_URL=https://api-nimconnect.maestroi.cc`
+2. Push to `main` — CI builds `nimconnect-backend` and `nimconnect-frontend` images on GHCR
+3. Copy `docker-compose.homelab.yml.example` → `docker-compose.homelab.yml`
+4. Point DNS: `nimconnect.maestroi.cc` (frontend), `api-nimconnect.maestroi.cc` (API)
+5. `docker stack deploy -c docker-compose.homelab.yml nimconnect`
+6. After deploys, rollout services to pick up new images (Swarm caches `:latest`)
 
 ## Tests
 

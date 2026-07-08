@@ -1,5 +1,24 @@
-# Homelab deployment — copy to docker-compose.homelab.yml and edit domains.
-# docker stack deploy -c docker-compose.homelab.yml nimconnect
+# Homelab Swarm stack — pulls prebuilt images from GHCR (see .github/workflows/docker-build.yml).
+#
+# Usage:
+#   cp docker-compose.homelab.yml.example docker-compose.homelab.yml
+#   # edit image owner if needed, then:
+#   docker stack deploy -c docker-compose.homelab.yml nimconnect
+#
+# After pushing to main, CI publishes new images. Swarm does not auto-pull :latest —
+# force a rollout on the manager, e.g.:
+#   docker service update --with-registry-auth \
+#     --image ghcr.io/<github-username>/nimconnect-frontend:<commit-sha> \
+#     --force nimconnect_frontend
+#
+# docker-compose.homelab.yml is gitignored so your real stack stays local.
+#
+# Domains (DNS → Traefik):
+#   nimconnect.maestroi.cc      → frontend
+#   api-nimconnect.maestroi.cc  → backend
+#
+# GitHub repo variable (Settings → Actions → Variables):
+#   VITE_API_BASE_URL=https://api-nimconnect.maestroi.cc
 
 services:
   backend:
@@ -7,24 +26,44 @@ services:
     environment:
       - PORT=8787
       - COINGECKO_API_BASE=https://api.coingecko.com/api/v3
-      - ALLOWED_ORIGIN=https://nimminiapps.github.io,https://maestroi.github.io
+      - ALLOWED_ORIGIN=https://nimconnect.maestroi.cc,https://nimminiapps.github.io,https://maestroi.github.io
       - BACKUP_DIR=/data/backups
     volumes:
       - nimconnect_backups:/data/backups
     networks:
-      - traefik
+      - web
     deploy:
+      placement:
+        constraints:
+          - node.role == worker
       restart_policy:
         condition: any
       labels:
         - traefik.enable=true
-        - traefik.http.routers.nimconnect-api.rule=Host(`api-nimconnect.example.com`)
+        - traefik.http.routers.nimconnect-api.rule=Host(`api-nimconnect.maestroi.cc`)
         - traefik.http.routers.nimconnect-api.entrypoints=websecure
         - traefik.http.routers.nimconnect-api.tls=true
         - traefik.http.services.nimconnect-api.loadbalancer.server.port=8787
 
+  frontend:
+    image: ghcr.io/<github-username>/nimconnect-frontend:latest
+    networks:
+      - web
+    deploy:
+      placement:
+        constraints:
+          - node.role == worker
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.nimconnect.rule=Host(`nimconnect.maestroi.cc`)
+        - traefik.http.routers.nimconnect.entrypoints=websecure
+        - traefik.http.routers.nimconnect.tls=true
+        - traefik.http.services.nimconnect.loadbalancer.server.port=80
+
 networks:
-  traefik:
+  web:
     external: true
 
 volumes:
