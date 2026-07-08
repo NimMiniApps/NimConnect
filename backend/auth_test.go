@@ -11,6 +11,21 @@ import (
 	"testing"
 )
 
+func signNimiqBackupChallenge(priv ed25519.PrivateKey, address string, exportedAt int64) []byte {
+	challenge := backupChallenge(address, exportedAt)
+	hash := nimiqSignedMessageHash(challenge)
+	return ed25519.Sign(priv, hash[:])
+}
+
+func TestNimiqSignedMessageHashMatchesJsLength(t *testing.T) {
+	// JS signMessage uses string .length (code units); ASCII challenges match Go len().
+	challenge := backupChallenge("NQ07 0000 0000 0000 0000 0000 0000 0000 0000", 1710000000000)
+	if len(challenge) != len([]rune(challenge)) {
+		t.Fatal("test challenge should be ASCII")
+	}
+	_ = nimiqSignedMessageHash(challenge)
+}
+
 func TestVerifyBackupAuthRoundTrip(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -21,8 +36,7 @@ func TestVerifyBackupAuthRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	exportedAt := int64(1710000000000)
-	msg := []byte(backupChallenge(address, exportedAt))
-	sig := ed25519.Sign(priv, msg)
+	sig := signNimiqBackupChallenge(priv, address, exportedAt)
 	if err := verifyBackupAuth(address, hex.EncodeToString(pub), hex.EncodeToString(sig), exportedAt); err != nil {
 		t.Fatalf("expected valid auth, got %v", err)
 	}
@@ -31,10 +45,19 @@ func TestVerifyBackupAuthRoundTrip(t *testing.T) {
 func TestVerifyBackupAuthRejectsWrongAddress(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	exportedAt := int64(1710000000000)
-	msg := []byte(backupChallenge("NQ07 0000 0000 0000 0000 0000 0000 0000 0000", exportedAt))
-	sig := ed25519.Sign(priv, msg)
+	sig := signNimiqBackupChallenge(priv, "NQ07 0000 0000 0000 0000 0000 0000 0000 0000", exportedAt)
 	if err := verifyBackupAuth("NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF", hex.EncodeToString(pub), hex.EncodeToString(sig), exportedAt); err == nil {
 		t.Fatal("expected auth failure for wrong address")
+	}
+}
+
+func TestVerifyBackupAuthRejectsRawMessageSignature(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+	exportedAt := int64(1710000000000)
+	rawSig := ed25519.Sign(priv, []byte(backupChallenge(address, exportedAt)))
+	if err := verifyBackupAuth(address, hex.EncodeToString(pub), hex.EncodeToString(rawSig), exportedAt); err == nil {
+		t.Fatal("expected rejection of non-Nimiq-prefixed signature")
 	}
 }
 
@@ -52,8 +75,7 @@ func TestBackupStorePutGetConflict(t *testing.T) {
 	}
 
 	makeReq := func(exportedAt int64) BackupPutRequest {
-		msg := []byte(backupChallenge(address, exportedAt))
-		sig := ed25519.Sign(priv, msg)
+		sig := signNimiqBackupChallenge(priv, address, exportedAt)
 		return BackupPutRequest{
 			ExportedAt: exportedAt,
 			Salt:       "c2FsdA==",
@@ -92,8 +114,7 @@ func TestBackupHTTPHandlers(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	address, _ := addressFromPublicKey(pub)
 	exportedAt := int64(500)
-	msg := []byte(backupChallenge(address, exportedAt))
-	sig := ed25519.Sign(priv, msg)
+	sig := signNimiqBackupChallenge(priv, address, exportedAt)
 
 	body := `{"exported_at":500,"salt":"c2FsdA==","ciphertext":"Y2k=","public_key":"` + hex.EncodeToString(pub) + `","signature":"` + hex.EncodeToString(sig) + `"}`
 	putReq := httptest.NewRequest(http.MethodPut, "/api/backup/x", strings.NewReader(body))

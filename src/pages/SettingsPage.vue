@@ -134,10 +134,17 @@ async function onEnableCloud(passphrase: string) {
     markPassphraseSet()
     await uploadCloudBackup(passphrase, address)
     message.value = 'Cloud backup enabled and synced.'
-  } catch {
+  } catch (e) {
     clearBackupSession()
     cloudBackupEnabled.value = false
-    message.value = 'Could not enable cloud backup.'
+    const err = (e as Error).message
+    if (err === 'Not running inside Nimiq Pay') {
+      message.value = 'Open NimConnect inside Nimiq Pay to sign cloud backups.'
+    } else if (err.includes('Failed to fetch') || err.includes('NetworkError')) {
+      message.value = 'Could not reach the backup API. Start it with: docker compose up'
+    } else {
+      message.value = err || 'Could not enable cloud backup.'
+    }
   }
 }
 

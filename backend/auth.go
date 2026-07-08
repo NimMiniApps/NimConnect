@@ -2,17 +2,36 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
+const nimiqSignedMessagePrefix = "\x16Nimiq Signed Message:\n"
+
+// nimiqSignedMessageHash matches Nimiq Pay / Keyguard signMessage (UTF-8 string messages).
+func nimiqSignedMessageHash(message string) [32]byte {
+	var b strings.Builder
+	b.WriteString(nimiqSignedMessagePrefix)
+	b.WriteString(strconv.Itoa(len(message)))
+	b.WriteString(message)
+	return sha256.Sum256([]byte(b.String()))
+}
+
+func decodeHexKeyMaterial(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	value = strings.TrimPrefix(value, "0x")
+	return hex.DecodeString(value)
+}
+
 func verifyBackupAuth(pathAddress string, publicKeyHex string, signatureHex string, exportedAt int64) error {
-	pubBytes, err := hex.DecodeString(strings.TrimSpace(publicKeyHex))
+	pubBytes, err := decodeHexKeyMaterial(publicKeyHex)
 	if err != nil {
 		return fmt.Errorf("invalid public key hex")
 	}
-	sigBytes, err := hex.DecodeString(strings.TrimSpace(signatureHex))
+	sigBytes, err := decodeHexKeyMaterial(signatureHex)
 	if err != nil {
 		return fmt.Errorf("invalid signature hex")
 	}
@@ -31,8 +50,9 @@ func verifyBackupAuth(pathAddress string, publicKeyHex string, signatureHex stri
 		return fmt.Errorf("public key does not match address")
 	}
 
-	msg := []byte(backupChallenge(pathAddress, exportedAt))
-	if !ed25519.Verify(ed25519.PublicKey(pubBytes), msg, sigBytes) {
+	challenge := backupChallenge(pathAddress, exportedAt)
+	hash := nimiqSignedMessageHash(challenge)
+	if !ed25519.Verify(ed25519.PublicKey(pubBytes), hash[:], sigBytes) {
 		return fmt.Errorf("invalid signature")
 	}
 	return nil

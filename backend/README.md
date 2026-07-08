@@ -14,6 +14,8 @@ Go REST API for NimConnect: CoinGecko-backed exchange rates and encrypted cloud 
 
 Backup uploads must sign: `nimconnect-backup:v1:{address}:{exported_at}`
 
+Nimiq Pay prefixes and SHA-256-hashes that string before Ed25519 signing (same as Hub `signMessage`). The backend verifies using that Nimiq message format, not a raw Ed25519 sign of the challenge string.
+
 The server stores only encrypted blobs — it cannot read contact data.
 
 ## Configuration
@@ -32,6 +34,15 @@ cd backend
 go run .
 # curl http://localhost:8787/api/health
 ```
+
+Or with Docker (from repo root):
+
+```bash
+docker compose up --build
+# curl http://localhost:8787/api/health
+```
+
+Backups persist in `./data/backups` (gitignored).
 
 Frontend dev proxy (see root `vite.config.ts`) forwards `/api` to `localhost:8787`.
 
