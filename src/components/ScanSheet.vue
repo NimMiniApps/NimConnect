@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { classifyScan, shortAddress, type ParsedPaymentRequest, type ScanIntent } from '../services/links'
@@ -20,6 +20,8 @@ const phase = ref<'scan' | 'result'>('scan')
 const intent = ref<ScanIntent | null>(null)
 const linkInput = ref('')
 const error = ref('')
+const scannerKey = ref(0)
+const scannerReady = ref(false)
 
 const contact = computed(() =>
   intent.value ? store.getByAddress(intent.value.recipient) : undefined,
@@ -44,9 +46,17 @@ const headline = computed(() => {
 const canPay = computed(() => intent.value != null)
 
 watch(() => props.open, async open => {
-  if (!open) return
+  scannerReady.value = false
+  if (!open) {
+    reset()
+    return
+  }
   await store.load()
   reset()
+  await nextTick()
+  requestAnimationFrame(() => {
+    if (props.open) scannerReady.value = true
+  })
 })
 
 function reset() {
@@ -54,6 +64,7 @@ function reset() {
   intent.value = null
   linkInput.value = ''
   error.value = ''
+  scannerKey.value += 1
 }
 
 function handleScan(text: string) {
@@ -98,6 +109,13 @@ function scanAgain() {
   intent.value = null
   linkInput.value = ''
   error.value = ''
+  scannerKey.value += 1
+  scannerReady.value = false
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      if (props.open) scannerReady.value = true
+    })
+  })
 }
 
 function close() {
@@ -111,6 +129,8 @@ function close() {
     <template v-if="phase === 'scan'">
       <p class="lead">Scan a payment link, split request, invoice QR, or profile address.</p>
       <QrScanner
+        v-if="scannerReady"
+        :key="scannerKey"
         @scan="handleScan"
         @error="msg => { error = msg }"
       />

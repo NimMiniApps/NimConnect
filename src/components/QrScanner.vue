@@ -14,6 +14,10 @@ function cameraError(message: string) {
   emit('error', message)
 }
 
+function onPlaying() {
+  status.value = 'active'
+}
+
 onMounted(async () => {
   await nextTick()
   const el = video.value
@@ -32,11 +36,7 @@ onMounted(async () => {
     return
   }
 
-  el.playsInline = true
-  el.setAttribute('playsinline', 'true')
-  el.setAttribute('webkit-playsinline', 'true')
-  el.muted = true
-  el.autoplay = true
+  el.addEventListener('playing', onPlaying)
 
   try {
     scanner = new QrScanner(
@@ -50,7 +50,9 @@ onMounted(async () => {
       },
     )
     await scanner.start()
-    status.value = 'active'
+    // iOS / webviews sometimes need an explicit play() after the stream attaches.
+    await el.play().catch(() => {})
+    if (el.readyState >= 2) status.value = 'active'
   } catch (e) {
     const name = e instanceof DOMException ? e.name : ''
     if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
@@ -66,6 +68,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  video.value?.removeEventListener('playing', onPlaying)
   scanner?.destroy()
   scanner = null
 })
@@ -73,35 +76,57 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="wrap">
-    <video ref="video" class="scanner" :class="{ hidden: status !== 'active' }" />
-    <p v-if="status === 'loading'" class="status">Starting camera… allow access if prompted.</p>
-    <p v-if="status === 'error'" class="status err">{{ statusMessage }}</p>
+    <video
+      ref="video"
+      class="scanner"
+      playsinline
+      webkit-playsinline
+      muted
+      autoplay
+    />
+    <div v-if="status === 'loading'" class="overlay">
+      <p>Starting camera… allow access if prompted.</p>
+    </div>
+    <div v-else-if="status === 'error'" class="overlay error">
+      <p>{{ statusMessage }}</p>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.wrap { position: relative; }
+.wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #000;
+}
 .scanner {
   width: 100%;
-  border-radius: var(--radius);
-  background: #000;
-  aspect-ratio: 1;
+  height: 100%;
   object-fit: cover;
   display: block;
+  background: #000;
 }
-.scanner.hidden { visibility: hidden; position: absolute; inset: 0; height: 0; overflow: hidden; }
-.status {
-  margin: 0;
-  min-height: 120px;
+/* qr-scanner injects a highlight overlay as a sibling of the video */
+.wrap :deep(svg),
+.wrap :deep(.scan-region-highlight) {
+  border-radius: var(--radius);
+}
+.overlay {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 16px;
-  border-radius: var(--radius);
-  background: var(--bg);
-  color: var(--text-2);
+  background: rgba(0, 0, 0, 0.72);
+  color: #fff;
   font-size: 14px;
   text-align: center;
+  pointer-events: none;
 }
-.status.err { color: var(--nq-red); }
+.overlay p { margin: 0; }
+.overlay.error { color: #ffb4b4; background: var(--bg); pointer-events: auto; }
 </style>
