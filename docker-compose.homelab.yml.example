@@ -1,0 +1,31 @@
+# Homelab deployment — copy to docker-compose.homelab.yml and edit domains.
+# docker stack deploy -c docker-compose.homelab.yml nimconnect
+
+services:
+  backend:
+    image: ghcr.io/<github-username>/nimconnect-backend:latest
+    environment:
+      - PORT=8787
+      - COINGECKO_API_BASE=https://api.coingecko.com/api/v3
+      - ALLOWED_ORIGIN=https://nimminiapps.github.io,https://maestroi.github.io
+      - BACKUP_DIR=/data/backups
+    volumes:
+      - nimconnect_backups:/data/backups
+    networks:
+      - traefik
+    deploy:
+      restart_policy:
+        condition: any
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.nimconnect-api.rule=Host(`api-nimconnect.example.com`)
+        - traefik.http.routers.nimconnect-api.entrypoints=websecure
+        - traefik.http.routers.nimconnect-api.tls=true
+        - traefik.http.services.nimconnect-api.loadbalancer.server.port=8787
+
+networks:
+  traefik:
+    external: true
+
+volumes:
+  nimconnect_backups:

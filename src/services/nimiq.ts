@@ -85,6 +85,14 @@ function toHex(bytes: Uint8Array): string {
   return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('')
 }
 
+export async function signChallenge(message: string): Promise<{ publicKey: string; signature: string }> {
+  const provider = await getProvider()
+  if (!provider) throw new Error('Not running inside Nimiq Pay')
+  const result = await provider.sign(message)
+  if (isErrorResponse(result)) throw new Error(result.error.message)
+  return { publicKey: result.publicKey, signature: result.signature }
+}
+
 export async function sendNim(recipient: string, amountNim: number, message?: string): Promise<string> {
   const provider = await getProvider()
   if (!provider) throw new Error('Not running inside Nimiq Pay')

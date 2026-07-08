@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { db } from '../db/db'
 import type { Invoice } from '../types/profile'
 import { uuid } from '../utils/uuid'
+import { notifyDataChanged } from '../services/cloud-backup'
 
 export const useInvoicesStore = defineStore('invoices', () => {
   const invoices = ref<Invoice[]>([])
@@ -55,6 +56,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
     }
     await db.invoices.add(invoice)
     invoices.value.push(invoice)
+    notifyDataChanged()
     return invoice
   }
 
@@ -68,11 +70,13 @@ export const useInvoicesStore = defineStore('invoices', () => {
     }
     await db.invoices.put(JSON.parse(JSON.stringify(updated)))
     invoices.value = invoices.value.map(i => (i.id === id ? updated : i))
+    notifyDataChanged()
   }
 
   async function remove(id: string) {
     await db.invoices.delete(id)
     invoices.value = invoices.value.filter(i => i.id !== id)
+    notifyDataChanged()
   }
 
   /** Merge imported invoices, skipping ids already present. Returns count added. */
@@ -97,6 +101,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
       invoices.value.push(invoice)
       added++
     }
+    if (added) notifyDataChanged()
     return added
   }
 

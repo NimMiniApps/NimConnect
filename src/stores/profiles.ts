@@ -5,6 +5,7 @@ import { db } from '../db/db'
 import type { ExportDocument, Profile, ProfileType } from '../types/profile'
 import { uuid } from '../utils/uuid'
 import { useInvoicesStore } from './invoices'
+import { notifyDataChanged } from '../services/cloud-backup'
 
 export interface NewProfile {
   address: string
@@ -83,6 +84,7 @@ export const useProfilesStore = defineStore('profiles', () => {
     }
     await db.profiles.add(profile)
     profiles.value.push(profile)
+    notifyDataChanged()
     return profile
   }
 
@@ -104,11 +106,13 @@ export const useProfilesStore = defineStore('profiles', () => {
     const updated: Profile = plainProfile({ ...existing, ...patch, id, updatedAt: Date.now() })
     await db.profiles.put(updated)
     profiles.value = profiles.value.map(p => (p.id === id ? updated : p))
+    notifyDataChanged()
   }
 
   async function remove(id: string) {
     await db.profiles.delete(id)
     profiles.value = profiles.value.filter(p => p.id !== id)
+    notifyDataChanged()
   }
 
   async function toggleFavorite(id: string) {
@@ -254,6 +258,7 @@ export const useProfilesStore = defineStore('profiles', () => {
       await invoicesStore.load()
       await invoicesStore.importMany(d.invoices)
     }
+    notifyDataChanged()
     return { added, skipped }
   }
 

@@ -7,12 +7,29 @@ import { preferredCurrency } from '../services/prefs'
 import { FIAT_CURRENCIES } from '../services/rates'
 import { clearHistoryCache } from '../services/history'
 import { resetBootstrap } from '../services/wallet-bootstrap'
+import { createEncryptedBackup, parseEncryptedBackup } from '../services/backup'
+import {
+  lastLocalBackupAt, formatBackupAge, markLocalBackup, markPassphraseSet, backupPassphraseSet,
+  cloudBackupEnabled, lastCloudSyncAt,
+} from '../services/backup-prefs'
+import {
+  cloudBackupAvailable, downloadCloudBackup, setBackupSession, clearBackupSession,
+  uploadCloudBackup,
+} from '../services/cloud-backup'
+import { getMyAddress } from '../services/nimiq'
+import PassphraseSheet from '../components/PassphraseSheet.vue'
+import type { EncryptedBackup } from '../types/profile'
 
 const router = useRouter()
 const store = useProfilesStore()
 const message = ref('')
 const confirmReset = ref(false)
 const resetting = ref(false)
+const showAdvanced = ref(false)
+const passphraseOpen = ref(false)
+const passphraseConfirm = ref(false)
+const passphraseMode = ref<'export' | 'import' | 'cloud-enable' | 'cloud-restore'>('export')
+const pendingImport = ref<EncryptedBackup | null>(null)
 
 async function seedSamples() {
   const added = await loadSampleContacts()
@@ -22,15 +39,44 @@ async function seedSamples() {
 }
 const fileInput = ref<HTMLInputElement>()
 
-async function exportJson() {
-  const doc = await store.exportDocument()
-  const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' })
+function downloadBlob(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `nimconnect-${new Date().toISOString().slice(0, 10)}.json`
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
+}
+
+function requestExport() {
+  passphraseMode.value = 'export'
+  passphraseConfirm.value = !backupPassphraseSet.value
+  passphraseOpen.value = true
+}
+
+async function onExportPassphrase(passphrase: string) {
+  try {
+    const file = await createEncryptedBackup(passphrase, store.self?.address)
+    const date = new Date().toISOString().slice(0, 10)
+    downloadBlob(JSON.stringify(file, null, 2), `nimconnect-backup-${date}.nimconnect`)
+    markPassphraseSet()
+    markLocalBackup()
+    message.value = 'Encrypted backup saved.'
+  } catch {
+    message.value = 'Could not create backup.'
+  }
+}
+
+async function exportPlainJson() {
+  const doc = await store.exportDocument()
+  const date = new Date().toISOString().slice(0, 10)
+  downloadBlob(JSON.stringify(doc, null, 2), `nimconnect-${date}.json`)
+  message.value = 'Unencrypted export saved — keep this file private.'
+}
+
+function importBackup() {
+  fileInput.value?.click()
 }
 
 async function importJson(event: Event) {
@@ -38,13 +84,116 @@ async function importJson(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
   try {
-    const doc = JSON.parse(await file.text())
-    const { added, skipped } = await store.importDocument(doc)
-    message.value = `Imported ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} duplicate/invalid` : ''}.`
+    const parsed = JSON.parse(await file.text())
+    if (parsed.format === 'encrypted-backup') {
+      pendingImport.value = parsed as EncryptedBackup
+      passphraseMode.value = 'import'
+      passphraseConfirm.value = false
+      passphraseOpen.value = true
+    } else {
+      const { added, skipped } = await store.importDocument(parsed)
+      message.value = `Imported ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} duplicate/invalid` : ''}.`
+      markLocalBackup()
+    }
   } catch {
     message.value = 'That file is not a valid NimConnect export.'
   }
   if (fileInput.value) fileInput.value.value = ''
+}
+
+async function onImportPassphrase(passphrase: string) {
+  if (!pendingImport.value) return
+  try {
+    const doc = await parseEncryptedBackup(pendingImport.value, passphrase)
+    const { added, skipped } = await store.importDocument(doc)
+    markPassphraseSet()
+    markLocalBackup()
+    message.value = `Imported ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} duplicate/invalid` : ''}.`
+    pendingImport.value = null
+  } catch {
+    message.value = 'Wrong passphrase or corrupted backup.'
+  }
+}
+
+function onPassphraseSubmit(passphrase: string) {
+  if (passphraseMode.value === 'export') onExportPassphrase(passphrase)
+  else if (passphraseMode.value === 'import') onImportPassphrase(passphrase)
+  else if (passphraseMode.value === 'cloud-enable') onEnableCloud(passphrase)
+  else onCloudRestorePassphrase(passphrase)
+}
+
+async function onEnableCloud(passphrase: string) {
+  const address = store.self?.address ?? await getMyAddress()
+  if (!address) {
+    message.value = 'Connect your wallet in Nimiq Pay to enable cloud backup.'
+    return
+  }
+  try {
+    setBackupSession(passphrase, address)
+    cloudBackupEnabled.value = true
+    markPassphraseSet()
+    await uploadCloudBackup(passphrase, address)
+    message.value = 'Cloud backup enabled and synced.'
+  } catch {
+    clearBackupSession()
+    cloudBackupEnabled.value = false
+    message.value = 'Could not enable cloud backup.'
+  }
+}
+
+async function enableCloudBackup() {
+  if (!cloudBackupAvailable()) {
+    message.value = 'Cloud backup API is not configured yet.'
+    return
+  }
+  passphraseMode.value = 'cloud-enable'
+  passphraseConfirm.value = !backupPassphraseSet.value
+  passphraseOpen.value = true
+}
+
+async function syncCloudNow() {
+  const address = store.self?.address ?? await getMyAddress()
+  if (!address) {
+    message.value = 'Connect your wallet to sync.'
+    return
+  }
+  passphraseMode.value = 'cloud-enable'
+  passphraseConfirm.value = false
+  passphraseOpen.value = true
+}
+
+async function restoreFromCloud() {
+  passphraseMode.value = 'cloud-restore'
+  passphraseConfirm.value = false
+  passphraseOpen.value = true
+}
+
+async function onCloudRestorePassphrase(passphrase: string) {
+  const address = store.self?.address ?? await getMyAddress()
+  if (!address) {
+    message.value = 'Connect your wallet to restore from cloud.'
+    return
+  }
+  try {
+    const file = await downloadCloudBackup(address)
+    if (!file) {
+      message.value = 'No cloud backup found for this wallet.'
+      return
+    }
+    const doc = await parseEncryptedBackup(file, passphrase)
+    const { added, skipped } = await store.importDocument(doc)
+    setBackupSession(passphrase, address)
+    markPassphraseSet()
+    message.value = `Restored ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''} from cloud.`
+  } catch {
+    message.value = 'Wrong passphrase or cloud backup unavailable.'
+  }
+}
+
+function disableCloudBackup() {
+  cloudBackupEnabled.value = false
+  clearBackupSession()
+  message.value = 'Cloud backup disabled.'
 }
 
 async function resetApp() {
@@ -59,6 +208,7 @@ async function resetApp() {
     await store.resetAll()
     clearHistoryCache()
     resetBootstrap()
+    try { globalThis.localStorage?.removeItem('nimconnect:skipped-restore') } catch {}
     message.value = 'All local data deleted.'
     await router.replace('/')
   } catch {
@@ -92,10 +242,26 @@ function cancelReset() {
 
     <div class="card group">
       <h2>Backup</h2>
-      <button class="item" @click="exportJson">⬇ Export contacts (JSON)</button>
-      <button class="item" @click="fileInput?.click()">⬆ Import contacts (JSON)</button>
-      <input ref="fileInput" type="file" accept="application/json" hidden @change="importJson" />
+      <p class="hint">Last backed up: {{ formatBackupAge(lastLocalBackupAt) }}</p>
+      <button class="item" @click="requestExport">🔒 Export encrypted backup</button>
+      <button class="item" @click="importBackup">⬆ Import backup</button>
+      <input ref="fileInput" type="file" accept="application/json,.nimconnect" hidden @change="importJson" />
+      <template v-if="cloudBackupAvailable()">
+        <p class="hint">
+          Cloud: {{ cloudBackupEnabled ? `on · synced ${formatBackupAge(lastCloudSyncAt)}` : 'off' }}
+        </p>
+        <button v-if="!cloudBackupEnabled" class="item" @click="enableCloudBackup">☁️ Enable cloud backup</button>
+        <button v-else class="item" @click="syncCloudNow">☁️ Sync now</button>
+        <button class="item" @click="restoreFromCloud">⬇ Restore from cloud</button>
+        <button v-if="cloudBackupEnabled" class="item subtle" @click="disableCloudBackup">Disable cloud backup</button>
+      </template>
       <button class="item" @click="seedSamples">✨ Add sample contacts</button>
+      <button type="button" class="item subtle" @click="showAdvanced = !showAdvanced">
+        {{ showAdvanced ? '▾' : '▸' }} Advanced
+      </button>
+      <button v-if="showAdvanced" class="item warn" @click="exportPlainJson">
+        Export unencrypted JSON
+      </button>
       <p v-if="message" class="message">{{ message }}</p>
     </div>
 
@@ -110,7 +276,6 @@ function cancelReset() {
       </template>
       <button v-else type="button" class="item danger" @click="resetApp">🗑 Reset app</button>
       <p class="hint">Deletes all contacts and cached history from this device.</p>
-      <p v-if="message" class="message">{{ message }}</p>
     </div>
 
     <div class="card group">
@@ -128,6 +293,14 @@ function cancelReset() {
         all Apache-2.0/MIT licensed.
       </p>
     </div>
+
+    <PassphraseSheet
+      :open="passphraseOpen"
+      :title="passphraseMode === 'export' ? 'Set backup passphrase' : passphraseMode === 'import' ? 'Enter backup passphrase' : passphraseMode === 'cloud-restore' ? 'Restore cloud backup' : 'Cloud backup passphrase'"
+      :confirm="passphraseConfirm"
+      @close="passphraseOpen = false"
+      @submit="onPassphraseSubmit"
+    />
   </div>
 </template>
 
@@ -149,6 +322,8 @@ h1 { font-size: 28px; margin: 0 0 16px; }
 }
 .item:last-of-type { border-bottom: none; }
 .item.danger { color: var(--nq-red); }
+.item.warn { color: var(--nq-orange, var(--text-2)); }
+.item.subtle { color: var(--text-2); font-size: 14px; }
 a.item { text-decoration: none; border-bottom: none; display: flex; align-items: center; }
 .message { color: var(--nq-green); font-size: 14px; }
 .warn { color: var(--nq-red); font-size: 14px; margin: 0 0 8px; line-height: 1.4; }

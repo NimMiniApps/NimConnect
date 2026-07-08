@@ -28,6 +28,9 @@ jobs:
       - run: npm ci
       - run: npm run test
       - run: npm run build:pages
+        env:
+          # Set in repo: Settings → Secrets and variables → Actions → Variables
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
 
       - uses: actions/upload-pages-artifact@v3
         with:

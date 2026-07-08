@@ -1,14 +1,25 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { bootstrapWallet } from './services/wallet-bootstrap'
+import { useProfilesStore } from './stores/profiles'
 import QuickSendSheet from './components/QuickSendSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
+import RestoreBackupSheet from './components/RestoreBackupSheet.vue'
 
 const sendOpen = ref(false)
 const splitOpen = ref(false)
+const restoreOpen = ref(false)
 
 onMounted(async () => {
   await bootstrapWallet()
+  const store = useProfilesStore()
+  await store.load()
+  if (
+    store.profiles.length === 0
+    && !globalThis.localStorage?.getItem('nimconnect:skipped-restore')
+  ) {
+    restoreOpen.value = true
+  }
 })
 </script>
 
@@ -40,6 +51,7 @@ onMounted(async () => {
 
     <QuickSendSheet :open="sendOpen" @close="sendOpen = false" />
     <SplitBillSheet :open="splitOpen" @close="splitOpen = false" />
+    <RestoreBackupSheet :open="restoreOpen" @close="restoreOpen = false" />
   </div>
 </template>
 

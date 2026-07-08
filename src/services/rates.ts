@@ -1,6 +1,9 @@
-// Rates come from our NimLens backend (cached CoinGecko), shared infra:
-// https://github.com/NimMiniApps — GET /api/rates
-const RATES_URL = 'https://api-nimiqlens.maestroi.cc/api/rates'
+import { apiUrl } from './api'
+
+function ratesUrl(): string {
+  return apiUrl('/api/rates')
+}
+
 const CACHE_KEY = 'nimconnect:rates'
 const FRESH_MS = 5 * 60_000
 
@@ -30,7 +33,7 @@ export async function getRates(): Promise<NimRates | null> {
   memory ??= readCache()
   if (memory && Date.now() - memory.fetchedAt < FRESH_MS && !memory.stale) return memory
   try {
-    const res = await fetch(RATES_URL)
+    const res = await fetch(ratesUrl())
     if (!res.ok) throw new Error(`rates ${res.status}`)
     const body = await res.json()
     const nim = body?.rates?.NIM

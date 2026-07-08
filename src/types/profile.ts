@@ -47,3 +47,14 @@ export interface ExportDocument {
   profiles: Profile[]
   invoices?: Invoice[]
 }
+
+export interface EncryptedBackup {
+  app: 'NimConnect'
+  format: 'encrypted-backup'
+  version: 1
+  /** Normalized NQ address — metadata only, not secret */
+  address?: string
+  salt: string
+  exportedAt: number
+  ciphertext: string
+}
