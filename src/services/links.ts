@@ -17,3 +17,7 @@ export function shortAddress(address: string): string {
   if (parts.length < 9) return address
   return `${parts[0]} ${parts[1]}…${parts[8]}`
 }
+
+export function transactionExplorerUrl(hash: string): string {
+  return `https://nimiqscan.com/transaction/${encodeURIComponent(hash)}`
+}

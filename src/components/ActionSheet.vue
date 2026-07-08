@@ -1,14 +1,84 @@
 <script setup lang="ts">
-defineProps<{ open: boolean; title: string }>()
-defineEmits<{ close: [] }>()
+import { computed, ref, watch, onBeforeUnmount } from 'vue'
+
+const props = defineProps<{ open: boolean; title: string }>()
+const emit = defineEmits<{ close: [] }>()
+
+const dragY = ref(0)
+const dragging = ref(false)
+let startY = 0
+let previousBodyOverflow = ''
+let previousHtmlOverflow = ''
+
+const sheetStyle = computed(() => ({
+  transform: dragY.value ? `translateY(${dragY.value}px)` : undefined,
+}))
+
+watch(() => props.open, open => {
+  dragY.value = 0
+  dragging.value = false
+  if (open) lockPageScroll()
+  else unlockPageScroll()
+}, { immediate: true })
+
+onBeforeUnmount(unlockPageScroll)
+
+function lockPageScroll() {
+  previousBodyOverflow = document.body.style.overflow
+  previousHtmlOverflow = document.documentElement.style.overflow
+  document.body.style.overflow = 'hidden'
+  document.documentElement.style.overflow = 'hidden'
+}
+
+function unlockPageScroll() {
+  document.body.style.overflow = previousBodyOverflow
+  document.documentElement.style.overflow = previousHtmlOverflow
+}
+
+function close() {
+  dragY.value = 0
+  dragging.value = false
+  emit('close')
+}
+
+function onPointerDown(event: PointerEvent) {
+  dragging.value = true
+  startY = event.clientY
+  dragY.value = 0
+  ;(event.currentTarget as HTMLElement).setPointerCapture(event.pointerId)
+}
+
+function onPointerMove(event: PointerEvent) {
+  if (!dragging.value) return
+  dragY.value = Math.max(0, event.clientY - startY)
+}
+
+function onPointerUp(event: PointerEvent) {
+  if (!dragging.value) return
+  ;(event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId)
+  dragging.value = false
+  if (dragY.value > 90) close()
+  else dragY.value = 0
+}
 </script>
 
 <template>
   <teleport to="body">
     <transition name="sheet">
-      <div v-if="open" class="backdrop" @click.self="$emit('close')">
-        <div class="sheet card">
-          <div class="sheet-bar" />
+      <div v-if="open" class="backdrop" @click.self="close" @touchmove.self.prevent>
+        <div class="sheet card" :class="{ dragging }" :style="sheetStyle">
+          <button
+            type="button"
+            class="sheet-handle"
+            aria-label="Close sheet"
+            @click="close"
+            @pointerdown="onPointerDown"
+            @pointermove="onPointerMove"
+            @pointerup="onPointerUp"
+            @pointercancel="onPointerUp"
+          >
+            <span class="sheet-bar" />
+          </button>
           <h2>{{ title }}</h2>
           <slot />
         </div>
@@ -22,14 +92,33 @@ defineEmits<{ close: [] }>()
   position: fixed; inset: 0; z-index: 50;
   background: rgba(31, 35, 72, 0.4);
   display: flex; align-items: flex-end; justify-content: center;
+  overscroll-behavior: contain;
+  touch-action: none;
 }
 .sheet {
   width: 100%; max-width: 560px;
   border-radius: var(--radius) var(--radius) 0 0;
-  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 0 20px calc(20px + env(safe-area-inset-bottom));
   max-height: 80dvh; overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  will-change: transform;
 }
-.sheet-bar { width: 36px; height: 4px; border-radius: 2px; background: var(--border); margin: 8px auto 4px; }
+.sheet.dragging { transition: none !important; }
+.sheet-handle {
+  width: 100%;
+  min-height: 32px;
+  padding: 8px 0 4px;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  cursor: grab;
+  touch-action: none;
+}
+.sheet-handle:active { cursor: grabbing; }
+.sheet-bar { width: 36px; height: 4px; border-radius: 2px; background: var(--border); }
 .sheet h2 { font-size: 18px; margin: 12px 0; }
 .sheet-enter-active, .sheet-leave-active { transition: opacity 0.2s ease; }
 .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: transform 0.2s ease; }

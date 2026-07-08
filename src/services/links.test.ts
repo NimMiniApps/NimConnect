@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { makeRequestLink, shortAddress, nimToLunas } from './links'
+import { makeRequestLink, shortAddress, nimToLunas, transactionExplorerUrl } from './links'
 
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 
@@ -24,5 +24,9 @@ describe('links', () => {
   it('shortens addresses for display', () => {
     expect(shortAddress(A)).toBe('NQ07 0000…0000')
     expect(shortAddress('')).toBe('')
+  })
+
+  it('builds NimiqScan transaction links', () => {
+    expect(transactionExplorerUrl('7d0928')).toBe('https://nimiqscan.com/transaction/7d0928')
   })
 })

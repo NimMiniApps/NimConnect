@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { db } from '../db/db'
 import type { Invoice } from '../types/profile'
@@ -18,6 +18,20 @@ export const useInvoicesStore = defineStore('invoices', () => {
     return invoices.value
       .filter(i => i.address === address)
       .sort((a, b) => b.createdAt - a.createdAt)
+  }
+
+  const pending = computed(() =>
+    invoices.value
+      .filter(i => i.status === 'pending')
+      .sort((a, b) => b.createdAt - a.createdAt),
+  )
+
+  const pendingTotalNim = computed(() =>
+    pending.value.reduce((sum, invoice) => sum + invoice.amountNim, 0),
+  )
+
+  function pendingByAddress(address: string): Invoice[] {
+    return pending.value.filter(i => i.address === address)
   }
 
   async function create(input: {
@@ -86,5 +100,17 @@ export const useInvoicesStore = defineStore('invoices', () => {
     return added
   }
 
-  return { invoices, loaded, load, byAddress, create, setStatus, remove, importMany }
+  return {
+    invoices,
+    loaded,
+    pending,
+    pendingTotalNim,
+    load,
+    byAddress,
+    pendingByAddress,
+    create,
+    setStatus,
+    remove,
+    importMany,
+  }
 })

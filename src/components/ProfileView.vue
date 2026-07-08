@@ -3,7 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { getProvider, sendNim, messageBytes, MESSAGE_MAX_BYTES } from '../services/nimiq'
-import { makeRequestLink } from '../services/links'
+import { makeRequestLink, transactionExplorerUrl } from '../services/links'
 import { fetchHistory, type HistoryItem } from '../services/history'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
@@ -200,6 +200,7 @@ async function loadHistory() {
             <span v-if="h.message" class="tx-message">“{{ h.message }}”</span>
           </span>
           <span class="when">{{ new Date(h.timestamp * (h.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}</span>
+          <a class="tx-link" :href="transactionExplorerUrl(h.hash)" target="_blank" rel="noopener">Explorer</a>
         </li>
       </ul>
     </ActionSheet>
@@ -272,4 +273,5 @@ async function loadHistory() {
 .value { flex: 1; font-weight: 700; }
 .tx-message { display: block; font-weight: 400; font-size: 13px; color: var(--text-2); }
 .when { color: var(--text-2); font-size: 13px; }
+.tx-link { color: var(--nq-light-blue); font-size: 13px; font-weight: 800; text-decoration: none; }
 </style>

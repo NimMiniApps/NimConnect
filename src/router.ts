@@ -4,6 +4,7 @@ export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
     { path: '/', component: () => import('./pages/ContactsPage.vue') },
+    { path: '/activity', component: () => import('./pages/ActivityPage.vue') },
     { path: '/profile/:id', component: () => import('./pages/ProfileDetailsPage.vue') },
     { path: '/add', component: () => import('./pages/ProfileFormPage.vue') },
     { path: '/edit/:id', component: () => import('./pages/ProfileFormPage.vue') },

@@ -26,6 +26,22 @@ describe('invoices store', () => {
     expect(store.byAddress(B)).toHaveLength(1)
   })
 
+  it('summarizes pending invoices across contacts', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const older = await store.create({ address: A, amountNim: 10, description: 'Logo design' })
+    await new Promise(r => setTimeout(r, 2))
+    const newer = await store.create({ address: B, amountNim: 2.5, description: 'Lunch' })
+    await store.setStatus(older.id, 'paid')
+    await new Promise(r => setTimeout(r, 2))
+    await store.create({ address: A, amountNim: 1.25, description: 'Hosting' })
+
+    expect(store.pending.map(i => i.description)).toEqual(['Hosting', 'Lunch'])
+    expect(store.pendingByAddress(A).map(i => i.description)).toEqual(['Hosting'])
+    expect(store.pendingByAddress(B).map(i => i.id)).toEqual([newer.id])
+    expect(store.pendingTotalNim).toBe(3.75)
+  })
+
   it('rejects non-positive amounts', async () => {
     const store = useInvoicesStore()
     await store.load()
