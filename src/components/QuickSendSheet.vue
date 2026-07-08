@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useProfilesStore } from '../stores/profiles'
 import { getProvider, MESSAGE_MAX_BYTES, messageBytes, sendNim } from '../services/nimiq'
+import { shortAddress, type ParsedPaymentRequest } from '../services/links'
 import ActionSheet from './ActionSheet.vue'
 import CurrencyAmountInput from './CurrencyAmountInput.vue'
 import Identicon from './Identicon.vue'
 
-const props = defineProps<{ open: boolean }>()
+const props = defineProps<{
+  open: boolean
+  initialPayment?: ParsedPaymentRequest | null
+}>()
 const emit = defineEmits<{ close: [] }>()
 
 const store = useProfilesStore()
 const insidePay = ref(false)
 const query = ref('')
 const selectedId = ref<string | null>(null)
+const payAddress = ref<string | null>(null)
 const amount = ref<number | null>(null)
 const amountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
 const message = ref('')
@@ -28,25 +33,65 @@ watch(() => props.open, async open => {
   if (!open) return
   await store.load()
   insidePay.value = (await getProvider()) !== null
+  if (props.initialPayment) await applyPaymentRequest(props.initialPayment)
+})
+
+watch(() => props.initialPayment, async payment => {
+  if (props.open && payment) await applyPaymentRequest(payment)
 })
 
 const contacts = computed(() => store.search(query.value))
 const selected = computed(() => selectedId.value ? store.getById(selectedId.value) : null)
+const payContact = computed(() => payAddress.value ? store.getByAddress(payAddress.value) : undefined)
+const recipient = computed(() => selected.value ?? payContact.value ?? null)
+const recipientAddress = computed(() => recipient.value?.address ?? payAddress.value)
+const recipientLabel = computed(() => {
+  if (recipient.value) return recipient.value.name
+  if (payAddress.value) return shortAddress(payAddress.value)
+  return ''
+})
+const showSendForm = computed(() => !!recipientAddress.value)
 const messageTooLong = computed(() => messageBytes(message.value) > MESSAGE_MAX_BYTES)
 
 function choose(id: string) {
   selectedId.value = id
+  payAddress.value = null
   query.value = ''
   sendResult.value = null
 }
 
+function clearRecipient() {
+  selectedId.value = null
+  payAddress.value = null
+  amount.value = null
+  amountInput.value?.reset()
+  message.value = ''
+  sendResult.value = null
+}
+
+async function applyPaymentRequest(parsed: ParsedPaymentRequest) {
+  selectedId.value = null
+  payAddress.value = parsed.recipient
+  message.value = parsed.message ?? ''
+  sendResult.value = null
+  await nextTick()
+  if (parsed.amountNim != null) {
+    amount.value = parsed.amountNim
+    amountInput.value?.setNim(parsed.amountNim)
+  } else {
+    amount.value = null
+    amountInput.value?.reset()
+  }
+}
+
 async function doSend() {
-  if (!selected.value || !amount.value || messageTooLong.value) return
+  const address = recipientAddress.value
+  if (!address || !amount.value || messageTooLong.value) return
   sending.value = true
   sendResult.value = null
   try {
-    await sendNim(selected.value.address, amount.value, message.value)
-    await store.touchInteraction(selected.value.id)
+    await sendNim(address, amount.value, message.value)
+    if (recipient.value) await store.touchInteraction(recipient.value.id)
     sendResult.value = 'ok'
   } catch (e) {
     sendResult.value = (e as Error).message
@@ -58,6 +103,7 @@ async function doSend() {
 function close() {
   query.value = ''
   selectedId.value = null
+  payAddress.value = null
   amount.value = null
   amountInput.value?.reset()
   message.value = ''
@@ -70,13 +116,13 @@ function close() {
   <ActionSheet :open="open" title="Send NIM" @close="close">
     <p v-if="!insidePay" class="hint">Open NimConnect inside Nimiq Pay to send NIM directly.</p>
 
-    <template v-else-if="store.contacts.length === 0">
-      <p class="hint">Add a contact first, then Send can start from here.</p>
+    <template v-else-if="store.contacts.length === 0 && !showSendForm">
+      <p class="hint">Add a contact first, or use Scan to pay from a QR code.</p>
       <router-link to="/add" class="primary-link" @click="close">Add contact</router-link>
     </template>
 
     <template v-else>
-      <div v-if="!selected" class="picker">
+      <div v-if="!showSendForm" class="picker">
         <input v-model="query" type="search" class="search" placeholder="Search contacts…" />
         <button
           v-for="contact in contacts"
@@ -92,10 +138,10 @@ function close() {
       </div>
 
       <template v-else>
-        <button type="button" class="selected" @click="selectedId = null">
-          <Identicon :address="selected.address" :size="40" />
+        <button type="button" class="selected" @click="clearRecipient">
+          <Identicon :address="recipientAddress!" :size="40" />
           <span>
-            Send to {{ selected.name }}
+            Send to {{ recipientLabel }}
             <small>Tap to change</small>
           </span>
         </button>
@@ -111,7 +157,7 @@ function close() {
           <span v-if="messageTooLong" class="err">Too long — max {{ MESSAGE_MAX_BYTES }} bytes.</span>
         </label>
 
-        <p v-if="sendResult === 'ok'" class="ok">Sent to {{ selected.name }}</p>
+        <p v-if="sendResult === 'ok'" class="ok">Sent to {{ recipientLabel }}</p>
         <p v-else-if="sendResult" class="err">{{ sendResult }}</p>
 
         <button

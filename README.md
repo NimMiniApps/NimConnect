@@ -27,6 +27,7 @@ Nimiq Pay Mini App SDK.
 ```bash
 npm install
 npm run dev     # plain-browser mode: everything works except live Send
+npm run dev:https   # HTTPS on LAN — needed to test QR camera on a phone
 npm run test    # vitest unit tests
 npm run build
 npm run build:pages   # production build for GitHub Pages (/NimConnect/ base)

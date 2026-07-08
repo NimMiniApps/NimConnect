@@ -25,6 +25,8 @@ interface RpcTx {
   blockNumber?: number
   validityStartHeight?: number
   from: string
+  /** Sender account type: 0 basic wallet, 1 vesting, 2 HTLC (swap) contract */
+  fromType?: number
   to: string
   value: number
   timestamp: number
@@ -177,7 +179,8 @@ export async function fetchIncomingPayments(myAddress: string): Promise<Incoming
     const txs = await fetchTransactionsByAddress(myAddress, 100)
     const me = compact(myAddress)
     const items = txs
-      .filter(t => compact(t.to) === me && compact(t.from) !== me)
+      // ponytail: only basic-wallet senders; hides cross-asset swap payouts (HTLC leg) too — surface those with a "via swap" label if users miss them
+      .filter(t => compact(t.to) === me && compact(t.from) !== me && (t.fromType ?? 0) === 0)
       .map(t => ({
         hash: t.hash,
         blockNumber: t.blockNumber ?? t.validityStartHeight,

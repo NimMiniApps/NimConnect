@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
-import { parseRequestLink, Currency } from '@nimiq/utils/request-link-encoding'
+import { parsePaymentRequest } from '../services/links'
 import { useProfilesStore } from '../stores/profiles'
 import Identicon from '../components/Identicon.vue'
 import QrScanner from '../components/QrScanner.vue'
@@ -44,6 +44,9 @@ onMounted(async () => {
     favorite.value = p.favorite
     type.value = p.type
     isSelf.value = p.isSelf
+  } else if (route.query.address) {
+    const parsed = parsePaymentRequest(String(route.query.address))
+    if (parsed?.recipient) address.value = parsed.recipient
   }
 })
 
@@ -51,16 +54,17 @@ const addressValid = computed(() => ValidationUtils.isValidAddress(address.value
 
 function onScan(text: string) {
   scanning.value = false
-  if (ValidationUtils.isValidAddress(text)) {
-    address.value = text
+  const parsed = parsePaymentRequest(text)
+  if (parsed?.recipient) {
+    address.value = parsed.recipient
     return
   }
-  try {
-    const parsed = parseRequestLink(text, { currencies: [Currency.NIM] })
-    if (parsed?.recipient) address.value = parsed.recipient
-  } catch {
-    error.value = 'QR code does not contain a Nimiq address'
-  }
+  error.value = 'QR code does not contain a Nimiq address'
+}
+
+function onScanError(message: string) {
+  scanning.value = false
+  error.value = message
 }
 
 async function save() {
@@ -121,7 +125,7 @@ async function save() {
         <span v-if="isSelf" class="locked-hint">Your address comes from your connected wallet.</span>
       </label>
 
-      <QrScanner v-if="scanning" @scan="onScan" @error="scanning = false; error = 'Camera unavailable — paste the address instead.'" />
+      <QrScanner v-if="scanning" @scan="onScan" @error="onScanError" />
 
       <label class="field">
         <span>Type</span>

@@ -39,7 +39,13 @@ function reset() {
   raw.value = null
   currency.value = preferredCurrency.value
 }
-defineExpose({ reset })
+
+function setNim(nim: number) {
+  currency.value = 'NIM'
+  raw.value = nim
+}
+
+defineExpose({ reset, setNim })
 </script>
 
 <template>

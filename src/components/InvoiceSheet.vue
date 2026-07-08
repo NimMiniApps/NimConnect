@@ -97,6 +97,7 @@ function close() {
           <div v-if="expandedId === inv.id" class="detail">
             <p class="when">Created {{ new Date(inv.createdAt).toLocaleDateString() }}<template v-if="inv.paidAt"> · Paid {{ new Date(inv.paidAt).toLocaleDateString() }}</template></p>
             <QrCode v-if="inv.status === 'pending'" :text="linkFor(inv.amountNim, inv.description)" :size="180" />
+            <p v-if="inv.status === 'pending'" class="pay-hint">Payer: tap Scan in the bottom bar and scan this QR.</p>
             <div class="detail-actions">
               <button v-if="inv.status === 'pending'" type="button" class="secondary" @click="copyLink(inv.id, inv.amountNim, inv.description)">
                 {{ copiedId === inv.id ? 'Copied!' : 'Copy link' }}
@@ -140,6 +141,7 @@ function close() {
 .amount { font-weight: 700; text-align: right; }
 .fiat { display: block; font-weight: 400; font-size: 12px; color: var(--text-2); }
 .detail { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.pay-hint { margin: 0; font-size: 12px; color: var(--text-2); text-align: center; max-width: 260px; }
 .when { margin: 0; font-size: 13px; color: var(--text-2); }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .secondary {

@@ -2,13 +2,17 @@
 import { ref, onMounted } from 'vue'
 import { bootstrapWallet } from './services/wallet-bootstrap'
 import { useProfilesStore } from './stores/profiles'
+import type { ParsedPaymentRequest } from './services/links'
 import QuickSendSheet from './components/QuickSendSheet.vue'
+import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
 import RestoreBackupSheet from './components/RestoreBackupSheet.vue'
 
+const scanOpen = ref(false)
 const sendOpen = ref(false)
 const splitOpen = ref(false)
 const restoreOpen = ref(false)
+const pendingPayment = ref<ParsedPaymentRequest | null>(null)
 
 onMounted(async () => {
   await bootstrapWallet()
@@ -21,6 +25,17 @@ onMounted(async () => {
     restoreOpen.value = true
   }
 })
+
+function onScanPay(request: ParsedPaymentRequest) {
+  pendingPayment.value = request
+  scanOpen.value = false
+  sendOpen.value = true
+}
+
+function onSendClose() {
+  sendOpen.value = false
+  pendingPayment.value = null
+}
 </script>
 
 <template>
@@ -35,21 +50,22 @@ onMounted(async () => {
       <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
         <span class="nav-icon">👥</span><span>Contacts</span>
       </router-link>
-      <button type="button" class="nav-item nav-button" @click="sendOpen = true">
-        <span class="nav-icon">💸</span><span>Send</span>
+      <router-link to="/activity" class="nav-item" :class="{ active: $route.path === '/activity' }">
+        <span class="nav-icon">🧾</span><span>Activity</span>
+      </router-link>
+      <button type="button" class="nav-item nav-scan" aria-label="Scan QR code" @click="scanOpen = true">
+        <span class="scan-icon">▣</span><span>Scan</span>
       </button>
       <button type="button" class="nav-item nav-button" @click="splitOpen = true">
         <span class="nav-icon">🍕</span><span>Split</span>
       </button>
-      <router-link to="/activity" class="nav-item nav-activity" :class="{ active: $route.path === '/activity' }">
-        <span class="nav-icon">🧾</span><span>Activity</span>
-      </router-link>
-      <router-link to="/me" class="nav-item" :class="{ active: $route.path === '/me' }">
+      <router-link to="/me" class="nav-item" :class="{ active: $route.path === '/me' || $route.path === '/settings' }">
         <span class="nav-icon">🪪</span><span>Profile</span>
       </router-link>
     </nav>
 
-    <QuickSendSheet :open="sendOpen" @close="sendOpen = false" />
+    <ScanSheet :open="scanOpen" @close="scanOpen = false" @pay="onScanPay" />
+    <QuickSendSheet :open="sendOpen" :initial-payment="pendingPayment" @close="onSendClose" />
     <SplitBillSheet :open="splitOpen" @close="splitOpen = false" />
     <RestoreBackupSheet :open="restoreOpen" @close="restoreOpen = false" />
   </div>
@@ -73,6 +89,7 @@ onMounted(async () => {
   height: calc(var(--nav-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   display: flex;
+  align-items: stretch;
   background: var(--card);
   border-top: 1px solid var(--border);
 }
@@ -97,9 +114,30 @@ onMounted(async () => {
   background: none;
   border: none;
   font: inherit;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+}
+.nav-scan {
+  flex: 1.1;
+  background: none;
+  border: none;
+  font: inherit;
+  cursor: pointer;
+  color: var(--nq-gold-dark);
+}
+.scan-icon {
+  width: 44px;
+  height: 44px;
+  margin-top: -18px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  box-shadow: 0 4px 14px rgba(233, 178, 19, 0.45);
 }
 .page-enter-active, .page-leave-active { transition: opacity 0.15s ease; }
 .page-enter-from, .page-leave-to { opacity: 0; }

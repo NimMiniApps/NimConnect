@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:https": "VITE_HTTPS=true vite",
     "build": "vue-tsc -b && vite build",
     "build:pages": "GITHUB_PAGES=true npm run build",
     "preview": "vite preview",
@@ -17,13 +18,14 @@
     "@nimiq/utils": "^0.12.4",
     "dexie": "^4.0.11",
     "pinia": "^3.0.1",
-    "qrcode": "^1.5.4",
     "qr-scanner": "^1.4.2",
+    "qrcode": "^1.5.4",
     "vue": "^3.5.13",
     "vue-router": "^4.5.0"
   },
   "devDependencies": {
     "@types/qrcode": "^1.5.5",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-vue": "^5.2.3",
     "@vue/tsconfig": "^0.7.0",
     "fake-indexeddb": "^6.0.0",

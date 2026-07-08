@@ -144,6 +144,19 @@ describe('fetchIncomingPayments', () => {
     ])
   })
 
+  it('excludes payments from contracts (HTLC/vesting), keeps basic wallets', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rpcResult([
+      { ...tx(OTHER, ME, 50000, 3000, 'htlc'), fromType: 2 },
+      { ...tx(THIRD, ME, 50000, 4000, 'vesting'), fromType: 1 },
+      { ...tx(OTHER, ME, 50000, 5000, 'person'), fromType: 0 },
+      tx(THIRD, ME, 50000, 6000, 'no-type'),
+    ])))
+
+    const items = await fetchIncomingPayments(ME)
+
+    expect(items.map(i => i.hash)).toEqual(['no-type', 'person'])
+  })
+
   it('orders incoming payments by newest block before timestamp fallback', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rpcResult([
       tx(OTHER, ME, 100000, 3000, 'older-block', 10),
