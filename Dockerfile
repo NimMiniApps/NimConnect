@@ -4,7 +4,7 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 
-# Baked in at build time — set to the public API URL (e.g. https://api-nimconnect.maestroi.cc).
+# Baked in at build time — set to the public API URL (e.g. https://api-nimconnect.nimiqminiapps.com).
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 

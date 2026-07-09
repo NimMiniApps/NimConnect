@@ -2,7 +2,7 @@
 
 A relationship manager for your wallet — a Nimiq Pay Mini App.
 
-**Live:** https://nimconnect.maestroi.cc · **GitHub Pages demo:** https://nimminiapps.github.io/NimConnect/
+**Live:** https://nimconnect.nimiqminiapps.com · **GitHub Pages demo:** https://nimminiapps.github.io/NimConnect/
 
 People don't remember addresses; they remember people. NimConnect turns every
 wallet address into a Profile: avatar (Nimiq identicon), name, tags, notes —
@@ -44,11 +44,11 @@ With Docker, encrypted cloud backup and live exchange rates work locally without
 
 ## Deployment
 
-### Homelab (primary) — `nimconnect.maestroi.cc`
+### Homelab (primary) — `nimconnect.nimiqminiapps.com`
 
 Docker Swarm stack with Traefik, same pattern as [NimiqLens](https://github.com/NimMiniApps/NimiqLens):
 
-1. Set repo variable `VITE_API_BASE_URL=https://api-nimconnect.maestroi.cc`
+1. Set repo variable `VITE_API_BASE_URL=https://api-nimconnect.nimiqminiapps.com`
 2. Push to `main` — [docker-build.yml](.github/workflows/docker-build.yml) publishes frontend + backend to GHCR
 3. `cp docker-compose.homelab.yml.example docker-compose.homelab.yml`
 4. `docker stack deploy -c docker-compose.homelab.yml nimconnect`

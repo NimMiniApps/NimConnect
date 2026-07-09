@@ -14,11 +14,11 @@
 # docker-compose.homelab.yml is gitignored so your real stack stays local.
 #
 # Domains (DNS → Traefik):
-#   nimconnect.maestroi.cc      → frontend
-#   api-nimconnect.maestroi.cc  → backend
+#   nimconnect.nimiqminiapps.com      → frontend
+#   api-nimconnect.nimiqminiapps.com  → backend
 #
 # GitHub repo variable (Settings → Actions → Variables):
-#   VITE_API_BASE_URL=https://api-nimconnect.maestroi.cc
+#   VITE_API_BASE_URL=https://api-nimconnect.nimiqminiapps.com
 
 services:
   backend:
@@ -26,7 +26,7 @@ services:
     environment:
       - PORT=8787
       - COINGECKO_API_BASE=https://api.coingecko.com/api/v3
-      - ALLOWED_ORIGIN=https://nimconnect.maestroi.cc,https://nimminiapps.github.io,https://maestroi.github.io
+      - ALLOWED_ORIGIN=https://nimconnect.nimiqminiapps.com,https://nimminiapps.github.io,https://maestroi.github.io
       - BACKUP_DIR=/data/backups
     volumes:
       - nimconnect_backups:/data/backups
@@ -40,7 +40,7 @@ services:
         condition: any
       labels:
         - traefik.enable=true
-        - traefik.http.routers.nimconnect-api.rule=Host(`api-nimconnect.maestroi.cc`)
+        - traefik.http.routers.nimconnect-api.rule=Host(`api-nimconnect.nimiqminiapps.com`)
         - traefik.http.routers.nimconnect-api.entrypoints=websecure
         - traefik.http.routers.nimconnect-api.tls=true
         - traefik.http.services.nimconnect-api.loadbalancer.server.port=8787
@@ -57,7 +57,7 @@ services:
         condition: any
       labels:
         - traefik.enable=true
-        - traefik.http.routers.nimconnect.rule=Host(`nimconnect.maestroi.cc`)
+        - traefik.http.routers.nimconnect.rule=Host(`nimconnect.nimiqminiapps.com`)
         - traefik.http.routers.nimconnect.entrypoints=websecure
         - traefik.http.routers.nimconnect.tls=true
         - traefik.http.services.nimconnect.loadbalancer.server.port=80

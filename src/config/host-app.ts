@@ -1,5 +1,5 @@
 /** Mini App domain registered in the Nimiq Pay catalog (not the URL slug). */
-const MINIAPP_DOMAIN = import.meta.env.VITE_NIMPAY_MINIAPP_DOMAIN ?? 'nimconnect.maestroi.cc'
+const MINIAPP_DOMAIN = import.meta.env.VITE_NIMPAY_MINIAPP_DOMAIN ?? 'nimconnect.nimiqminiapps.com'
 
 export const NIMPAY_OPEN_URL = `https://nimpay.app/miniapps/open/${MINIAPP_DOMAIN}`
 
