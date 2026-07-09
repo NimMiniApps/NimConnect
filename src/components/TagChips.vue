@@ -46,15 +46,15 @@ function removeTag(tag: string) {
   border: 1px solid var(--border);
   background: var(--card);
   color: var(--text-2);
-  border-radius: 16px;
+  border-radius: var(--nimiq-radius-pill);
   padding: 6px 12px;
   min-height: 32px;
   cursor: pointer;
 }
-.chip.active { background: var(--nq-blue); color: #fff; border-color: var(--nq-blue); }
+.chip.active { background: var(--nimiq-blue-bg); color: var(--nimiq-white); border-color: transparent; }
 .tag-input {
   width: 100%; height: 44px; padding: 0 12px; font: inherit;
-  border: 1px solid var(--border); border-radius: 10px;
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input);
   background: var(--card); color: var(--text);
 }
 </style>

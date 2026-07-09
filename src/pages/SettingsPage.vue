@@ -3,7 +3,8 @@ import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { loadSampleContacts } from '../services/samples'
-import { preferredCurrency } from '../services/prefs'
+import { preferredCurrency, incomingAddress } from '../services/prefs'
+import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { FIAT_CURRENCIES } from '../services/rates'
 import { clearHistoryCache } from '../services/history'
 import { resetBootstrap } from '../services/wallet-bootstrap'
@@ -16,7 +17,7 @@ import {
   cloudBackupAvailable, downloadCloudBackup, setBackupSession, clearBackupSession,
   uploadCloudBackup,
 } from '../services/cloud-backup'
-import { getMyAddress } from '../services/nimiq'
+import { getMyAddress, insideNimiqPay } from '../services/nimiq'
 import PassphraseSheet from '../components/PassphraseSheet.vue'
 import type { EncryptedBackup } from '../types/profile'
 
@@ -149,6 +150,10 @@ async function onEnableCloud(passphrase: string) {
 }
 
 async function enableCloudBackup() {
+  if (!insideNimiqPay) {
+    message.value = 'Open NimConnect inside Nimiq Pay to enable cloud backup.'
+    return
+  }
   if (!cloudBackupAvailable()) {
     message.value = 'Cloud backup API is not configured yet.'
     return
@@ -245,6 +250,16 @@ function cancelReset() {
         </select>
       </label>
       <p class="hint">Default currency for splits and invoices — always converted to NIM at the day's rate.</p>
+      <label class="pref-row">
+        <span>Incoming address</span>
+        <input
+          v-model="incomingAddress"
+          type="text"
+          placeholder="NQ…"
+          :class="{ invalid: incomingAddress.trim() && !ValidationUtils.isValidAddress(incomingAddress.trim()) }"
+        />
+      </label>
+      <p class="hint">Nimiq Pay receives on a separate address — paste it here so its payments show in Activity.</p>
     </div>
 
     <div class="card group">
@@ -254,10 +269,11 @@ function cancelReset() {
       <button class="item" @click="importBackup">⬆ Import backup</button>
       <input ref="fileInput" type="file" accept="application/json,.nimconnect" hidden @change="importJson" />
       <template v-if="cloudBackupAvailable()">
+        <p v-if="!insideNimiqPay" class="hint">Cloud backup requires Nimiq Pay to sign with your wallet.</p>
         <p class="hint">
           Cloud: {{ cloudBackupEnabled ? `on · synced ${formatBackupAge(lastCloudSyncAt)}` : 'off' }}
         </p>
-        <button v-if="!cloudBackupEnabled" class="item" @click="enableCloudBackup">☁️ Enable cloud backup</button>
+        <button v-if="!cloudBackupEnabled" class="item" :disabled="!insideNimiqPay" @click="enableCloudBackup">☁️ Enable cloud backup</button>
         <button v-else class="item" @click="syncCloudNow">☁️ Sync now</button>
         <button class="item" @click="restoreFromCloud">⬇ Restore from cloud</button>
         <button v-if="cloudBackupEnabled" class="item subtle" @click="disableCloudBackup">Disable cloud backup</button>
@@ -314,14 +330,17 @@ function cancelReset() {
 <style scoped>
 .page { padding: 16px; }
 .back { background: none; border: none; color: var(--nq-light-blue); font-size: 16px; padding: 8px 8px 12px 0; cursor: pointer; }
-h1 { font-size: 28px; margin: 0 0 16px; }
+h1 { font-size: 24px; line-height: 1.2; margin: 0 0 16px; }
 .group { padding: 16px 20px; margin-bottom: 16px; }
 .group h2 { font-size: 14px; color: var(--text-2); margin: 0 0 8px; }
 .pref-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-weight: 600; }
-.pref-row select {
+.pref-row select,
+.pref-row input {
   font: inherit; font-weight: 700; padding: 8px 10px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
+.pref-row input { flex: 1; min-width: 0; }
+.pref-row input.invalid { border-color: var(--nq-red); }
 .item {
   display: block; width: 100%; text-align: left; background: none; border: none;
   padding: 12px 0; min-height: 44px; font: inherit; font-weight: 600;

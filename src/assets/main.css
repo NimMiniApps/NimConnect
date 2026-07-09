@@ -3,20 +3,63 @@
 @import '@fontsource/mulish/700.css';
 
 :root {
-  --nq-blue: #1f2348;
-  --nq-gold: #e9b213;
-  --nq-gold-dark: #ec991c;
-  --nq-light-blue: #0582ca;
-  --nq-green: #21bca5;
-  --nq-red: #d94432;
+  --nimiq-blue: #1f2348;
+  --nimiq-light-blue: #0582ca;
+  --nimiq-gold: #e9b213;
+  --nimiq-green: #21bca5;
+  --nimiq-orange: #fc8702;
+  --nimiq-red: #d94432;
+  --nimiq-white: #fff;
+  --nimiq-gray: #f4f4f4;
+  --nimiq-light-gray: #fafafa;
+  --nimiq-blue-darkened: #151833;
+  --nimiq-light-blue-darkened: #0071c3;
+  --nimiq-gold-darkened: #e5a212;
+  --nimiq-green-darkened: #20b29e;
+  --nimiq-orange-darkened: #fc7500;
+  --nimiq-red-darkened: #d13030;
+  --nimiq-blue-bg: radial-gradient(100% 100% at bottom right, #260133, var(--nimiq-blue));
+  --nimiq-light-blue-bg: radial-gradient(100% 100% at bottom right, #265dd7, var(--nimiq-light-blue));
+  --nimiq-gold-bg: radial-gradient(100% 100% at bottom right, #ec991c, var(--nimiq-gold));
+  --nimiq-green-bg: radial-gradient(100% 100% at bottom right, #41a38e, var(--nimiq-green));
+  --nimiq-orange-bg: radial-gradient(100% 100% at bottom right, #fd6216, var(--nimiq-orange));
+  --nimiq-red-bg: radial-gradient(100% 100% at bottom right, #cc3047, var(--nimiq-red));
+  --nimiq-gold-bg-darkened: radial-gradient(100% 100% at bottom right, #e58a1b, var(--nimiq-gold-darkened));
+  --text-100: rgba(31, 35, 72, 1);
+  --text-80: rgba(31, 35, 72, 0.8);
+  --text-70: rgba(31, 35, 72, 0.7);
+  --text-60: rgba(31, 35, 72, 0.6);
+  --text-40: rgba(31, 35, 72, 0.4);
+  --text-20: rgba(31, 35, 72, 0.2);
+  --text-10: rgba(31, 35, 72, 0.1);
+  --text-6: rgba(31, 35, 72, 0.06);
+  --nimiq-font-family: 'Mulish', 'Muli', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --nimiq-font-family-mono: 'Fira Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --nimiq-radius-input: 4px;
+  --nimiq-radius-card: 10px;
+  --nimiq-radius-small: 14px;
+  --nimiq-radius-pill: 500px;
+  --nimiq-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  --nimiq-shadow-card: 0 4px 28px rgba(0, 0, 0, 0.111158);
+  --nimiq-ease: cubic-bezier(0.25, 0, 0, 1);
+  --attr-duration: 0.2s;
+  --movement-duration: 0.4s;
 
-  --bg: #f4f4f5;
-  --card: #ffffff;
-  --text: #1f2348;
-  --text-2: rgba(31, 35, 72, 0.6);
-  --border: rgba(31, 35, 72, 0.1);
-  --radius: 16px;
-  --shadow: 0 2px 12px rgba(31, 35, 72, 0.07);
+  --nq-blue: var(--nimiq-blue);
+  --nq-gold: var(--nimiq-gold);
+  --nq-gold-dark: var(--nimiq-gold-darkened);
+  --nq-light-blue: var(--nimiq-light-blue);
+  --nq-green: var(--nimiq-green);
+  --nq-orange: var(--nimiq-orange);
+  --nq-red: var(--nimiq-red);
+
+  --bg: var(--nimiq-gray);
+  --card: var(--nimiq-white);
+  --text: var(--text-100);
+  --text-2: var(--text-60);
+  --border: var(--text-10);
+  --radius: var(--nimiq-radius-card);
+  --shadow: var(--nimiq-shadow-card);
   --nav-h: 64px;
 }
 
@@ -34,9 +77,10 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: 'Mulish', system-ui, sans-serif;
+  font-family: var(--nimiq-font-family);
   background: var(--bg);
   color: var(--text);
+  font-size: 16px;
   -webkit-font-smoothing: antialiased;
 }
 button { font: inherit; }
@@ -46,3 +90,29 @@ button { font: inherit; }
   border-radius: var(--radius);
   box-shadow: var(--shadow);
 }
+
+.nq-button {
+  min-height: 48px;
+  padding: 0 24px;
+  border: none;
+  border-radius: var(--nimiq-radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background var(--attr-duration) var(--nimiq-ease),
+    transform var(--attr-duration) var(--nimiq-ease),
+    opacity var(--attr-duration) var(--nimiq-ease);
+}
+
+.nq-button:active { transform: scale(0.98); }
+.nq-button:disabled { cursor: default; opacity: 0.5; }
+.nq-button.light-blue { background: var(--nimiq-light-blue-bg); }
+.nq-button.green { background: var(--nimiq-green-bg); }
+.nq-button.red { background: var(--nimiq-red-bg); }

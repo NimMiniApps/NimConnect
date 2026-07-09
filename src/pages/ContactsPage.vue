@@ -87,7 +87,7 @@ function pendingCount(address: string): number {
 
 <style scoped>
 .page { padding: 16px 16px 88px; }
-.header h1 { font-size: 28px; margin: 8px 0 12px; }
+.header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 12px; }
 .status-strip {
   display: grid;
   grid-template-columns: 1fr 1.25fr 1fr;
@@ -99,23 +99,23 @@ function pendingCount(address: string): number {
   min-height: 68px;
   padding: 10px 8px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--card);
   color: var(--text);
   text-decoration: none;
   box-shadow: var(--shadow);
 }
 .primary-tile {
-  background:
-    linear-gradient(135deg, rgba(233, 178, 19, 0.22), rgba(33, 188, 165, 0.12)),
-    var(--card);
+  background: var(--nimiq-gold-bg);
+  color: var(--nimiq-white);
 }
+.primary-tile .status-label { color: rgba(255, 255, 255, 0.72); }
 .status-value {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 20px;
-  font-weight: 800;
+  font-weight: 700;
   line-height: 1.1;
 }
 .status-label {
@@ -123,14 +123,14 @@ function pendingCount(address: string): number {
   margin-top: 5px;
   color: var(--text-2);
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 600;
   text-transform: uppercase;
 }
 .section { margin-top: 20px; }
 .section-title {
-  font-size: 13px;
+  font-size: 14px;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.107em;
   color: var(--text-2);
   margin: 0 0 8px 4px;
 }
@@ -141,21 +141,21 @@ function pendingCount(address: string): number {
   bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
   width: 56px;
   height: 56px;
-  border-radius: 28px;
+  border-radius: var(--nimiq-radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 28px;
-  color: #fff;
+  color: var(--nimiq-white);
   text-decoration: none;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
-  box-shadow: 0 4px 16px rgba(233, 178, 19, 0.4);
+  background: var(--nimiq-gold-bg);
+  box-shadow: var(--nimiq-shadow);
 }
 .empty-action {
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--nimiq-radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -167,7 +167,7 @@ function pendingCount(address: string): number {
 }
 .primary-action {
   border: none;
-  color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 </style>

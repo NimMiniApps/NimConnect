@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, watch } from 'vue'
+import { insideNimiqPay } from './services/nimiq'
 import { bootstrapWallet } from './services/wallet-bootstrap'
 import { useProfilesStore } from './stores/profiles'
 import type { ParsedPaymentRequest } from './services/links'
+import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
+import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
 import QuickSendSheet from './components/QuickSendSheet.vue'
 import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
@@ -13,8 +16,9 @@ const sendOpen = ref(false)
 const splitOpen = ref(false)
 const restoreOpen = ref(false)
 const pendingPayment = ref<ParsedPaymentRequest | null>(null)
+const browserMode = ref(insideNimiqPay || hasBrowserModeOptIn())
 
-onMounted(async () => {
+async function initApp() {
   await bootstrapWallet()
   const store = useProfilesStore()
   await store.load()
@@ -24,7 +28,20 @@ onMounted(async () => {
   ) {
     restoreOpen.value = true
   }
+}
+
+onMounted(() => {
+  if (browserMode.value) void initApp()
 })
+
+watch(browserMode, enabled => {
+  if (enabled) void initApp()
+})
+
+function onContinueInBrowser() {
+  enableBrowserMode()
+  browserMode.value = true
+}
 
 function onScanPay(request: ParsedPaymentRequest) {
   pendingPayment.value = request
@@ -39,7 +56,17 @@ function onSendClose() {
 </script>
 
 <template>
-  <div class="app">
+  <OpenInNimiqPayLanding
+    v-if="!insideNimiqPay && !browserMode"
+    @continue="onContinueInBrowser"
+  />
+
+  <div v-else class="app">
+    <p v-if="!insideNimiqPay" class="host-banner" role="status">
+      Limited browser mode — wallet features need
+      <a :href="NIMPAY_OPEN_URL" class="banner-link">Nimiq Pay</a>.
+    </p>
+
     <router-view v-slot="{ Component }">
       <transition name="page" mode="out-in">
         <component :is="Component" />
@@ -79,6 +106,19 @@ function onSendClose() {
   padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
   overflow-x: hidden;
 }
+.host-banner {
+  margin: 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--nimiq-blue);
+  background: #fff3cd;
+  border-bottom: 1px solid #e9b21355;
+}
+.banner-link {
+  color: inherit;
+  font-weight: 800;
+}
 .bottom-nav {
   position: fixed;
   bottom: 0;
@@ -92,6 +132,7 @@ function onSendClose() {
   align-items: stretch;
   background: var(--card);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.08);
 }
 .nav-item {
   flex: 1;
@@ -130,15 +171,15 @@ function onSendClose() {
   width: 44px;
   height: 44px;
   margin-top: -18px;
-  border-radius: 22px;
+  border-radius: var(--nimiq-radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 22px;
-  color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
-  box-shadow: 0 4px 14px rgba(233, 178, 19, 0.45);
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
+  box-shadow: var(--nimiq-shadow);
 }
-.page-enter-active, .page-leave-active { transition: opacity 0.15s ease; }
+.page-enter-active, .page-leave-active { transition: opacity var(--attr-duration) var(--nimiq-ease); }
 .page-enter-from, .page-leave-to { opacity: 0; }
 </style>

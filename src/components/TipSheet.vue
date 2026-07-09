@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
-import { getProvider, sendNim } from '../services/nimiq'
+import { insideNimiqPay, sendNim } from '../services/nimiq'
 import ActionSheet from './ActionSheet.vue'
 
 const props = defineProps<{ profile: Profile; open: boolean }>()
@@ -11,15 +11,10 @@ const emit = defineEmits<{ close: [] }>()
 const PRESETS = [1, 5, 10, 25]
 
 const store = useProfilesStore()
-const insidePay = ref(false)
 const amount = ref<number | null>(null)
 const message = ref('Thanks! 💛')
 const sending = ref(false)
 const result = ref<'ok' | string | null>(null)
-
-onMounted(async () => {
-  insidePay.value = (await getProvider()) !== null
-})
 
 function close() {
   amount.value = null
@@ -46,7 +41,7 @@ async function doTip() {
 
 <template>
   <ActionSheet :open="open" :title="`Tip ${profile.name}`" @close="close">
-    <template v-if="insidePay">
+    <template v-if="insideNimiqPay">
       <div class="presets">
         <button
           v-for="p in PRESETS"
@@ -75,24 +70,24 @@ async function doTip() {
 <style scoped>
 .presets { display: flex; gap: 8px; margin-bottom: 12px; }
 .preset {
-  flex: 1; min-height: 48px; border-radius: 12px; cursor: pointer;
+  flex: 1; min-height: 48px; border-radius: var(--nimiq-radius-small); cursor: pointer;
   border: 1px solid var(--border); background: var(--bg); color: var(--text);
   font-weight: 700;
 }
 .preset.selected {
   border-color: var(--nq-gold);
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
-  color: #fff;
+  background: var(--nimiq-gold-bg);
+  color: var(--nimiq-white);
 }
 .message-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .message-label input {
   font: inherit; padding: 10px 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .primary {
-  width: 100%; height: 48px; border: none; border-radius: 24px; cursor: pointer;
-  font-weight: 700; font-size: 16px; color: #fff; margin-top: 12px;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  width: 100%; height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  font-weight: 700; font-size: 16px; color: var(--nimiq-white); margin-top: 12px;
+  background: var(--nimiq-gold-bg);
 }
 .primary:disabled { opacity: 0.5; }
 .ok { color: var(--nq-green); font-weight: 700; }

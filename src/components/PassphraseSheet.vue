@@ -62,13 +62,13 @@ function submit() {
 .field span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text-2); }
 .field input {
   width: 100%; font: inherit; padding: 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .error { color: var(--nq-red); font-size: 14px; margin: 0 0 8px; }
 .primary, .secondary {
   display: block; width: 100%; min-height: 44px; margin-top: 8px;
-  border: none; border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer;
+  border: none; border-radius: var(--nimiq-radius-pill); font: inherit; font-weight: 700; cursor: pointer;
 }
-.primary { background: var(--nq-gold); color: var(--nq-blue); }
+.primary { background: var(--nimiq-gold-bg); color: var(--nimiq-white); }
 .secondary { background: none; color: var(--text-2); }
 </style>

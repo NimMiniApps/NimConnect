@@ -191,7 +191,7 @@ function close() {
   min-height: 44px;
   padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: var(--nimiq-radius-pill);
   background: var(--bg);
   color: var(--text);
 }
@@ -200,9 +200,9 @@ function close() {
   min-height: 44px;
   padding: 0 14px;
   border: none;
-  border-radius: 22px;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
-  color: #fff;
+  border-radius: var(--nimiq-radius-pill);
+  background: var(--nimiq-gold-bg);
+  color: var(--nimiq-white);
   font: inherit;
   font-weight: 800;
   cursor: pointer;
@@ -216,8 +216,8 @@ function close() {
   padding: 8px 0 16px;
   text-align: center;
 }
-.name { margin: 0; font-size: 20px; font-weight: 800; }
-.amount { margin: 0; font-size: 28px; font-weight: 800; color: var(--nq-gold-dark); }
+.name { margin: 0; font-size: 20px; font-weight: 700; }
+.amount { margin: 0; font-size: 24px; font-weight: 700; color: var(--nq-gold-dark); }
 .message { margin: 0; font-size: 14px; color: var(--text-2); }
 .subtle { margin: 0; font-size: 14px; color: var(--text-2); }
 .actions { display: flex; flex-direction: column; gap: 10px; }
@@ -225,16 +225,16 @@ function close() {
 .secondary,
 .ghost {
   min-height: 48px;
-  border-radius: 24px;
+  border-radius: var(--nimiq-radius-pill);
   font: inherit;
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 700;
   cursor: pointer;
 }
 .primary {
   border: none;
-  color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 .secondary {
   border: 1px solid var(--border);

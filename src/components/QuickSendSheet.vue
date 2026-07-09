@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useProfilesStore } from '../stores/profiles'
-import { getProvider, MESSAGE_MAX_BYTES, messageBytes, sendNim } from '../services/nimiq'
+import { insideNimiqPay, MESSAGE_MAX_BYTES, messageBytes, sendNim } from '../services/nimiq'
 import { shortAddress, type ParsedPaymentRequest } from '../services/links'
 import ActionSheet from './ActionSheet.vue'
 import CurrencyAmountInput from './CurrencyAmountInput.vue'
@@ -14,7 +14,6 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 
 const store = useProfilesStore()
-const insidePay = ref(false)
 const query = ref('')
 const selectedId = ref<string | null>(null)
 const payAddress = ref<string | null>(null)
@@ -26,13 +25,11 @@ const sendResult = ref<'ok' | string | null>(null)
 
 onMounted(async () => {
   await store.load()
-  insidePay.value = (await getProvider()) !== null
 })
 
 watch(() => props.open, async open => {
   if (!open) return
   await store.load()
-  insidePay.value = (await getProvider()) !== null
   if (props.initialPayment) await applyPaymentRequest(props.initialPayment)
 })
 
@@ -114,7 +111,7 @@ function close() {
 
 <template>
   <ActionSheet :open="open" title="Send NIM" @close="close">
-    <p v-if="!insidePay" class="hint">Open NimConnect inside Nimiq Pay to send NIM directly.</p>
+    <p v-if="!insideNimiqPay" class="hint">Open NimConnect inside Nimiq Pay to send NIM directly.</p>
 
     <template v-else-if="store.contacts.length === 0 && !showSendForm">
       <p class="hint">Add a contact first, or use Scan to pay from a QR code.</p>
@@ -190,7 +187,7 @@ function close() {
   min-height: 44px;
   padding: 10px 14px;
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: var(--nimiq-radius-pill);
   background: var(--bg);
   color: var(--text);
 }
@@ -203,7 +200,7 @@ function close() {
   gap: 10px;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--radius);
   background: var(--bg);
   color: var(--text);
   cursor: pointer;
@@ -219,7 +216,7 @@ function close() {
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--nimiq-radius-input);
   background: var(--bg);
   color: var(--text);
 }
@@ -229,16 +226,16 @@ function close() {
   min-height: 48px;
   margin-top: 12px;
   border: none;
-  border-radius: 24px;
+  border-radius: var(--nimiq-radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
   cursor: pointer;
   font: inherit;
   font-size: 16px;
-  font-weight: 800;
+  font-weight: 700;
   text-decoration: none;
 }
 .primary:disabled { opacity: 0.5; cursor: default; }

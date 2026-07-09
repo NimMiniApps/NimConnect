@@ -1,0 +1,28 @@
+# Local development — NimConnect API on http://localhost:8787
+#
+#   docker compose up --build        # foreground
+#   docker compose up -d --build     # background
+#   docker compose down
+#
+# Then run the frontend (proxies /api → localhost:8787):
+#   npm run dev
+#   npm run dev:https   # HTTPS for mobile QR testing on LAN
+#
+# Health: curl http://localhost:8787/api/health
+
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        COMMIT_HASH: local
+        BUILD_TIME: local
+    ports:
+      - "8787:8787"
+    environment:
+      PORT: "8787"
+      COINGECKO_API_BASE: https://api.coingecko.com/api/v3
+      ALLOWED_ORIGIN: "*"
+      BACKUP_DIR: /data/backups
+    volumes:
+      - ./data/backups:/data/backups

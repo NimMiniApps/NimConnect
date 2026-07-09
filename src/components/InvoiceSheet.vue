@@ -119,23 +119,23 @@ function close() {
 .new-fields { display: flex; flex-direction: column; gap: 8px; }
 .new-fields input {
   font: inherit; padding: 10px 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .primary {
-  height: 48px; border: none; border-radius: 24px; cursor: pointer;
-  font-weight: 700; font-size: 16px; color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  font-weight: 700; font-size: 16px; color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 .primary:disabled { opacity: 0.5; }
 .list { display: flex; flex-direction: column; gap: 8px; }
 .invoice-row {
   width: 100%; display: flex; align-items: center; gap: 10px;
   min-height: 48px; padding: 0 12px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);
   font: inherit;
 }
-.status { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px; }
-.status.pending { background: rgba(233, 178, 19, 0.15); color: var(--nq-gold-dark); }
+.status { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: var(--nimiq-radius-small); }
+.status.pending { background: var(--text-6); color: var(--nq-gold-dark); }
 .status.paid { background: rgba(33, 188, 165, 0.15); color: var(--nq-green); }
 .desc { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .amount { font-weight: 700; text-align: right; }
@@ -145,7 +145,7 @@ function close() {
 .when { margin: 0; font-size: 13px; color: var(--text-2); }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .secondary {
-  min-height: 44px; padding: 0 16px; border-radius: 22px; cursor: pointer;
+  min-height: 44px; padding: 0 16px; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   border: 1px solid var(--border); background: var(--card); color: var(--nq-light-blue); font-weight: 700;
 }
 .secondary.danger { color: var(--nq-red); }

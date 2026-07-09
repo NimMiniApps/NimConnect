@@ -176,7 +176,7 @@ function close() {
 .amount-label, .message-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .amount-label input, .message-label input {
   font: inherit; padding: 10px 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .amount-label input { font-size: 24px; text-align: center; }
 .who { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
@@ -185,23 +185,23 @@ function close() {
 .person-name { flex: 1; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .filter-input {
   font: inherit; padding: 10px 12px; min-height: 44px; margin: 4px 0;
-  border: 1px solid var(--border); border-radius: 22px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); background: var(--bg); color: var(--text);
 }
 .share-input {
   width: 96px; font: inherit; padding: 6px 8px; text-align: right;
-  border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .requests { display: flex; flex-direction: column; gap: 8px; }
 .request-row {
   width: 100%; display: flex; justify-content: space-between; align-items: center;
   min-height: 48px; padding: 0 12px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);
   font: inherit;
 }
 .share { font-weight: 700; color: var(--nq-gold-dark); }
 .request-detail { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .secondary {
-  min-height: 44px; padding: 0 20px; border-radius: 22px; cursor: pointer;
+  min-height: 44px; padding: 0 20px; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   border: 1px solid var(--border); background: var(--card); color: var(--nq-light-blue); font-weight: 700;
 }
 .err { color: var(--nq-red); font-size: 14px; }

@@ -90,15 +90,15 @@ function onPointerUp(event: PointerEvent) {
 <style scoped>
 .backdrop {
   position: fixed; inset: 0; z-index: 50;
-  background: rgba(31, 35, 72, 0.4);
+  background: var(--text-40);
   display: flex; align-items: flex-end; justify-content: center;
   overscroll-behavior: contain;
   touch-action: none;
 }
 .sheet {
   width: 100%; max-width: 560px;
-  border-radius: var(--radius) var(--radius) 0 0;
-  padding: 0 20px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 24px 24px 0 0;
+  padding: 0 24px calc(24px + env(safe-area-inset-bottom));
   max-height: 80dvh; overflow-y: auto;
   overscroll-behavior: contain;
   touch-action: pan-y;
@@ -118,10 +118,10 @@ function onPointerUp(event: PointerEvent) {
   touch-action: none;
 }
 .sheet-handle:active { cursor: grabbing; }
-.sheet-bar { width: 36px; height: 4px; border-radius: 2px; background: var(--border); }
-.sheet h2 { font-size: 18px; margin: 12px 0; }
-.sheet-enter-active, .sheet-leave-active { transition: opacity 0.2s ease; }
-.sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: transform 0.2s ease; }
+.sheet-bar { width: 40px; height: 4px; border-radius: 2px; background: var(--text-20); }
+.sheet h2 { font-size: 20px; line-height: 1.2; margin: 12px 0 16px; }
+.sheet-enter-active, .sheet-leave-active { transition: opacity var(--attr-duration) var(--nimiq-ease); }
+.sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: transform var(--attr-duration) var(--nimiq-ease); }
 .sheet-enter-from, .sheet-leave-to { opacity: 0; }
 .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: translateY(100%); }
 </style>

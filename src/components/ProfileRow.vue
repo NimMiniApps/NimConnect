@@ -37,11 +37,11 @@ defineProps<{ profile: Profile; pendingCount?: number }>()
   min-width: 24px;
   height: 24px;
   padding: 0 7px;
-  border-radius: 12px;
+  border-radius: var(--nimiq-radius-small);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: rgba(233, 178, 19, 0.16);
+  background: var(--text-6);
   color: var(--nq-gold-dark);
   font-size: 12px;
   font-weight: 800;

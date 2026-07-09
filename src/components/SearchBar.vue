@@ -19,7 +19,7 @@ defineEmits<{ 'update:modelValue': [value: string] }>()
   height: 44px;
   padding: 0 16px;
   border: 1px solid var(--border);
-  border-radius: 22px;
+  border-radius: var(--nimiq-radius-pill);
   background: var(--card);
   color: var(--text);
   font: inherit;

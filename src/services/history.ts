@@ -173,14 +173,16 @@ export async function fetchHistory(myAddress: string, otherAddress: string): Pro
   }
 }
 
-export async function fetchIncomingPayments(myAddress: string): Promise<IncomingPayment[]> {
-  const key = incomingCacheKey(myAddress)
+/** All addresses belong to the same user — payments between them are self-transfers, not incoming. */
+export async function fetchIncomingPayments(myAddresses: string[]): Promise<IncomingPayment[]> {
+  const mine = new Set(myAddresses.map(compact))
+  const key = incomingCacheKey([...mine].sort().join('+'))
   try {
-    const txs = await fetchTransactionsByAddress(myAddress, 100)
-    const me = compact(myAddress)
+    const pages = await Promise.all(myAddresses.map(a => fetchTransactionsByAddress(a, 100)))
+    const txs = [...new Map(pages.flat().map(tx => [tx.hash, tx])).values()]
     const items = txs
       // ponytail: only basic-wallet senders; hides cross-asset swap payouts (HTLC leg) too — surface those with a "via swap" label if users miss them
-      .filter(t => compact(t.to) === me && compact(t.from) !== me && (t.fromType ?? 0) === 0)
+      .filter(t => mine.has(compact(t.to)) && !mine.has(compact(t.from)) && (t.fromType ?? 0) === 0)
       .map(t => ({
         hash: t.hash,
         blockNumber: t.blockNumber ?? t.validityStartHeight,

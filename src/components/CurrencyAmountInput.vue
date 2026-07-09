@@ -77,11 +77,11 @@ defineExpose({ reset, setNim })
 .row input {
   flex: 1; min-width: 0; font: inherit; font-size: 24px; text-align: center;
   padding: 10px 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .row select {
   width: 84px; font: inherit; font-weight: 700; padding: 0 8px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .approx { margin: 0; font-size: 13px; color: var(--nq-green); font-weight: 700; text-align: center; }
 .warn { margin: 0; font-size: 13px; color: var(--nq-red); text-align: center; }

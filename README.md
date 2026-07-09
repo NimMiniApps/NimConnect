@@ -26,12 +26,21 @@ Nimiq Pay Mini App SDK.
 
 ```bash
 npm install
-npm run dev     # plain-browser mode: everything works except live Send
-npm run dev:https   # HTTPS on LAN — needed to test QR camera on a phone
-npm run test    # vitest unit tests
+
+# Terminal 1 — API (pick one)
+docker compose up --build          # Docker, http://localhost:8787
+# cd backend && go run .           # or native Go
+
+# Terminal 2 — frontend
+npm run dev          # http://localhost:5173 — proxies /api to :8787
+npm run dev:https    # HTTPS on LAN — for mobile QR camera testing
+
+npm run test
 npm run build
 npm run build:pages   # production build for GitHub Pages (/NimConnect/ base)
 ```
+
+With Docker, encrypted cloud backup and live exchange rates work locally without installing Go.
 
 ## Deployment
 

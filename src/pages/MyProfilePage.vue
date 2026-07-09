@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
-import { walletStatus } from '../services/nimiq'
+import { walletStatus, insideNimiqPay } from '../services/nimiq'
 import { bootstrapWallet, retryWalletBootstrap } from '../services/wallet-bootstrap'
 import ProfileView from '../components/ProfileView.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -55,11 +55,24 @@ async function retry() {
 
     <template v-else>
       <EmptyState
+        v-if="insideNimiqPay"
         icon="🪪"
         title="No wallet connected"
         hint="Tap Connect below when Nimiq Pay asks for wallet access."
       />
-      <button type="button" class="retry" :disabled="retrying" @click="retry">
+      <EmptyState
+        v-else
+        icon="📱"
+        title="Open in Nimiq Pay"
+        hint="Wallet features need the Nimiq Pay app. You can still manage contacts and backups here in the browser."
+      />
+      <button
+        v-if="insideNimiqPay"
+        type="button"
+        class="retry"
+        :disabled="retrying"
+        @click="retry"
+      >
         Connect wallet
       </button>
     </template>
@@ -69,14 +82,14 @@ async function retry() {
 <style scoped>
 .page { padding: 16px; }
 .header { display: flex; align-items: center; justify-content: space-between; }
-.header h1 { font-size: 28px; margin: 8px 0 12px; }
+.header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 12px; }
 .settings-link { font-size: 22px; text-decoration: none; color: var(--text-2); min-width: 44px; min-height: 44px; display: flex; align-items: center; justify-content: center; }
 .hint { color: var(--text-2); }
 .retry {
   display: block; width: 100%; height: 48px; margin-top: 16px;
-  border: none; border-radius: 24px; cursor: pointer;
-  font-weight: 700; font-size: 16px; color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  font-weight: 700; font-size: 16px; color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 .retry:disabled { opacity: 0.5; }
 </style>

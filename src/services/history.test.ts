@@ -136,7 +136,7 @@ describe('fetchIncomingPayments', () => {
       tx(OTHER, ME, 50000, 3000, 'older'),
     ])))
 
-    const items = await fetchIncomingPayments(ME)
+    const items = await fetchIncomingPayments([ME])
 
     expect(items).toEqual([
       { hash: 'newer', timestamp: 4000, valueNim: 2.5, sender: THIRD, message: 'For coffee' },
@@ -152,9 +152,27 @@ describe('fetchIncomingPayments', () => {
       tx(THIRD, ME, 50000, 6000, 'no-type'),
     ])))
 
-    const items = await fetchIncomingPayments(ME)
+    const items = await fetchIncomingPayments([ME])
 
     expect(items.map(i => i.hash)).toEqual(['no-type', 'person'])
+  })
+
+  it('merges payments across my addresses and excludes transfers between them', async () => {
+    const pageMe = rpcResult([
+      tx(THIRD, ME, 100000, 2000, 'to-outgoing'),
+      tx(OTHER, ME, 50000, 3000, 'self-transfer'),
+    ])
+    const pageIncoming = rpcResult([
+      tx(THIRD, OTHER, 200000, 4000, 'to-incoming'),
+      tx(OTHER, ME, 50000, 3000, 'self-transfer'),
+    ])
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(pageMe)
+      .mockResolvedValueOnce(pageIncoming))
+
+    const items = await fetchIncomingPayments([ME, OTHER])
+
+    expect(items.map(i => i.hash)).toEqual(['to-incoming', 'to-outgoing'])
   })
 
   it('orders incoming payments by newest block before timestamp fallback', async () => {
@@ -163,7 +181,7 @@ describe('fetchIncomingPayments', () => {
       tx(THIRD, ME, 100000, 1000, 'newer-block', 12),
     ])))
 
-    const items = await fetchIncomingPayments(ME)
+    const items = await fetchIncomingPayments([ME])
 
     expect(items.map(i => i.hash)).toEqual(['newer-block', 'older-block'])
   })
@@ -175,7 +193,7 @@ describe('fetchIncomingPayments', () => {
       tx(OTHER, ME, 25000, 5000, 'newest', 12),
     ])))
 
-    const items = await fetchIncomingPayments(ME)
+    const items = await fetchIncomingPayments([ME])
 
     expect(items.map(i => i.hash)).toEqual(['newest', 'middle', 'oldest'])
   })
@@ -196,7 +214,7 @@ describe('fetchIncomingPayments', () => {
       { hash: 'new', timestamp: 3000, valueNim: 2, sender: THIRD },
     ]))
 
-    const items = await fetchIncomingPayments(ME)
+    const items = await fetchIncomingPayments([ME])
 
     expect(items.map(i => i.hash)).toEqual(['new', 'old'])
   })

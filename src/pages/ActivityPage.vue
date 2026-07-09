@@ -4,6 +4,9 @@ import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore } from '../stores/invoices'
 import { makeRequestLink, shortAddress, transactionExplorerUrl } from '../services/links'
 import { fetchIncomingPayments, newestFirst, type IncomingPayment } from '../services/history'
+import { walletAddresses } from '../services/nimiq'
+import { incomingAddress } from '../services/prefs'
+import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import EmptyState from '../components/EmptyState.vue'
 import Identicon from '../components/Identicon.vue'
 
@@ -56,7 +59,10 @@ async function loadIncoming() {
   incomingLoading.value = true
   incomingError.value = false
   try {
-    incoming.value = await fetchIncomingPayments(profilesStore.self.address)
+    const addresses = new Set(walletAddresses.value.length ? walletAddresses.value : [profilesStore.self.address])
+    const manual = incomingAddress.value.trim()
+    if (manual && ValidationUtils.isValidAddress(manual)) addresses.add(manual)
+    incoming.value = await fetchIncomingPayments([...addresses])
   } catch {
     incomingError.value = true
   } finally {
@@ -216,21 +222,21 @@ async function loadIncoming() {
   gap: 16px;
   margin-bottom: 14px;
 }
-.header h1 { font-size: 28px; margin: 8px 0 4px; }
+.header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 4px; }
 .header p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.4; }
 .add-link {
   width: 44px;
   height: 44px;
   flex: 0 0 44px;
   margin-top: 4px;
-  border-radius: 22px;
+  border-radius: var(--nimiq-radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--nimiq-white);
   text-decoration: none;
   font-size: 26px;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  background: var(--nimiq-gold-bg);
 }
 .summary {
   display: grid;
@@ -242,20 +248,20 @@ async function loadIncoming() {
 .summary-side {
   min-height: 82px;
   padding: 14px;
-  border-radius: 16px;
+  border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--card);
   box-shadow: var(--shadow);
 }
 .summary-main {
-  background:
-    linear-gradient(135deg, rgba(233, 178, 19, 0.22), rgba(5, 130, 202, 0.12)),
-    var(--card);
+  background: var(--nimiq-gold-bg);
+  color: var(--nimiq-white);
 }
+.summary-main .summary-label { color: rgba(255, 255, 255, 0.72); }
 .summary-value {
   display: block;
-  font-size: 26px;
-  font-weight: 900;
+  font-size: 24px;
+  font-weight: 700;
   line-height: 1.1;
 }
 .summary-label {
@@ -263,14 +269,14 @@ async function loadIncoming() {
   margin-top: 6px;
   color: var(--text-2);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 600;
   text-transform: uppercase;
 }
 .notice {
   margin: 0 0 14px;
   padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(233, 178, 19, 0.14);
+  border-radius: var(--radius);
+  background: var(--text-6);
   color: var(--text);
   font-size: 13px;
 }
@@ -286,7 +292,7 @@ async function loadIncoming() {
 .section-head h2 {
   margin: 0;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: 700;
   color: var(--text-2);
   text-transform: uppercase;
 }
@@ -300,7 +306,7 @@ async function loadIncoming() {
   cursor: pointer;
   font: inherit;
   font-size: 12px;
-  font-weight: 800;
+  font-weight: 700;
 }
 .refresh:disabled { opacity: 0.55; cursor: default; }
 .invoice-list { display: flex; flex-direction: column; gap: 12px; }
@@ -318,7 +324,7 @@ async function loadIncoming() {
   display: block;
   color: var(--text);
   text-decoration: none;
-  font-weight: 800;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -327,7 +333,7 @@ async function loadIncoming() {
 .invoice-date { display: block; margin-top: 2px; color: var(--text-2); font-size: 12px; }
 .invoice-amount {
   text-align: right;
-  font-weight: 900;
+  font-weight: 700;
   color: var(--nq-gold-dark);
   flex: 0 0 auto;
   max-width: 38%;
@@ -372,8 +378,8 @@ async function loadIncoming() {
 }
 .action.primary {
   border: none;
-  color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 .action.danger { color: var(--nq-red); }
 .action:disabled {
@@ -390,7 +396,7 @@ async function loadIncoming() {
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: var(--nimiq-radius-pill);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -402,7 +408,7 @@ async function loadIncoming() {
 }
 .primary-action {
   border: none;
-  color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 </style>

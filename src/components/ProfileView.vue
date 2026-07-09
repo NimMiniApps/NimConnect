@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
-import { getProvider, sendNim, messageBytes, MESSAGE_MAX_BYTES } from '../services/nimiq'
+import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES } from '../services/nimiq'
 import { makeRequestLink, transactionExplorerUrl } from '../services/links'
 import { fetchHistory, type HistoryItem } from '../services/history'
 import Identicon from './Identicon.vue'
@@ -16,7 +16,6 @@ const props = defineProps<{ profile: Profile; own?: boolean }>()
 defineEmits<{ edit: []; remove: [] }>()
 
 const store = useProfilesStore()
-const insidePay = ref(false)
 const sheet = ref<'send' | 'request' | 'history' | 'tip' | 'split' | 'invoice' | null>(null)
 const amount = ref<number | null>(null)
 const message = ref('')
@@ -26,10 +25,6 @@ const sendResult = ref<'ok' | string | null>(null)
 const history = ref<HistoryItem[] | null>(null)
 const historyError = ref(false)
 const copied = ref(false)
-
-onMounted(async () => {
-  insidePay.value = (await getProvider()) !== null
-})
 
 const requestLink = computed(() => makeRequestLink(props.profile.address, amount.value ?? undefined))
 const dateAdded = computed(() => new Date(props.profile.createdAt).toLocaleDateString())
@@ -148,7 +143,7 @@ async function loadHistory() {
     </div>
 
     <ActionSheet :open="sheet === 'send'" title="Send NIM" @close="sheet = null">
-      <template v-if="insidePay">
+      <template v-if="insideNimiqPay">
         <label class="amount-label">
           Amount (NIM)
           <input v-model.number="amount" type="number" min="0.00001" step="any" placeholder="0.00" />
@@ -210,23 +205,23 @@ async function loadHistory() {
 <style scoped>
 .profile { display: flex; flex-direction: column; gap: 16px; }
 .head { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
-.name { font-size: 24px; margin: 4px 0 0; display: flex; align-items: center; gap: 8px; }
+.name { font-size: 24px; line-height: 1.2; margin: 4px 0 0; display: flex; align-items: center; gap: 8px; }
 .star { background: none; border: none; font-size: 24px; color: var(--text-2); cursor: pointer; min-width: 44px; min-height: 44px; }
 .star.on { color: var(--nq-gold); }
 .address {
   background: none; border: none; cursor: pointer; color: var(--text-2);
-  font-family: monospace; font-size: 13px; line-height: 1.5; word-break: break-all; padding: 4px;
+  font-family: var(--nimiq-font-family-mono); font-size: 13px; line-height: 1.5; word-break: break-all; padding: 4px;
 }
-.copy-hint { display: block; font-family: 'Mulish', sans-serif; font-size: 11px; color: var(--nq-light-blue); }
+.copy-hint { display: block; font-family: var(--nimiq-font-family); font-size: 11px; color: var(--nq-light-blue); }
 .bio { margin: 0; color: var(--text-2); font-size: 14px; max-width: 320px; }
 .link-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .link-chip {
   display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px;
-  border: 1px solid var(--border); border-radius: 16px;
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill);
   color: var(--nq-light-blue); font-size: 13px; font-weight: 700; text-decoration: none;
 }
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.tag { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 3px 10px; font-size: 12px; }
+.tag { background: var(--text-6); border: 1px solid var(--border); border-radius: var(--nimiq-radius-small); padding: 3px 10px; font-size: 12px; }
 .meta { font-size: 12px; color: var(--text-2); }
 .actions { display: flex; gap: 10px; }
 .actions.future { opacity: 0.45; }
@@ -251,16 +246,16 @@ async function loadHistory() {
 .message-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .message-label input {
   font: inherit; padding: 10px 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .amount-label input {
   font: inherit; font-size: 24px; padding: 10px 12px; text-align: center;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
 .primary {
-  width: 100%; height: 48px; border: none; border-radius: 24px; cursor: pointer;
-  font-weight: 700; font-size: 16px; color: #fff; margin-top: 12px;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  width: 100%; height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  font-weight: 700; font-size: 16px; color: var(--nimiq-white); margin-top: 12px;
+  background: var(--nimiq-gold-bg);
 }
 .primary:disabled { opacity: 0.5; }
 .ok { color: var(--nq-green); font-weight: 700; }

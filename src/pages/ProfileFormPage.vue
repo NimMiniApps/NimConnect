@@ -185,7 +185,7 @@ async function save() {
 <style scoped>
 .page { padding: 16px; }
 .form-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
-.form-header h1 { font-size: 22px; margin: 0; }
+.form-header h1 { font-size: 24px; line-height: 1.2; margin: 0; }
 .back { background: none; border: none; color: var(--nq-light-blue); font-size: 16px; padding: 8px; cursor: pointer; }
 .form { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .avatar-preview { display: flex; justify-content: center; }
@@ -193,7 +193,7 @@ async function save() {
 .field > span { font-size: 13px; font-weight: 700; color: var(--text-2); }
 .field input, .field select, .field textarea {
   font: inherit; padding: 10px 12px; min-height: 44px;
-  border: 1px solid var(--border); border-radius: 10px;
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input);
   background: var(--bg); color: var(--text);
 }
 .address-row { display: flex; gap: 8px; }
@@ -203,15 +203,15 @@ async function save() {
 .field input:disabled { opacity: 0.6; }
 .address-row input { flex: 1; }
 .scan-btn {
-  width: 44px; border: 1px solid var(--border); border-radius: 10px;
+  width: 44px; border: 1px solid var(--border); border-radius: var(--nimiq-radius-input);
   background: var(--bg); color: var(--text); font-size: 20px; cursor: pointer;
 }
 .favorite-row { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; }
 .error { color: var(--nq-red); font-size: 14px; margin: 0; }
 .primary {
-  height: 48px; border: none; border-radius: 24px; cursor: pointer;
-  font-weight: 700; font-size: 16px; color: #fff;
-  background: linear-gradient(135deg, var(--nq-gold-dark), var(--nq-gold));
+  height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  font-weight: 700; font-size: 16px; color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
 }
 .primary:disabled { opacity: 0.5; cursor: default; }
 </style>
