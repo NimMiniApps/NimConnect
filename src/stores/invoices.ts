@@ -16,15 +16,28 @@ export function isOverdue(invoice: Invoice, now = Date.now()): boolean {
  * Suggest pending invoices that look paid: an incoming payment from the invoice
  * address, for at least the invoice amount, sent after the invoice was created.
  * Each payment settles at most one invoice (oldest invoice first).
+ *
+ * senderAliases maps a compact invoice address to additional compact addresses
+ * accepted as its payment sender — Nimiq Pay wallets receive on one account
+ * but pay from a paired outgoing account.
  */
-export function matchPayments(pending: Invoice[], payments: IncomingPayment[]): Map<string, IncomingPayment> {
+export function matchPayments(
+  pending: Invoice[],
+  payments: IncomingPayment[],
+  senderAliases?: Map<string, Set<string>>,
+): Map<string, IncomingPayment> {
   const matches = new Map<string, IncomingPayment>()
   const used = new Set<string>()
   for (const invoice of [...pending].sort((a, b) => a.createdAt - b.createdAt)) {
     const address = compactAddress(invoice.address)
+    const aliases = senderAliases?.get(address)
+    const senderMatches = (sender: string) => {
+      const s = compactAddress(sender)
+      return s === address || aliases?.has(s) === true
+    }
     const hit = payments
       .filter(p => !used.has(p.hash)
-        && compactAddress(p.sender) === address
+        && senderMatches(p.sender)
         && p.valueNim >= invoice.amountNim - 1e-9
         && timestampMs(p.timestamp) >= invoice.createdAt)
       .sort((a, b) => timestampMs(a.timestamp) - timestampMs(b.timestamp))[0]

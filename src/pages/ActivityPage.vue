@@ -5,7 +5,7 @@ import { useInvoicesStore, matchPayments, isOverdue } from '../stores/invoices'
 import { useInboxStore } from '../stores/inbox'
 import InboxRequestCard from '../components/InboxRequestCard.vue'
 import { makeRequestLink, shortAddress, transactionExplorerUrl } from '../services/links'
-import { fetchIncomingPayments, newestFirst, type IncomingPayment } from '../services/history'
+import { fetchIncomingPayments, fetchForwardAddresses, newestFirst, type IncomingPayment } from '../services/history'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { resolveMyAddresses, receiveAddress } from '../services/nimiq'
 import { preferredCurrency } from '../services/prefs'
@@ -39,8 +39,11 @@ const pendingTotal = computed(() =>
 )
 const incomingNewest = computed(() => newestFirst(incoming.value))
 
+/** Compact invoice address → paired addresses it forwards to (Nimiq Pay pays from the paired account). */
+const senderAliases = ref<Map<string, Set<string>>>(new Map())
+
 /** Pending invoices that look settled by an incoming payment — confirmed with one tap. */
-const detectedPaid = computed(() => matchPayments(invoicesStore.pending, incoming.value))
+const detectedPaid = computed(() => matchPayments(invoicesStore.pending, incoming.value, senderAliases.value))
 
 /** "≈ 1.23 €" in the user's preferred fiat currency, or null when NIM-only / rates missing. */
 function fiatApprox(nim: number): string | null {
@@ -96,11 +99,29 @@ async function loadIncoming() {
   incomingError.value = false
   try {
     incoming.value = await fetchIncomingPayments(await resolveMyAddresses(profilesStore.self.address))
+    await loadSenderAliases()
   } catch {
     incomingError.value = true
   } finally {
     incomingLoading.value = false
   }
+}
+
+/** Resolve paired outgoing addresses for pending-invoice contacts, once per address. */
+async function loadSenderAliases() {
+  const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
+  const addresses = [...new Set(invoicesStore.pending.map(i => compact(i.address)))]
+    .filter(a => !senderAliases.value.has(a))
+  if (!addresses.length) return
+  const next = new Map(senderAliases.value)
+  await Promise.all(addresses.map(async (addr) => {
+    try {
+      next.set(addr, new Set((await fetchForwardAddresses(addr)).map(compact)))
+    } catch {
+      // best-effort — exact-address matching still works
+    }
+  }))
+  senderAliases.value = next
 }
 </script>
 

@@ -198,6 +198,24 @@ export async function fetchHistory(myAddress: string | string[], otherAddress: s
 const INTERNAL_SWEEP_MAX_LUNAS = 10_000 // 0.1 NIM
 
 /**
+ * Addresses this address has sent funds to. Nimiq Pay incoming accounts forward
+ * their balance to the paired outgoing account, so a contact's payment sender is
+ * usually among the contact address's forward partners. Used to loosen invoice
+ * payment matching — the result only ever feeds a "looks paid" suggestion.
+ */
+export async function fetchForwardAddresses(address: string): Promise<string[]> {
+  const self = compact(address)
+  const txs = await fetchTransactionsByAddress(address, 80)
+  const partners = new Set<string>()
+  for (const tx of txs) {
+    if (compact(tx.from) === self && compact(tx.to) !== self) {
+      partners.add(ValidationUtils.isValidAddress(tx.to) ? ValidationUtils.normalizeAddress(tx.to) : tx.to)
+    }
+  }
+  return [...partners]
+}
+
+/**
  * Nimiq Pay keeps a separate incoming account. When listAccounts() only returns
  * the outgoing one, find the paired address from small internal settlement transfers.
  */

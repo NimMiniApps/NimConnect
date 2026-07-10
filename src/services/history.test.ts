@@ -326,3 +326,18 @@ describe('discoverPairedAddresses', () => {
     expect(paired).toEqual([THIRD])
   })
 })
+
+describe('fetchForwardAddresses', () => {
+  it('returns addresses the given address has sent funds to', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rpcResult([
+      tx(ME, OTHER, 100117124, 2000, 'sweep'),   // full-balance forward (Nimiq Pay pattern)
+      tx(THIRD, ME, 1000, 3000, 'incoming'),      // incoming — not a forward
+      tx(ME, THIRD, 500, 4000, 'small-out'),
+    ])))
+    const { fetchForwardAddresses } = await import('./history')
+    const partners = await fetchForwardAddresses(ME)
+    expect(partners).toContain(OTHER)
+    expect(partners).toContain(THIRD)
+    expect(partners).not.toContain(ME)
+  })
+})

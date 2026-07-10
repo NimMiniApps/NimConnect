@@ -164,3 +164,33 @@ describe('matchPayments', () => {
     expect(matches.get('i1')?.hash).toBe('tx1')
   })
 })
+
+describe('matchPayments with sender aliases', () => {
+  const T0 = Date.parse('2026-01-01T00:00:00Z')
+  const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
+  const inv = (id: string, address: string, amountNim: number, createdAt: number): Invoice =>
+    ({ id, address, amountNim, description: '', status: 'pending', createdAt })
+  const pay = (hash: string, sender: string, valueNim: number, timestamp: number): IncomingPayment =>
+    ({ hash, sender, valueNim, timestamp })
+
+  it('matches a payment from the contact\'s paired outgoing address', () => {
+    // Invoice registered to B (receive address); wallet pays from A (outgoing account)
+    const aliases = new Map([[compact(B), new Set([compact(A)])]])
+    const matches = matchPayments(
+      [inv('i1', B, 1, T0)],
+      [pay('tx1', A, 1, T0 + 1000)],
+      aliases,
+    )
+    expect(matches.get('i1')?.hash).toBe('tx1')
+  })
+
+  it('does not match aliased senders against other invoices', () => {
+    const aliases = new Map([[compact(B), new Set([compact(A)])]])
+    const matches = matchPayments(
+      [inv('i1', 'NQ57 M1KM 4PMM 0SL5 T2TF 2A1Q 3P8E EU4Y JMSN', 1, T0)],
+      [pay('tx1', A, 1, T0 + 1000)],
+      aliases,
+    )
+    expect(matches.size).toBe(0)
+  })
+})
