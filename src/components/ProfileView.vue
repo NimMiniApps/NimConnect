@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
-import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES } from '../services/nimiq'
+import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES, resolveMyAddresses, receiveAddress, walletStatus } from '../services/nimiq'
 import { makeRequestLink, transactionExplorerUrl } from '../services/links'
+import { makeProfileShareLink } from '../services/profile-share'
 import { fetchHistory, type HistoryItem } from '../services/history'
+import { getRates, nimToFiat, type NimRates } from '../services/rates'
+import { preferredCurrency } from '../services/prefs'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
 import ActionSheet from './ActionSheet.vue'
@@ -26,11 +29,43 @@ const history = ref<HistoryItem[] | null>(null)
 const historyError = ref(false)
 const copied = ref(false)
 
-const requestLink = computed(() => makeRequestLink(props.profile.address, amount.value ?? undefined))
+const requestLink = computed(() => {
+  const addr = props.own
+    ? (receiveAddress(props.profile.address) ?? props.profile.address)
+    : props.profile.address
+  return makeRequestLink(addr, amount.value ?? undefined)
+})
+const shareLink = computed(() => makeProfileShareLink(props.profile))
 const dateAdded = computed(() => new Date(props.profile.createdAt).toLocaleDateString())
 const lastSeen = computed(() =>
   props.profile.lastInteractionAt ? new Date(props.profile.lastInteractionAt).toLocaleDateString() : null,
 )
+
+const rates = ref<NimRates | null>(null)
+
+onMounted(() => {
+  if (props.own) return
+  getRates().then(r => (rates.value = r))
+  if (store.self) loadHistory()
+})
+
+watch(() => walletStatus.value, (status, prev) => {
+  if (props.own || !store.self) return
+  if (status === 'ready' && prev !== 'ready') loadHistory()
+})
+
+/** Net NIM between you and this contact: positive = they've sent you more. */
+const netBalance = computed(() => {
+  if (!history.value?.length) return null
+  return history.value.reduce((sum, h) => sum + (h.incoming ? h.valueNim : -h.valueNim), 0)
+})
+
+const netBalanceFiat = computed(() => {
+  if (netBalance.value == null || preferredCurrency.value === 'NIM' || !rates.value) return null
+  const amount = nimToFiat(Math.abs(netBalance.value), preferredCurrency.value, rates.value)
+  if (amount == null) return null
+  return `≈ ${amount.toLocaleString(undefined, { style: 'currency', currency: preferredCurrency.value })}`
+})
 
 async function copyAddress() {
   await navigator.clipboard.writeText(props.profile.address)
@@ -43,7 +78,10 @@ function openSheet(which: 'send' | 'request' | 'history' | 'tip' | 'split' | 'in
   message.value = ''
   sendResult.value = null
   sheet.value = which
-  if (which === 'history') loadHistory()
+  if (which === 'history') {
+    loadHistory()
+    store.touchInteraction(props.profile.id)
+  }
   if (which === 'request') store.touchInteraction(props.profile.id)
 }
 
@@ -70,14 +108,14 @@ function copyRequestLink() {
 async function loadHistory() {
   history.value = null
   historyError.value = false
-  const me = store.self?.address
-  if (!me) {
+  // Nimiq Pay pays from one account and receives on another — check all of them
+  const mine = await resolveMyAddresses(store.self?.address)
+  if (!mine.length) {
     historyError.value = true
     return
   }
   try {
-    history.value = await fetchHistory(me, props.profile.address)
-    await store.touchInteraction(props.profile.id)
+    history.value = await fetchHistory(mine, props.profile.address)
   } catch {
     historyError.value = true
   }
@@ -107,6 +145,11 @@ async function loadHistory() {
         <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
         <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
       </div>
+      <div v-if="!own && netBalance != null && netBalance !== 0" class="balance" :class="netBalance > 0 ? 'pos' : 'neg'">
+        {{ netBalance > 0 ? '+' : '−' }}{{ Math.abs(netBalance).toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+        <span v-if="netBalanceFiat" class="balance-fiat">{{ netBalanceFiat }}</span>
+        <span class="balance-hint">{{ netBalance > 0 ? 'net received from them' : 'net sent to them' }}</span>
+      </div>
       <div class="meta">
         <span>Added {{ dateAdded }}</span>
         <span v-if="lastSeen"> · Last activity {{ lastSeen }}</span>
@@ -127,9 +170,14 @@ async function loadHistory() {
       <button class="action" disabled>💬<span>Message</span></button>
     </div>
 
+    <button v-if="own" type="button" class="edit-profile" @click="$emit('edit')">
+      <span aria-hidden="true">✎</span>
+      Edit profile
+    </button>
+
     <div v-if="own" class="card own-qr">
-      <QrCode :text="requestLink" :size="220" />
-      <p class="hint">Let others scan this to add you or pay you.</p>
+      <QrCode :text="shareLink" :size="220" />
+      <p class="hint">Let others scan this to add your full profile in NimConnect.</p>
     </div>
 
     <div v-if="profile.notes" class="card notes">
@@ -137,9 +185,9 @@ async function loadHistory() {
       <p>{{ profile.notes }}</p>
     </div>
 
-    <div class="manage">
+    <div v-if="!own" class="manage">
       <button class="link" @click="$emit('edit')">Edit</button>
-      <button v-if="!own" class="link danger" @click="$emit('remove')">Delete</button>
+      <button class="link danger" @click="$emit('remove')">Delete</button>
     </div>
 
     <ActionSheet :open="sheet === 'send'" title="Send NIM" @close="sheet = null">
@@ -223,6 +271,15 @@ async function loadHistory() {
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .tag { background: var(--text-6); border: 1px solid var(--border); border-radius: var(--nimiq-radius-small); padding: 3px 10px; font-size: 12px; }
 .meta { font-size: 12px; color: var(--text-2); }
+.balance {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 6px 16px; border-radius: var(--nimiq-radius-pill);
+  font-size: 15px; font-weight: 800;
+}
+.balance.pos { color: var(--nq-green); background: rgba(33, 188, 165, 0.12); }
+.balance.neg { color: var(--nq-gold-dark); background: var(--text-6); }
+.balance-fiat { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.balance-hint { font-size: 11px; font-weight: 600; color: var(--text-2); }
 .actions { display: flex; gap: 10px; }
 .actions.future { opacity: 0.45; }
 .actions.future .action { flex: 0 0 calc((100% - 20px) / 3); }
@@ -235,6 +292,18 @@ async function loadHistory() {
 .action span { font-size: 12px; font-weight: 700; }
 .action:disabled { cursor: default; }
 .action.live:active { transform: scale(0.97); }
+.edit-profile {
+  width: 100%; min-height: 48px; padding: 0 24px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: none; border-radius: var(--nimiq-radius-pill);
+  background: var(--nimiq-light-blue-bg); color: var(--nimiq-white);
+  box-shadow: var(--nimiq-shadow); cursor: pointer;
+  font: inherit; font-size: 16px; font-weight: 700;
+  transition: transform var(--attr-duration) var(--nimiq-ease), filter var(--attr-duration) var(--nimiq-ease);
+}
+.edit-profile:hover { filter: brightness(0.96); }
+.edit-profile:active { transform: scale(0.98); }
+.edit-profile:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 3px; }
 .own-qr { padding: 24px; text-align: center; }
 .notes { padding: 16px 20px; }
 .notes h2 { font-size: 14px; color: var(--text-2); margin: 0 0 6px; }

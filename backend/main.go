@@ -27,6 +27,7 @@ func main() {
 	})
 
 	backupStore := NewBackupStore(backupDir)
+	inboxStore := NewInboxStore(getEnv("INBOX_DIR", "/data/inbox"))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", rootHandler)
@@ -36,6 +37,9 @@ func main() {
 	mux.HandleFunc("GET /api/backup/{address}", backupGetHandler(backupStore))
 	mux.HandleFunc("HEAD /api/backup/{address}", backupHeadHandler(backupStore))
 	mux.HandleFunc("PUT /api/backup/{address}", backupPutHandler(backupStore))
+	mux.HandleFunc("POST /api/inbox/messages", inboxPostHandler(inboxStore))
+	mux.HandleFunc("GET /api/inbox/{address}/messages", inboxListHandler(inboxStore))
+	mux.HandleFunc("DELETE /api/inbox/{address}/messages/{id}", inboxDeleteHandler(inboxStore))
 
 	log.Printf("NimConnect backend listening on :%s commit=%s build_time=%s", port, CommitHash, BuildTime)
 	if err := http.ListenAndServe(":"+port, withRequestLogging(withCORS(allowedOrigin, mux))); err != nil {

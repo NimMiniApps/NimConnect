@@ -34,6 +34,8 @@ export interface Invoice {
   status: InvoiceStatus
   createdAt: number
   paidAt?: number
+  /** Optional due date (end of day, ms). Unindexed — no Dexie migration needed */
+  dueAt?: number
   /** Original fiat entry when the invoice was priced in fiat (converted to NIM at creation) */
   fiatAmount?: number
   fiatCurrency?: string
@@ -57,4 +59,30 @@ export interface EncryptedBackup {
   salt: string
   exportedAt: number
   ciphertext: string
+}
+
+export type InboxImportStatus = 'actionable' | 'unsupported' | 'invalid' | 'dismissed' | 'paid'
+
+/** A message imported from the server mailbox. Local copy is the source of truth. */
+export interface InboxItem {
+  /** Server message id (delivery attempt) */
+  id: string
+  /** Stable logical id of the invoice/split/request — reminders reuse it */
+  objectId: string
+  /** Envelope type, e.g. 'payment-request'; unknown types stay 'unsupported' */
+  type: string
+  /** Normalized NQ address of the signed sender */
+  sender: string
+  payload: string
+  sentAt: number
+  receivedAt: number
+  status: InboxImportStatus
+  importedAt: number
+  /** Number of times a reminder re-delivered this objectId */
+  reminders: number
+}
+
+export interface KvEntry {
+  key: string
+  value: unknown
 }

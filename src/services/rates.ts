@@ -48,6 +48,13 @@ export async function getRates(): Promise<NimRates | null> {
   }
 }
 
+/** Convert a NIM amount to fiat. Null when the currency is unknown. */
+export function nimToFiat(nim: number, currency: string, rates: NimRates): number | null {
+  const price = rates.nim[currency.toUpperCase()]
+  if (!price || !(nim > 0)) return null
+  return nim * price
+}
+
 /** Convert a fiat amount to NIM, exact in lunas. Null when the currency is unknown. */
 export function fiatToNim(amount: number, currency: string, rates: NimRates): number | null {
   const price = rates.nim[currency.toUpperCase()]

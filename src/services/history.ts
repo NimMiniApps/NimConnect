@@ -1,3 +1,6 @@
+import { ValidationUtils } from '@nimiq/utils/validation-utils'
+import { incomingAddress } from './prefs'
+
 const RPC_URL = 'https://rpc-mainnet.nimiqscan.com/'
 
 export interface HistoryItem {
@@ -18,6 +21,8 @@ export interface IncomingPayment {
   sender: string
   /** UTF-8 message from the tx data field, when present and printable */
   message?: string
+  /** Sender is an HTLC contract — a cross-asset swap payout, not the contact's wallet */
+  viaSwap?: boolean
 }
 
 interface RpcTx {
@@ -43,7 +48,7 @@ function blockValue(item: { blockNumber?: number; validityStartHeight?: number }
 }
 
 /** Normalize chain timestamps to milliseconds for stable ordering. */
-function timestampMs(timestamp: unknown): number {
+export function timestampMs(timestamp: unknown): number {
   if (typeof timestamp === 'string') {
     if (/^\d+$/.test(timestamp)) {
       const n = Number(timestamp)
@@ -120,7 +125,7 @@ function readIncomingCache(key: string): IncomingPayment[] | null {
   }
 }
 
-async function fetchTransactionsByAddress(address: string, max = 200): Promise<RpcTx[]> {
+export async function fetchTransactionsByAddress(address: string, max = 200): Promise<RpcTx[]> {
   const res = await fetch(RPC_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -137,28 +142,44 @@ async function fetchTransactionsByAddress(address: string, max = 200): Promise<R
   return body.result?.data ?? body.result ?? []
 }
 
-export async function fetchHistory(myAddress: string, otherAddress: string): Promise<HistoryItem[]> {
-  const key = cacheKey(myAddress, otherAddress)
+/** Include manual incoming + auto-discovered Nimiq Pay paired account when only one address is known. */
+export async function expandMyAddresses(addresses: string[]): Promise<string[]> {
+  const set = new Set(addresses.filter(Boolean))
+  const manual = incomingAddress.value.trim()
+  if (manual && ValidationUtils.isValidAddress(manual)) {
+    set.add(ValidationUtils.normalizeAddress(manual))
+  }
+  if (set.size < 2) {
+    try {
+      for (const addr of await discoverPairedAddresses([...set])) set.add(addr)
+    } catch { /* discovery is best-effort */ }
+  }
+  return [...set]
+}
+
+/** Pair history between the contact and any of my addresses — Nimiq Pay splits the wallet into separate incoming/outgoing accounts. */
+export async function fetchHistory(myAddress: string | string[], otherAddress: string): Promise<HistoryItem[]> {
+  const myList = await expandMyAddresses(Array.isArray(myAddress) ? myAddress : [myAddress])
+  const mine = new Set(myList.map(compact))
+  const other = compact(otherAddress)
+  const key = cacheKey([...mine].sort().join('+'), otherAddress)
   try {
-    const pages = await Promise.all([
-      fetchTransactionsByAddress(otherAddress),
-      fetchTransactionsByAddress(myAddress),
-    ])
+    const pages = await Promise.all(
+      [otherAddress, ...myList].map(a => fetchTransactionsByAddress(a)),
+    )
     const txs = [...new Map(pages.flat().map(tx => [tx.hash, tx])).values()]
-    const me = compact(myAddress)
-    const other = compact(otherAddress)
     const items = txs
       .filter(t => {
         const from = compact(t.from)
         const to = compact(t.to)
-        return (from === me && to === other) || (from === other && to === me)
+        return (mine.has(from) && to === other) || (from === other && mine.has(to))
       })
       .map(t => ({
         hash: t.hash,
         blockNumber: t.blockNumber ?? t.validityStartHeight,
         timestamp: t.timestamp,
         valueNim: t.value / 1e5,
-        incoming: compact(t.to) === me,
+        incoming: mine.has(compact(t.to)),
         ...(decodeMessage(t.recipientData) ? { message: decodeMessage(t.recipientData) } : {}),
       }))
     const sorted = newestFirst(items)
@@ -173,16 +194,90 @@ export async function fetchHistory(myAddress: string, otherAddress: string): Pro
   }
 }
 
+/** Max value (lunas) for Nimiq Pay internal incoming↔outgoing sweeps — not contact payments. */
+const INTERNAL_SWEEP_MAX_LUNAS = 10_000 // 0.1 NIM
+
+/**
+ * Nimiq Pay keeps a separate incoming account. When listAccounts() only returns
+ * the outgoing one, find the paired address from small internal settlement transfers.
+ */
+export async function discoverPairedAddresses(known: string[]): Promise<string[]> {
+  if (!known.length) return []
+  const knownSet = new Set(known.map(compact))
+  const candidates = new Set<string>()
+
+  for (const addr of known) {
+    const txs = await fetchTransactionsByAddress(addr, 80)
+    for (const tx of txs) {
+      const from = compact(tx.from)
+      const to = compact(tx.to)
+      // Outgoing account sweeps small amounts to the incoming account — not contact payments
+      if (knownSet.has(from) && !knownSet.has(to) && tx.value <= INTERNAL_SWEEP_MAX_LUNAS) {
+        candidates.add(tx.to)
+      }
+    }
+  }
+
+  const paired: string[] = []
+  for (const candidate of candidates) {
+    const txs = await fetchTransactionsByAddress(candidate, 40)
+    const internalSweep = txs.some(tx => {
+      const from = compact(tx.from)
+      const to = compact(tx.to)
+      return knownSet.has(from) && to === compact(candidate) && tx.value <= INTERNAL_SWEEP_MAX_LUNAS
+    })
+    if (!internalSweep) continue
+    paired.push(ValidationUtils.isValidAddress(candidate)
+      ? ValidationUtils.normalizeAddress(candidate)
+      : candidate)
+  }
+  return paired
+}
+
+/** HTLC settlements above this NIM amount are wallet balance snapshots, not incremental top-ups. */
+const SWAP_SNAPSHOT_MIN_NIM = 1
+
+/**
+ * Nimiq Pay swap settlements report the post-settlement wallet balance in `value`,
+ * not how much was added. Convert large snapshots to deltas; drop the opening one.
+ */
+export function normalizeSwapAmounts(items: IncomingPayment[]): IncomingPayment[] {
+  const swaps = items
+    .filter(i => i.viaSwap)
+    .sort((a, b) => {
+      const blockDiff = blockValue(a) - blockValue(b)
+      if (blockDiff !== 0) return blockDiff
+      return timestampMs(a.timestamp) - timestampMs(b.timestamp)
+    })
+
+  let prevSwapPeak = 0
+  const amountByHash = new Map<string, number>()
+
+  for (const s of swaps) {
+    let amount = s.valueNim
+    if (amount > SWAP_SNAPSHOT_MIN_NIM) {
+      amount = prevSwapPeak === 0 ? 0 : Math.max(0, s.valueNim - prevSwapPeak)
+      if (s.valueNim > prevSwapPeak) prevSwapPeak = s.valueNim
+    }
+    amountByHash.set(s.hash, amount)
+  }
+
+  return items
+    .map(i => (amountByHash.has(i.hash) ? { ...i, valueNim: amountByHash.get(i.hash)! } : i))
+    .filter(i => i.valueNim > 1e-9)
+}
+
 /** All addresses belong to the same user — payments between them are self-transfers, not incoming. */
 export async function fetchIncomingPayments(myAddresses: string[]): Promise<IncomingPayment[]> {
-  const mine = new Set(myAddresses.map(compact))
+  const myList = await expandMyAddresses(myAddresses)
+  const mine = new Set(myList.map(compact))
   const key = incomingCacheKey([...mine].sort().join('+'))
   try {
-    const pages = await Promise.all(myAddresses.map(a => fetchTransactionsByAddress(a, 100)))
+    const pages = await Promise.all(myList.map(a => fetchTransactionsByAddress(a, 100)))
     const txs = [...new Map(pages.flat().map(tx => [tx.hash, tx])).values()]
     const items = txs
-      // ponytail: only basic-wallet senders; hides cross-asset swap payouts (HTLC leg) too — surface those with a "via swap" label if users miss them
-      .filter(t => mine.has(compact(t.to)) && !mine.has(compact(t.from)) && (t.fromType ?? 0) === 0)
+      // Basic wallets and HTLC (swap) senders; vesting payouts stay hidden — they're the user's own funds
+      .filter(t => mine.has(compact(t.to)) && !mine.has(compact(t.from)) && [0, 2].includes(t.fromType ?? 0))
       .map(t => ({
         hash: t.hash,
         blockNumber: t.blockNumber ?? t.validityStartHeight,
@@ -190,8 +285,9 @@ export async function fetchIncomingPayments(myAddresses: string[]): Promise<Inco
         valueNim: t.value / 1e5,
         sender: t.from,
         ...(decodeMessage(t.recipientData) ? { message: decodeMessage(t.recipientData) } : {}),
+        ...(t.fromType === 2 ? { viaSwap: true } : {}),
       }))
-    const sorted = newestFirst(items)
+    const sorted = newestFirst(normalizeSwapAmounts(items))
     try {
       globalThis.localStorage?.setItem(key, JSON.stringify(sorted))
     } catch { /* cache is best-effort */ }

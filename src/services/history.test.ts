@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { fetchHistory, fetchIncomingPayments, clearHistoryCache } from './history'
+import { fetchHistory, fetchIncomingPayments, discoverPairedAddresses, normalizeSwapAmounts, clearHistoryCache, type IncomingPayment } from './history'
 
 const ME = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 const OTHER = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
@@ -48,8 +48,9 @@ describe('fetchHistory', () => {
       tx(ME, OTHER, 100000, 2000, 'mine'),
     ])
     vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(myPage)
       .mockResolvedValueOnce(contactPage)
-      .mockResolvedValueOnce(myPage))
+      .mockResolvedValue(myPage))
 
     const items = await fetchHistory(ME, OTHER)
 
@@ -108,6 +109,52 @@ describe('fetchHistory', () => {
     expect(items.map(i => i.hash)).toEqual(['new', 'old'])
   })
 
+  it('merges pair history across all my addresses (Nimiq Pay incoming + outgoing accounts)', async () => {
+    const contactPage = rpcResult([
+      tx(OTHER, THIRD, 50000, 3000, 'to-my-incoming'),
+      tx(ME, OTHER, 100000, 2000, 'from-my-outgoing'),
+    ])
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(contactPage)
+      .mockResolvedValue(rpcResult([])))
+
+    const items = await fetchHistory([ME, THIRD], OTHER)
+
+    expect(items).toEqual([
+      { hash: 'to-my-incoming', timestamp: 3000, valueNim: 0.5, incoming: true },
+      { hash: 'from-my-outgoing', timestamp: 2000, valueNim: 1, incoming: false },
+    ])
+  })
+
+  it('auto-discovers the incoming account when only the outgoing address is known', async () => {
+    const pages: Record<string, unknown[]> = {
+      [ME.replace(/\s+/g, '')]: [
+        tx(ME, THIRD, 1000, 1000, 'sweep'),
+        tx(ME, OTHER, 100000, 2000, 'from-my-outgoing'),
+      ],
+      [THIRD.replace(/\s+/g, '')]: [
+        tx(ME, THIRD, 1000, 1000, 'sweep'),
+        tx(OTHER, THIRD, 50000, 3000, 'to-my-incoming'),
+      ],
+      [OTHER.replace(/\s+/g, '')]: [
+        tx(OTHER, THIRD, 50000, 3000, 'to-my-incoming'),
+        tx(ME, OTHER, 100000, 2000, 'from-my-outgoing'),
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string)
+      const addr = String(body.params[0]).replace(/\s+/g, '').toUpperCase()
+      return Promise.resolve(rpcResult(pages[addr] ?? []))
+    }))
+
+    const items = await fetchHistory(ME, OTHER)
+
+    expect(items).toEqual([
+      { hash: 'to-my-incoming', timestamp: 3000, valueNim: 0.5, incoming: true },
+      { hash: 'from-my-outgoing', timestamp: 2000, valueNim: 1, incoming: false },
+    ])
+  })
+
   it('clearHistoryCache removes nimconnect localStorage keys', () => {
     const storage = {
       data: {} as Record<string, string>,
@@ -144,7 +191,7 @@ describe('fetchIncomingPayments', () => {
     ])
   })
 
-  it('excludes payments from contracts (HTLC/vesting), keeps basic wallets', async () => {
+  it('flags HTLC (swap) senders, excludes vesting, keeps basic wallets', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rpcResult([
       { ...tx(OTHER, ME, 50000, 3000, 'htlc'), fromType: 2 },
       { ...tx(THIRD, ME, 50000, 4000, 'vesting'), fromType: 1 },
@@ -154,7 +201,26 @@ describe('fetchIncomingPayments', () => {
 
     const items = await fetchIncomingPayments([ME])
 
-    expect(items.map(i => i.hash)).toEqual(['no-type', 'person'])
+    expect(items.map(i => i.hash)).toEqual(['no-type', 'person', 'htlc'])
+    expect(items.find(i => i.hash === 'htlc')?.viaSwap).toBe(true)
+    expect(items.find(i => i.hash === 'person')?.viaSwap).toBeUndefined()
+  })
+
+  it('shows swap top-up increments, not wallet balance snapshots', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(rpcResult([
+      { ...tx(OTHER, ME, 57000, 1000, 'basic'), fromType: 0, blockNumber: 10 },
+      { ...tx(THIRD, ME, 100_060_000, 2000, 'open-snapshot'), fromType: 2, blockNumber: 11 },
+      { ...tx(THIRD, ME, 1000, 3000, 'tiny-swap'), fromType: 2, blockNumber: 12 },
+      { ...tx(THIRD, ME, 100_116_000, 4000, 'close-snapshot'), fromType: 2, blockNumber: 13 },
+    ])))
+
+    const items = await fetchIncomingPayments([ME])
+
+    expect(items.map(i => i.hash)).toEqual(['close-snapshot', 'tiny-swap', 'basic'])
+    expect(items.find(i => i.hash === 'close-snapshot')?.valueNim).toBeCloseTo(0.56, 2)
+    expect(items.find(i => i.hash === 'tiny-swap')?.valueNim).toBeCloseTo(0.01, 2)
+    expect(items.find(i => i.hash === 'basic')?.valueNim).toBeCloseTo(0.57, 2)
+    expect(items.some(i => i.hash === 'open-snapshot')).toBe(false)
   })
 
   it('merges payments across my addresses and excludes transfers between them', async () => {
@@ -217,5 +283,46 @@ describe('fetchIncomingPayments', () => {
     const items = await fetchIncomingPayments([ME])
 
     expect(items.map(i => i.hash)).toEqual(['new', 'old'])
+  })
+})
+
+describe('normalizeSwapAmounts', () => {
+  const pay = (hash: string, valueNim: number, block: number): IncomingPayment =>
+    ({ hash, valueNim, timestamp: block, sender: OTHER, viaSwap: true, blockNumber: block })
+
+  it('drops the first large snapshot and diffs later ones', () => {
+    const items = normalizeSwapAmounts([
+      pay('open', 1000.6, 1),
+      pay('tiny', 0.01, 2),
+      pay('close', 1001.16, 3),
+      { hash: 'basic', valueNim: 0.57, timestamp: 0, sender: OTHER, blockNumber: 0 },
+    ])
+
+    expect(items.map(i => i.hash).sort()).toEqual(['basic', 'close', 'tiny'])
+    expect(items.find(i => i.hash === 'close')?.valueNim).toBeCloseTo(0.56, 2)
+  })
+})
+
+describe('discoverPairedAddresses', () => {
+  it('finds the other Nimiq Pay account from internal settlement transfers', async () => {
+    const pages: Record<string, unknown[]> = {
+      [ME.replace(/\s+/g, '')]: [
+        tx(ME, THIRD, 1000, 2000, 'sweep-to-incoming'),
+        tx(OTHER, ME, 50000, 3000, 'external'),
+      ],
+      [THIRD.replace(/\s+/g, '')]: [
+        tx(ME, THIRD, 1000, 2000, 'sweep-to-incoming'),
+        tx(THIRD, ME, 500, 1500, 'sweep-back'),
+      ],
+    }
+    vi.stubGlobal('fetch', vi.fn().mockImplementation((_url, init) => {
+      const body = JSON.parse((init as RequestInit).body as string)
+      const addr = String(body.params[0]).replace(/\s+/g, '').toUpperCase()
+      return Promise.resolve(rpcResult(pages[addr] ?? []))
+    }))
+
+    const paired = await discoverPairedAddresses([ME])
+
+    expect(paired).toEqual([THIRD])
   })
 })

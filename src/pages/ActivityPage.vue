@@ -1,25 +1,33 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useProfilesStore } from '../stores/profiles'
-import { useInvoicesStore } from '../stores/invoices'
+import { useInvoicesStore, matchPayments, isOverdue } from '../stores/invoices'
+import { useInboxStore } from '../stores/inbox'
+import InboxRequestCard from '../components/InboxRequestCard.vue'
 import { makeRequestLink, shortAddress, transactionExplorerUrl } from '../services/links'
 import { fetchIncomingPayments, newestFirst, type IncomingPayment } from '../services/history'
-import { walletAddresses } from '../services/nimiq'
-import { incomingAddress } from '../services/prefs'
-import { ValidationUtils } from '@nimiq/utils/validation-utils'
+import { getRates, nimToFiat, type NimRates } from '../services/rates'
+import { resolveMyAddresses, receiveAddress } from '../services/nimiq'
+import { preferredCurrency } from '../services/prefs'
 import EmptyState from '../components/EmptyState.vue'
 import Identicon from '../components/Identicon.vue'
 
 const profilesStore = useProfilesStore()
 const invoicesStore = useInvoicesStore()
+const inboxStore = useInboxStore()
 const copiedId = ref<string | null>(null)
+const payingId = ref<string | null>(null)
+const unknownExpanded = ref(false)
 const incoming = ref<IncomingPayment[]>([])
 const incomingLoading = ref(false)
 const incomingError = ref(false)
+const rates = ref<NimRates | null>(null)
 
 onMounted(async () => {
-  await Promise.all([profilesStore.load(), invoicesStore.load()])
+  getRates().then(r => (rates.value = r))
+  await Promise.all([profilesStore.load(), invoicesStore.load(), inboxStore.load()])
   await loadIncoming()
+  if (profilesStore.self) inboxStore.refresh(profilesStore.self.address)
 })
 
 watch(() => profilesStore.self?.address, async (address, prev) => {
@@ -31,6 +39,17 @@ const pendingTotal = computed(() =>
 )
 const incomingNewest = computed(() => newestFirst(incoming.value))
 
+/** Pending invoices that look settled by an incoming payment — confirmed with one tap. */
+const detectedPaid = computed(() => matchPayments(invoicesStore.pending, incoming.value))
+
+/** "≈ 1.23 €" in the user's preferred fiat currency, or null when NIM-only / rates missing. */
+function fiatApprox(nim: number): string | null {
+  if (preferredCurrency.value === 'NIM' || !rates.value) return null
+  const amount = nimToFiat(nim, preferredCurrency.value, rates.value)
+  if (amount == null) return null
+  return `≈ ${amount.toLocaleString(undefined, { style: 'currency', currency: preferredCurrency.value })}`
+}
+
 function profileFor(address: string) {
   const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
   return profilesStore.getByAddress(address)
@@ -41,9 +60,26 @@ function contactName(address: string): string {
   return profileFor(address)?.name ?? shortAddress(address)
 }
 
+const knownRequests = computed(() => inboxStore.actionable.filter(i => profileFor(i.sender)))
+const unknownRequests = computed(() => inboxStore.actionable.filter(i => !profileFor(i.sender)))
+const visibleUnknown = computed(() =>
+  unknownExpanded.value ? unknownRequests.value : unknownRequests.value.slice(0, 2),
+)
+
+async function payRequest(item: (typeof inboxStore.actionable)[number]) {
+  payingId.value = item.id
+  try {
+    await inboxStore.pay(item)
+  } catch {
+    // wallet popup dismissed or send failed — no state change (spec)
+  } finally {
+    payingId.value = null
+  }
+}
+
 function requestLink(amountNim: number, description: string): string | null {
   if (!profilesStore.self) return null
-  return makeRequestLink(profilesStore.self.address, amountNim, description || 'Invoice')
+  return makeRequestLink(receiveAddress(profilesStore.self.address) ?? profilesStore.self.address, amountNim, description || 'Invoice')
 }
 
 async function copyLink(id: string, amountNim: number, description: string) {
@@ -59,10 +95,7 @@ async function loadIncoming() {
   incomingLoading.value = true
   incomingError.value = false
   try {
-    const addresses = new Set(walletAddresses.value.length ? walletAddresses.value : [profilesStore.self.address])
-    const manual = incomingAddress.value.trim()
-    if (manual && ValidationUtils.isValidAddress(manual)) addresses.add(manual)
-    incoming.value = await fetchIncomingPayments([...addresses])
+    incoming.value = await fetchIncomingPayments(await resolveMyAddresses(profilesStore.self.address))
   } catch {
     incomingError.value = true
   } finally {
@@ -85,6 +118,7 @@ async function loadIncoming() {
       <div class="summary-main">
         <span class="summary-value">{{ pendingTotal }}</span>
         <span class="summary-label">NIM pending</span>
+        <span v-if="fiatApprox(invoicesStore.pendingTotalNim)" class="summary-fiat">{{ fiatApprox(invoicesStore.pendingTotalNim) }}</span>
       </div>
       <div class="summary-side">
         <span class="summary-value">{{ invoicesStore.pending.length }}</span>
@@ -95,6 +129,49 @@ async function loadIncoming() {
     <p v-if="!profilesStore.self && invoicesStore.pending.length" class="notice">
       Connect inside Nimiq Pay to copy payment links to your wallet address.
     </p>
+
+    <section v-if="inboxStore.actionable.length" class="activity-section">
+      <div class="section-head">
+        <h2>Requests for you</h2>
+        <button type="button" class="refresh" :disabled="inboxStore.refreshing" @click="inboxStore.refresh()">
+          {{ inboxStore.refreshing ? 'Checking…' : 'Refresh' }}
+        </button>
+      </div>
+
+      <div class="invoice-list">
+        <InboxRequestCard
+          v-for="item in knownRequests"
+          :key="item.id"
+          :item="item"
+          :contact-name="contactName(item.sender)"
+          :paying="payingId === item.id"
+          @pay="payRequest(item)"
+          @dismiss="inboxStore.dismiss(item)"
+        />
+      </div>
+
+      <template v-if="unknownRequests.length">
+        <div class="section-head unknown-head">
+          <h2>Requests from unknown senders ({{ unknownRequests.length }})</h2>
+        </div>
+        <div class="invoice-list">
+          <InboxRequestCard
+            v-for="item in visibleUnknown"
+            :key="item.id"
+            :item="item"
+            :paying="payingId === item.id"
+            @pay="payRequest(item)"
+            @dismiss="inboxStore.dismiss(item)"
+          />
+        </div>
+        <button
+          v-if="unknownRequests.length > 2 && !unknownExpanded"
+          type="button" class="refresh show-more" @click="unknownExpanded = true"
+        >
+          Show all {{ unknownRequests.length }}
+        </button>
+      </template>
+    </section>
 
     <section class="activity-section invoice-section">
       <div class="section-head">
@@ -115,15 +192,27 @@ async function loadIncoming() {
                 {{ contactName(invoice.address) }}
               </router-link>
               <span v-else class="contact-link missing">{{ contactName(invoice.address) }}</span>
-              <span class="invoice-date">Created {{ new Date(invoice.createdAt).toLocaleDateString() }}</span>
+              <span class="invoice-date">
+                Created {{ new Date(invoice.createdAt).toLocaleDateString() }}
+                <template v-if="invoice.dueAt">
+                  · <span :class="{ overdue: isOverdue(invoice) }">{{ isOverdue(invoice) ? 'Overdue since' : 'Due' }} {{ new Date(invoice.dueAt).toLocaleDateString() }}</span>
+                </template>
+              </span>
             </div>
             <div class="invoice-amount">
               {{ invoice.amountNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
               <span v-if="invoice.fiatAmount" class="fiat">{{ invoice.fiatAmount }} {{ invoice.fiatCurrency }}</span>
+              <span v-else-if="fiatApprox(invoice.amountNim)" class="fiat">{{ fiatApprox(invoice.amountNim) }}</span>
             </div>
           </div>
 
           <p class="description">{{ invoice.description || 'Invoice' }}</p>
+
+          <p v-if="detectedPaid.has(invoice.id)" class="detected">
+            ✓ Payment detected — {{ detectedPaid.get(invoice.id)!.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+            received {{ new Date(detectedPaid.get(invoice.id)!.timestamp * (detectedPaid.get(invoice.id)!.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}.
+            <button type="button" class="detected-confirm" @click="invoicesStore.setStatus(invoice.id, 'paid')">Mark paid</button>
+          </p>
 
           <div class="actions">
             <button
@@ -181,12 +270,17 @@ async function loadIncoming() {
               >
                 {{ contactName(payment.sender) }}
               </router-link>
+              <span v-else-if="payment.viaSwap" class="contact-link swap">Wallet top-up</span>
               <span v-else class="contact-link missing">Unknown sender</span>
               <span class="invoice-date">
                 {{ shortAddress(payment.sender) }} · {{ new Date(payment.timestamp * (payment.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}
+                <span v-if="payment.viaSwap" class="swap-badge">via swap</span>
               </span>
             </div>
-            <div class="invoice-amount positive">+{{ payment.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM</div>
+            <div class="invoice-amount positive">
+              +{{ payment.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+              <span v-if="fiatApprox(payment.valueNim)" class="fiat">{{ fiatApprox(payment.valueNim) }}</span>
+            </div>
           </div>
           <p v-if="payment.message" class="description">“{{ payment.message }}”</p>
           <div class="actions tx-actions">
@@ -272,6 +366,13 @@ async function loadIncoming() {
   font-weight: 600;
   text-transform: uppercase;
 }
+.summary-fiat {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
 .notice {
   margin: 0 0 14px;
   padding: 10px 12px;
@@ -309,6 +410,8 @@ async function loadIncoming() {
   font-weight: 700;
 }
 .refresh:disabled { opacity: 0.55; cursor: default; }
+.unknown-head { margin-top: 14px; }
+.show-more { margin-top: 8px; align-self: center; }
 .invoice-list { display: flex; flex-direction: column; gap: 12px; }
 .incoming-list { display: flex; flex-direction: column; gap: 10px; }
 .invoice-card { padding: 14px; }
@@ -330,7 +433,44 @@ async function loadIncoming() {
   white-space: nowrap;
 }
 .contact-link.missing { color: var(--text-2); }
+.contact-link.swap { color: var(--nq-light-blue); }
 .invoice-date { display: block; margin-top: 2px; color: var(--text-2); font-size: 12px; }
+.invoice-date .overdue { color: var(--nq-red); font-weight: 700; }
+.swap-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: var(--nimiq-radius-small);
+  background: var(--text-6);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--nq-light-blue);
+}
+.detected {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  background: rgba(33, 188, 165, 0.12);
+  color: var(--nq-green);
+  font-size: 13px;
+  font-weight: 700;
+}
+.detected-confirm {
+  min-height: 32px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 16px;
+  background: var(--nq-green);
+  color: var(--nimiq-white);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+}
 .invoice-amount {
   text-align: right;
   font-weight: 700;

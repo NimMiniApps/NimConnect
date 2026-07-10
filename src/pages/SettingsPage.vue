@@ -150,7 +150,7 @@ async function onEnableCloud(passphrase: string) {
 }
 
 async function enableCloudBackup() {
-  if (!insideNimiqPay) {
+  if (!insideNimiqPay.value) {
     message.value = 'Open NimConnect inside Nimiq Pay to enable cloud backup.'
     return
   }
@@ -259,7 +259,7 @@ function cancelReset() {
           :class="{ invalid: incomingAddress.trim() && !ValidationUtils.isValidAddress(incomingAddress.trim()) }"
         />
       </label>
-      <p class="hint">Nimiq Pay receives on a separate address — paste it here so its payments show in Activity.</p>
+      <p class="hint">Nimiq Pay receives on a separate address — auto-detected when possible, or paste it here for Activity.</p>
     </div>
 
     <div class="card group">

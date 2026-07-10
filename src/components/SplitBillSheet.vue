@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
+import { useInvoicesStore } from '../stores/invoices'
 import { makeRequestLink, nimToLunas } from '../services/links'
+import { receiveAddress } from '../services/nimiq'
 import { splitAmount } from '../utils/split'
 import ActionSheet from './ActionSheet.vue'
 import Identicon from './Identicon.vue'
@@ -13,17 +15,35 @@ const props = defineProps<{ profile?: Profile; open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
 const store = useProfilesStore()
+const invoicesStore = useInvoicesStore()
 
 const total = ref<number | null>(null)
 const totalInput = ref<InstanceType<typeof CurrencyAmountInput>>()
 const note = ref('')
 const includeMe = ref(true)
-const selected = ref<Set<string>>(new Set(props.profile ? [props.profile.id] : []))
+const selected = ref<Set<string>>(new Set())
 const shares = ref<Record<string, number>>({})
-const expandedId = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
+const creating = ref(false)
+const created = ref(false)
 
 const filter = ref('')
+
+onMounted(() => {
+  void store.load()
+  void invoicesStore.load()
+})
+
+watch(() => props.open, open => {
+  if (!open) return
+  void store.load()
+  selected.value = new Set(props.profile ? [props.profile.id] : [])
+  created.value = false
+})
+
+watch([total, selected, includeMe, shares], () => {
+  created.value = false
+})
 
 const participants = computed(() =>
   store.sortedContacts.filter(p => selected.value.has(p.id)),
@@ -72,8 +92,9 @@ const valid = computed(() => {
 
 function linkFor(p: Profile): string {
   const me = store.self?.name && store.self.name !== 'Me' ? ` to ${store.self.name}` : ''
+  const addr = receiveAddress(store.self?.address) ?? store.self?.address ?? p.address
   return makeRequestLink(
-    store.self?.address ?? p.address,
+    addr,
     shares.value[p.id],
     `Split${note.value.trim() ? `: ${note.value.trim()}` : ''}${me}`,
   )
@@ -86,14 +107,36 @@ async function copyLink(p: Profile) {
   await store.touchInteraction(p.id)
 }
 
+const splitDescription = computed(() =>
+  `Split${note.value.trim() ? `: ${note.value.trim()}` : ''}`,
+)
+
+async function createRequests() {
+  if (!valid.value || creating.value) return
+  creating.value = true
+  try {
+    for (const p of participants.value) {
+      await invoicesStore.create({
+        address: p.address,
+        amountNim: shares.value[p.id],
+        description: splitDescription.value,
+      })
+      await store.touchInteraction(p.id)
+    }
+    created.value = true
+  } finally {
+    creating.value = false
+  }
+}
+
 function close() {
   total.value = null
   totalInput.value?.reset()
   note.value = ''
   filter.value = ''
   includeMe.value = true
-  selected.value = new Set(props.profile ? [props.profile.id] : [])
-  expandedId.value = null
+  selected.value = new Set()
+  created.value = false
   emit('close')
 }
 </script>
@@ -145,20 +188,37 @@ function close() {
           <span class="person-name">{{ p.name }}</span>
         </label>
         <p v-if="filter && pickable.length === 0" class="hint">No matches.</p>
+        <p v-if="store.loaded && store.sortedContacts.length === 0" class="hint">
+          Add a contact first, then come back to split a bill.
+          <router-link to="/add" class="inline-link" @click="close">Add contact</router-link>
+        </p>
+        <p v-else-if="total && participants.length === 0" class="hint">
+          Select at least one contact above to split with.
+        </p>
       </div>
 
       <p v-if="total && participants.length && !valid" class="err">
         Shares must be positive and add up to {{ total.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM{{ includeMe ? ' (your share covers the rest)' : '' }}.
       </p>
 
-      <template v-if="valid">
+      <button
+        v-if="valid && !created"
+        type="button"
+        class="primary"
+        :disabled="creating"
+        @click="createRequests"
+      >
+        {{ creating ? 'Saving…' : 'Create split requests' }}
+      </button>
+
+      <template v-if="created">
         <div class="requests">
           <div v-for="p in participants" :key="p.id" class="request">
-            <button type="button" class="request-row" @click="expandedId = expandedId === p.id ? null : p.id">
+            <div class="request-header">
               <span class="person-name">{{ p.name }}</span>
               <span class="share">{{ shares[p.id] }} NIM</span>
-            </button>
-            <div v-if="expandedId === p.id" class="request-detail">
+            </div>
+            <div class="request-detail">
               <QrCode :text="linkFor(p)" :size="180" />
               <button type="button" class="secondary" @click="copyLink(p)">
                 {{ copiedId === p.id ? 'Copied!' : 'Copy request link' }}
@@ -166,7 +226,10 @@ function close() {
             </div>
           </div>
         </div>
-        <p class="hint">Show each person their QR, or copy their link into any chat.</p>
+        <p class="hint">
+          Show each person their QR, or copy their link into any chat.
+          Track payments on <router-link to="/activity" class="inline-link" @click="close">Activity</router-link>.
+        </p>
       </template>
     </template>
   </ActionSheet>
@@ -191,19 +254,26 @@ function close() {
   width: 96px; font: inherit; padding: 6px 8px; text-align: right;
   border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
-.requests { display: flex; flex-direction: column; gap: 8px; }
-.request-row {
-  width: 100%; display: flex; justify-content: space-between; align-items: center;
-  min-height: 48px; padding: 0 12px; cursor: pointer;
-  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); color: var(--text);
-  font: inherit;
+.primary {
+  width: 100%; height: 48px; margin-bottom: 12px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  font-weight: 700; font-size: 16px; color: var(--nimiq-white);
+  background: var(--nimiq-gold-bg);
+}
+.primary:disabled { opacity: 0.5; cursor: default; }
+.requests { display: flex; flex-direction: column; gap: 12px; margin-top: 4px; }
+.request {
+  border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); padding: 12px;
+}
+.request-header {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px;
 }
 .share { font-weight: 700; color: var(--nq-gold-dark); }
-.request-detail { padding: 12px 0; display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.request-detail { display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .secondary {
   min-height: 44px; padding: 0 20px; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   border: 1px solid var(--border); background: var(--card); color: var(--nq-light-blue); font-weight: 700;
 }
 .err { color: var(--nq-red); font-size: 14px; }
 .hint { color: var(--text-2); font-size: 14px; text-align: center; }
+.inline-link { color: var(--nq-light-blue); font-weight: 700; }
 </style>

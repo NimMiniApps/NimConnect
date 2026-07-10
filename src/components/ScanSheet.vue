@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { classifyScan, shortAddress, type ParsedPaymentRequest, type ScanIntent } from '../services/links'
+import { encodeSharedProfile, sharedProfileToNewProfile } from '../services/profile-share'
 import ActionSheet from './ActionSheet.vue'
 import Identicon from './Identicon.vue'
 import QrScanner from './QrScanner.vue'
@@ -22,6 +23,7 @@ const linkInput = ref('')
 const error = ref('')
 const scannerKey = ref(0)
 const scannerReady = ref(false)
+const scannerPaused = ref(false)
 
 const contact = computed(() =>
   intent.value ? store.getByAddress(intent.value.recipient) : undefined,
@@ -39,11 +41,15 @@ const title = computed(() => {
 
 const headline = computed(() => {
   if (!intent.value) return ''
+  if (intent.value.sharedProfile?.name) return intent.value.sharedProfile.name
   if (contact.value) return contact.value.name
   return shortAddress(intent.value.recipient)
 })
 
 const canPay = computed(() => intent.value != null)
+const isAddContact = computed(() =>
+  intent.value?.requestType === 'profile' && !contact.value,
+)
 
 watch(() => props.open, async open => {
   scannerReady.value = false
@@ -64,18 +70,48 @@ function reset() {
   intent.value = null
   linkInput.value = ''
   error.value = ''
+  scannerPaused.value = false
   scannerKey.value += 1
 }
 
-function handleScan(text: string) {
+async function handleScan(text: string) {
+  if (phase.value === 'result') return
   error.value = ''
   const next = classifyScan(text)
   if (!next) {
     error.value = 'Not a Nimiq address or payment link'
     return
   }
+  scannerPaused.value = true
+
+  const existing = store.getByAddress(next.recipient)
+  if (existing && next.requestType === 'profile') {
+    intent.value = next
+    phase.value = 'result'
+    return
+  }
+
+  if (next.requestType === 'profile' && next.sharedProfile?.name) {
+    try {
+      const p = await store.add(sharedProfileToNewProfile(next.sharedProfile))
+      close()
+      router.push(`/profile/${p.id}`)
+      return
+    } catch (e) {
+      if ((e as Error).message === 'duplicate-address') {
+        const dupe = store.getByAddress(next.recipient)
+        if (dupe) {
+          close()
+          router.push(`/profile/${dupe.id}`)
+          return
+        }
+      }
+    }
+  }
+
   intent.value = next
   phase.value = 'result'
+  if (next.requestType === 'profile') addContact()
 }
 
 function applyPaste() {
@@ -101,7 +137,12 @@ function viewProfile() {
 function addContact() {
   if (!intent.value) return
   close()
-  router.push({ path: '/add', query: { address: intent.value.recipient } })
+  router.push({
+    path: '/add',
+    query: intent.value.sharedProfile
+      ? { p: encodeSharedProfile(intent.value.sharedProfile) }
+      : { address: intent.value.recipient },
+  })
 }
 
 function scanAgain() {
@@ -109,6 +150,7 @@ function scanAgain() {
   intent.value = null
   linkInput.value = ''
   error.value = ''
+  scannerPaused.value = false
   scannerKey.value += 1
   scannerReady.value = false
   nextTick(() => {
@@ -131,6 +173,7 @@ function close() {
       <QrScanner
         v-if="scannerReady"
         :key="scannerKey"
+        :paused="scannerPaused"
         @scan="handleScan"
         @error="msg => { error = msg }"
       />
@@ -161,13 +204,16 @@ function close() {
       </div>
 
       <div class="actions">
-        <button v-if="canPay" type="button" class="primary" @click="pay">
+        <button v-if="isAddContact" type="button" class="primary" @click="addContact">
+          Add contact
+        </button>
+        <button v-if="canPay" type="button" :class="isAddContact ? 'secondary' : 'primary'" @click="pay">
           {{ intent.hasAmount ? `Pay ${intent.amountNim!.toLocaleString(undefined, { maximumFractionDigits: 5 })} NIM` : 'Pay' }}
         </button>
         <button v-if="contact" type="button" class="secondary" @click="viewProfile">
           View profile
         </button>
-        <button v-else type="button" class="secondary" @click="addContact">
+        <button v-else-if="!isAddContact" type="button" class="secondary" @click="addContact">
           Add contact
         </button>
         <button type="button" class="ghost" @click="scanAgain">Scan again</button>

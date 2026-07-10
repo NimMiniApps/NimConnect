@@ -26,6 +26,27 @@ func TestNimiqSignedMessageHashMatchesJsLength(t *testing.T) {
 	_ = nimiqSignedMessageHash(challenge)
 }
 
+func TestVerifySignedMessageAcceptsValidAndRejectsTampered(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	addr, err := addressFromPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := "nimconnect:inbox:send:v1\nsender=X\nrecipient=Y\nsentAt=1\nnonce=a\nobjectId=b\npayloadHash=c"
+	hash := nimiqSignedMessageHash(msg)
+	sig := ed25519.Sign(priv, hash[:])
+
+	if err := verifySignedMessage(addr, hex.EncodeToString(pub), hex.EncodeToString(sig), msg); err != nil {
+		t.Fatalf("valid signature rejected: %v", err)
+	}
+	if err := verifySignedMessage(addr, hex.EncodeToString(pub), hex.EncodeToString(sig), msg+"x"); err == nil {
+		t.Fatal("tampered message accepted")
+	}
+	if err := verifySignedMessage("NQ07 0000 0000 0000 0000 0000 0000 0000 0000", hex.EncodeToString(pub), hex.EncodeToString(sig), msg); err == nil {
+		t.Fatal("wrong address accepted")
+	}
+}
+
 func TestVerifyBackupAuthRoundTrip(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, nextTick } from 'vue'
+import { onMounted, onBeforeUnmount, ref, nextTick, watch } from 'vue'
 import QrScanner from 'qr-scanner'
 
+const props = defineProps<{ paused?: boolean }>()
 const emit = defineEmits<{ scan: [text: string]; error: [message: string] }>()
 const video = ref<HTMLVideoElement>()
 const status = ref<'loading' | 'active' | 'error'>('loading')
@@ -50,6 +51,7 @@ onMounted(async () => {
       },
     )
     await scanner.start()
+    status.value = 'active'
     // iOS / webviews sometimes need an explicit play() after the stream attaches.
     await el.play().catch(() => {})
     if (el.readyState >= 2) status.value = 'active'
@@ -65,6 +67,12 @@ onMounted(async () => {
       cameraError('Camera unavailable — paste the link instead.')
     }
   }
+})
+
+watch(() => props.paused, async paused => {
+  if (!scanner) return
+  if (paused) await scanner.stop()
+  else await scanner.start()
 })
 
 onBeforeUnmount(() => {

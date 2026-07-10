@@ -26,7 +26,7 @@ func decodeHexKeyMaterial(value string) ([]byte, error) {
 	return hex.DecodeString(value)
 }
 
-func verifyBackupAuth(pathAddress string, publicKeyHex string, signatureHex string, exportedAt int64) error {
+func verifySignedMessage(claimedAddress string, publicKeyHex string, signatureHex string, message string) error {
 	pubBytes, err := decodeHexKeyMaterial(publicKeyHex)
 	if err != nil {
 		return fmt.Errorf("invalid public key hex")
@@ -41,19 +41,20 @@ func verifyBackupAuth(pathAddress string, publicKeyHex string, signatureHex stri
 	if len(sigBytes) != ed25519.SignatureSize {
 		return fmt.Errorf("invalid signature length")
 	}
-
 	derived, err := addressFromPublicKey(pubBytes)
 	if err != nil {
 		return err
 	}
-	if compactAddress(derived) != compactAddress(pathAddress) {
+	if compactAddress(derived) != compactAddress(claimedAddress) {
 		return fmt.Errorf("public key does not match address")
 	}
-
-	challenge := backupChallenge(pathAddress, exportedAt)
-	hash := nimiqSignedMessageHash(challenge)
+	hash := nimiqSignedMessageHash(message)
 	if !ed25519.Verify(ed25519.PublicKey(pubBytes), hash[:], sigBytes) {
 		return fmt.Errorf("invalid signature")
 	}
 	return nil
+}
+
+func verifyBackupAuth(pathAddress string, publicKeyHex string, signatureHex string, exportedAt int64) error {
+	return verifySignedMessage(pathAddress, publicKeyHex, signatureHex, backupChallenge(pathAddress, exportedAt))
 }

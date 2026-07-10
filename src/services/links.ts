@@ -5,6 +5,7 @@ import {
   NimiqRequestLinkType,
   parseRequestLink,
 } from '@nimiq/utils/request-link-encoding'
+import { parseProfileShare, type SharedProfile } from './profile-share'
 
 export interface ParsedPaymentRequest {
   recipient: string
@@ -13,10 +14,55 @@ export interface ParsedPaymentRequest {
   label?: string
 }
 
+/** Public app origin for share links (runtime when in browser). */
+export function appOrigin(): string {
+  if (typeof window !== 'undefined') {
+    const base = import.meta.env.BASE_URL ?? '/'
+    const origin = `${window.location.origin}${base}`.replace(/\/+$/, '')
+    return origin || window.location.origin
+  }
+  const domain = import.meta.env.VITE_NIMPAY_MINIAPP_DOMAIN ?? 'nimconnect.nimiqminiapps.com'
+  return `https://${domain}`
+}
+
+/** HTTPS deep link that opens NimConnect on the add-contact form. */
+export function makeAppAddLink(address: string): string {
+  const normalized = ValidationUtils.isValidAddress(address)
+    ? ValidationUtils.normalizeAddress(address)
+    : address.trim()
+  return `${appOrigin()}#/add?address=${encodeURIComponent(normalized)}`
+}
+
+function parseAppAddLink(text: string): ParsedPaymentRequest | null {
+  const hashMatch = text.match(/#\/?add(?:\?|.*?&)address=([^&#]+)/i)
+  if (hashMatch) {
+    const addr = decodeURIComponent(hashMatch[1])
+    if (ValidationUtils.isValidAddress(addr)) {
+      return { recipient: ValidationUtils.normalizeAddress(addr) }
+    }
+  }
+  try {
+    const url = new URL(text)
+    const fromHash = url.hash.match(/#\/?add(?:\?|.*?&)address=([^&#]+)/i)
+    if (fromHash) {
+      const addr = decodeURIComponent(fromHash[1])
+      if (ValidationUtils.isValidAddress(addr)) {
+        return { recipient: ValidationUtils.normalizeAddress(addr) }
+      }
+    }
+  } catch {
+    // not a URL
+  }
+  return null
+}
+
 /** Parse a Nimiq address or payment request link (nimiq: URI, wallet safe link, etc.). */
 export function parsePaymentRequest(text: string): ParsedPaymentRequest | null {
   const trimmed = text.trim()
   if (!trimmed) return null
+
+  const appLink = parseAppAddLink(trimmed)
+  if (appLink) return appLink
 
   if (ValidationUtils.isValidAddress(trimmed)) {
     return { recipient: ValidationUtils.normalizeAddress(trimmed) }
@@ -38,10 +84,21 @@ export type ScanRequestType = 'split' | 'invoice' | 'request' | 'profile'
 export interface ScanIntent extends ParsedPaymentRequest {
   requestType: ScanRequestType
   hasAmount: boolean
+  sharedProfile?: SharedProfile
 }
 
 /** Classify scanned QR / pasted text for pay vs profile actions. */
 export function classifyScan(text: string): ScanIntent | null {
+  const shared = parseProfileShare(text)
+  if (shared) {
+    return {
+      recipient: shared.address,
+      requestType: 'profile',
+      hasAmount: false,
+      sharedProfile: shared,
+    }
+  }
+
   const parsed = parsePaymentRequest(text)
   if (!parsed) return null
 

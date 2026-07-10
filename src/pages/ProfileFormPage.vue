@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { parsePaymentRequest } from '../services/links'
+import { decodeSharedProfile, parseProfileShare, type SharedProfile } from '../services/profile-share'
 import { useProfilesStore } from '../stores/profiles'
 import Identicon from '../components/Identicon.vue'
 import QrScanner from '../components/QrScanner.vue'
@@ -28,6 +29,36 @@ const type = ref<ProfileType>('person')
 const scanning = ref(false)
 const error = ref('')
 
+function applySharedProfile(shared: SharedProfile) {
+  address.value = shared.address
+  name.value = shared.name
+  type.value = shared.type
+  bio.value = shared.bio ?? ''
+  website.value = shared.website ?? ''
+  github.value = shared.github ?? ''
+  x.value = shared.x ?? ''
+  tags.value = [...shared.tags]
+}
+
+function applyAddressFromQuery() {
+  const raw = route.query.address
+  if (!raw) return
+  const parsed = parsePaymentRequest(String(raw))
+  if (parsed?.recipient) address.value = parsed.recipient
+}
+
+function applyShareFromQuery() {
+  const raw = route.query.p
+  if (raw) {
+    const shared = decodeSharedProfile(String(raw))
+    if (shared) {
+      applySharedProfile(shared)
+      return
+    }
+  }
+  applyAddressFromQuery()
+}
+
 onMounted(async () => {
   await store.load()
   if (editId) {
@@ -44,22 +75,28 @@ onMounted(async () => {
     favorite.value = p.favorite
     type.value = p.type
     isSelf.value = p.isSelf
-  } else if (route.query.address) {
-    const parsed = parsePaymentRequest(String(route.query.address))
-    if (parsed?.recipient) address.value = parsed.recipient
+  } else {
+    applyShareFromQuery()
   }
 })
+
+watch(() => [route.query.address, route.query.p], applyShareFromQuery)
 
 const addressValid = computed(() => ValidationUtils.isValidAddress(address.value))
 
 function onScan(text: string) {
   scanning.value = false
+  const shared = parseProfileShare(text)
+  if (shared) {
+    applySharedProfile(shared)
+    return
+  }
   const parsed = parsePaymentRequest(text)
   if (parsed?.recipient) {
     address.value = parsed.recipient
     return
   }
-  error.value = 'QR code does not contain a Nimiq address'
+  error.value = 'QR code does not contain a Nimiq address or profile'
 }
 
 function onScanError(message: string) {

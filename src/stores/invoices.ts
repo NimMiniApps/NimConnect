@@ -4,6 +4,37 @@ import { db } from '../db/db'
 import type { Invoice } from '../types/profile'
 import { uuid } from '../utils/uuid'
 import { notifyDataChanged } from '../services/cloud-backup'
+import { timestampMs, type IncomingPayment } from '../services/history'
+
+const compactAddress = (a: string) => a.replace(/\s+/g, '').toUpperCase()
+
+export function isOverdue(invoice: Invoice, now = Date.now()): boolean {
+  return invoice.status === 'pending' && !!invoice.dueAt && invoice.dueAt < now
+}
+
+/**
+ * Suggest pending invoices that look paid: an incoming payment from the invoice
+ * address, for at least the invoice amount, sent after the invoice was created.
+ * Each payment settles at most one invoice (oldest invoice first).
+ */
+export function matchPayments(pending: Invoice[], payments: IncomingPayment[]): Map<string, IncomingPayment> {
+  const matches = new Map<string, IncomingPayment>()
+  const used = new Set<string>()
+  for (const invoice of [...pending].sort((a, b) => a.createdAt - b.createdAt)) {
+    const address = compactAddress(invoice.address)
+    const hit = payments
+      .filter(p => !used.has(p.hash)
+        && compactAddress(p.sender) === address
+        && p.valueNim >= invoice.amountNim - 1e-9
+        && timestampMs(p.timestamp) >= invoice.createdAt)
+      .sort((a, b) => timestampMs(a.timestamp) - timestampMs(b.timestamp))[0]
+    if (hit) {
+      matches.set(invoice.id, hit)
+      used.add(hit.hash)
+    }
+  }
+  return matches
+}
 
 export const useInvoicesStore = defineStore('invoices', () => {
   const invoices = ref<Invoice[]>([])
@@ -21,11 +52,13 @@ export const useInvoicesStore = defineStore('invoices', () => {
       .sort((a, b) => b.createdAt - a.createdAt)
   }
 
-  const pending = computed(() =>
-    invoices.value
+  const pending = computed(() => {
+    const now = Date.now()
+    const rank = (i: Invoice) => (isOverdue(i, now) ? 0 : 1)
+    return invoices.value
       .filter(i => i.status === 'pending')
-      .sort((a, b) => b.createdAt - a.createdAt),
-  )
+      .sort((a, b) => rank(a) - rank(b) || b.createdAt - a.createdAt)
+  })
 
   const pendingTotalNim = computed(() =>
     pending.value.reduce((sum, invoice) => sum + invoice.amountNim, 0),
@@ -41,6 +74,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
     description: string
     fiatAmount?: number
     fiatCurrency?: string
+    dueAt?: number
   }): Promise<Invoice> {
     if (!(input.amountNim > 0)) throw new Error('invalid-amount')
     const invoice: Invoice = {
@@ -50,6 +84,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
       description: input.description.trim(),
       status: 'pending',
       createdAt: Date.now(),
+      ...(input.dueAt ? { dueAt: input.dueAt } : {}),
       ...(input.fiatAmount && input.fiatCurrency
         ? { fiatAmount: input.fiatAmount, fiatCurrency: input.fiatCurrency }
         : {}),
@@ -93,6 +128,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
         status: raw.status === 'paid' ? 'paid' : 'pending',
         createdAt: Number(raw.createdAt) || Date.now(),
         ...(raw.paidAt ? { paidAt: Number(raw.paidAt) } : {}),
+        ...(raw.dueAt ? { dueAt: Number(raw.dueAt) } : {}),
         ...(raw.fiatAmount && raw.fiatCurrency
           ? { fiatAmount: Number(raw.fiatAmount), fiatCurrency: String(raw.fiatCurrency) }
           : {}),

@@ -1,12 +1,15 @@
 import { describe, it, expect } from 'vitest'
 import {
   makeRequestLink,
+  makeAppAddLink,
   parsePaymentRequest,
   classifyScan,
   shortAddress,
   nimToLunas,
   transactionExplorerUrl,
 } from './links'
+import { makeProfileShareLink } from './profile-share'
+import type { Profile } from '../types/profile'
 
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 
@@ -47,6 +50,33 @@ describe('links', () => {
 
   it('parses bare addresses', () => {
     expect(parsePaymentRequest(A)?.recipient).toBe(A)
+  })
+
+  it('creates and parses NimConnect add-contact deep links', () => {
+    const link = makeAppAddLink(A)
+    expect(link).toContain('#/add?address=')
+    expect(parsePaymentRequest(link)?.recipient).toBe(A)
+    expect(classifyScan(link)?.requestType).toBe('profile')
+  })
+
+  it('classifies full profile share links', () => {
+    const profile: Profile = {
+      id: 'x',
+      address: A,
+      name: 'Bob',
+      type: 'merchant',
+      isSelf: false,
+      notes: '',
+      tags: ['shop'],
+      favorite: false,
+      createdAt: 1,
+      updatedAt: 1,
+      bio: 'Open daily',
+    }
+    const intent = classifyScan(makeProfileShareLink(profile))
+    expect(intent?.requestType).toBe('profile')
+    expect(intent?.sharedProfile?.name).toBe('Bob')
+    expect(intent?.sharedProfile?.bio).toBe('Open daily')
   })
 
   it('returns null for unrelated QR content', () => {

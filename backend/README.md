@@ -60,3 +60,14 @@ Frontend dev proxy (see root `vite.config.ts`) forwards `/api` to `localhost:878
 ```bash
 go test ./...
 ```
+
+## Inbox rate limiting
+
+App-level inbox limits (100/mailbox, 10/sender, nonce idempotency) are
+wallet-independent. Per-IP rate limiting is deliberately left to the reverse
+proxy — add to the nginx server block in front of the API:
+
+    limit_req_zone $binary_remote_addr zone=inbox:1m rate=10r/m;
+    location /api/inbox/ { limit_req zone=inbox burst=20 nodelay; proxy_pass ...; }
+
+Mount `INBOX_DIR` (default `/data/inbox`) on the same volume as backups.

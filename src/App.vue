@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import { insideNimiqPay } from './services/nimiq'
+import { insideNimiqPay, hostAppReady, detectHostApp } from './services/nimiq'
 import { bootstrapWallet } from './services/wallet-bootstrap'
 import { useProfilesStore } from './stores/profiles'
+import { useInboxStore } from './stores/inbox'
 import type { ParsedPaymentRequest } from './services/links'
 import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
@@ -16,12 +17,21 @@ const sendOpen = ref(false)
 const splitOpen = ref(false)
 const restoreOpen = ref(false)
 const pendingPayment = ref<ParsedPaymentRequest | null>(null)
-const browserMode = ref(insideNimiqPay || hasBrowserModeOptIn())
+const browserMode = ref(hasBrowserModeOptIn())
+const inboxStore = useInboxStore()
+inboxStore.load()
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') inboxStore.refresh()
+  })
+}
 
 async function initApp() {
   await bootstrapWallet()
   const store = useProfilesStore()
   await store.load()
+  if (store.self) inboxStore.selfAddress = store.self.address
   if (
     store.profiles.length === 0
     && !globalThis.localStorage?.getItem('nimconnect:skipped-restore')
@@ -30,8 +40,12 @@ async function initApp() {
   }
 }
 
-onMounted(() => {
-  if (browserMode.value) void initApp()
+onMounted(async () => {
+  const inside = await detectHostApp()
+  if (inside || browserMode.value) {
+    browserMode.value = true
+    await initApp()
+  }
 })
 
 watch(browserMode, enabled => {
@@ -56,8 +70,10 @@ function onSendClose() {
 </script>
 
 <template>
+  <div v-if="!hostAppReady" class="boot" aria-busy="true" aria-label="Loading NimConnect" />
+
   <OpenInNimiqPayLanding
-    v-if="!insideNimiqPay && !browserMode"
+    v-else-if="!insideNimiqPay && !browserMode"
     @continue="onContinueInBrowser"
   />
 
@@ -78,7 +94,7 @@ function onSendClose() {
         <span class="nav-icon">👥</span><span>Contacts</span>
       </router-link>
       <router-link to="/activity" class="nav-item" :class="{ active: $route.path === '/activity' }">
-        <span class="nav-icon">🧾</span><span>Activity</span>
+        <span class="nav-icon">🧾<span v-if="inboxStore.badgeCount" class="nav-badge">{{ inboxStore.badgeCount }}</span></span><span>Activity</span>
       </router-link>
       <button type="button" class="nav-item nav-scan" aria-label="Scan QR code" @click="scanOpen = true">
         <span class="scan-icon">▣</span><span>Scan</span>
@@ -99,6 +115,12 @@ function onSendClose() {
 </template>
 
 <style scoped>
+.boot {
+  max-width: 560px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  background: var(--bg);
+}
 .app {
   max-width: 560px;
   margin: 0 auto;
@@ -150,7 +172,13 @@ function onSendClose() {
   padding: 0 2px;
 }
 .nav-item.active { color: var(--nq-gold-dark); }
-.nav-icon { font-size: 20px; line-height: 1; }
+.nav-icon { position: relative; font-size: 20px; line-height: 1; }
+.nav-badge {
+  position: absolute; top: -4px; right: -10px;
+  min-width: 16px; height: 16px; padding: 0 4px;
+  border-radius: 8px; background: var(--nq-red); color: var(--nimiq-white);
+  font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+}
 .nav-button {
   background: none;
   border: none;

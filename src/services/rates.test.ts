@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { getRates, fiatToNim } from './rates'
+import { getRates, fiatToNim, nimToFiat } from './rates'
 
 afterEach(() => vi.unstubAllGlobals())
 
@@ -12,6 +12,13 @@ describe('rates', () => {
     const rates = await getRates()
     expect(rates?.nim.EUR).toBe(0.0004)
     expect(rates?.stale).toBe(false)
+  })
+
+  it('converts NIM to fiat', () => {
+    const rates = { nim: { EUR: 0.0004 }, fetchedAt: Date.now(), stale: false }
+    expect(nimToFiat(75000, 'EUR', rates)).toBe(30)
+    expect(nimToFiat(75000, 'XXX', rates)).toBeNull()
+    expect(nimToFiat(0, 'EUR', rates)).toBeNull()
   })
 
   it('converts fiat to NIM exactly in lunas', () => {

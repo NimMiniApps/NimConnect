@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { db } from '../db/db'
-import { useInvoicesStore } from './invoices'
+import { useInvoicesStore, matchPayments, isOverdue } from './invoices'
+import type { Invoice } from '../types/profile'
+import type { IncomingPayment } from '../services/history'
 
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 const B = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
@@ -70,6 +72,29 @@ describe('invoices store', () => {
     expect(await db.invoices.get(inv.id)).toBeUndefined()
   })
 
+  it('sorts overdue pending invoices first', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    await store.create({ address: A, amountNim: 1, description: 'no due date' })
+    await new Promise(r => setTimeout(r, 2))
+    await store.create({ address: A, amountNim: 2, description: 'future', dueAt: Date.now() + 86_400_000 })
+    await new Promise(r => setTimeout(r, 2))
+    const overdue = await store.create({ address: A, amountNim: 3, description: 'overdue', dueAt: Date.now() - 1000 })
+
+    expect(store.pending[0].id).toBe(overdue.id)
+    expect(isOverdue(store.pending[0])).toBe(true)
+    expect(isOverdue(store.pending[1])).toBe(false)
+  })
+
+  it('importMany preserves due dates', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    await store.importMany([
+      { id: 'due-1', address: A, amountNim: 3, description: 'x', status: 'pending', createdAt: 1, dueAt: 99 },
+    ] as never)
+    expect(store.byAddress(A)[0].dueAt).toBe(99)
+  })
+
   it('importMany skips duplicates and junk', async () => {
     const store = useInvoicesStore()
     await store.load()
@@ -81,5 +106,61 @@ describe('invoices store', () => {
     ] as never)
     expect(added).toBe(1)
     expect(store.byAddress(B)[0].status).toBe('paid')
+  })
+})
+
+describe('matchPayments', () => {
+  // Realistic ms epoch — timestamps below 1e12 get treated as seconds and scaled
+  const T0 = Date.parse('2026-01-01T00:00:00Z')
+  const inv = (id: string, address: string, amountNim: number, createdAt: number): Invoice =>
+    ({ id, address, amountNim, description: '', status: 'pending', createdAt })
+  const pay = (hash: string, sender: string, valueNim: number, timestamp: number): IncomingPayment =>
+    ({ hash, sender, valueNim, timestamp })
+
+  it('matches an incoming payment to a pending invoice from the same address', () => {
+    const matches = matchPayments(
+      [inv('i1', A, 10, T0)],
+      [pay('tx1', A, 10, T0 + 1000)],
+    )
+    expect(matches.get('i1')?.hash).toBe('tx1')
+  })
+
+  it('ignores payments that are too small, too early, or from someone else', () => {
+    const matches = matchPayments(
+      [inv('i1', A, 10, T0)],
+      [
+        pay('small', A, 9.99, T0 + 1000),
+        pay('early', A, 10, T0 - 1000),
+        pay('other', B, 10, T0 + 1000),
+      ],
+    )
+    expect(matches.size).toBe(0)
+  })
+
+  it('matches compact and spaced address forms', () => {
+    const matches = matchPayments(
+      [inv('i1', A, 10, T0)],
+      [pay('tx1', A.replace(/\s+/g, '').toLowerCase(), 10, T0 + 1000)],
+    )
+    expect(matches.get('i1')?.hash).toBe('tx1')
+  })
+
+  it('settles each payment against at most one invoice, oldest invoice first', () => {
+    const matches = matchPayments(
+      [inv('newer', A, 10, T0 + 1000), inv('older', A, 10, T0)],
+      [pay('tx1', A, 10, T0 + 2000)],
+    )
+    expect(matches.get('older')?.hash).toBe('tx1')
+    expect(matches.has('newer')).toBe(false)
+  })
+
+  it('normalizes second-based chain timestamps before comparing', () => {
+    // Invoice created at ms epoch; payment timestamp in seconds
+    const createdAt = Date.parse('2026-01-01T00:00:00Z')
+    const matches = matchPayments(
+      [inv('i1', A, 10, createdAt)],
+      [pay('tx1', A, 10, Math.floor(createdAt / 1000) + 60)],
+    )
+    expect(matches.get('i1')?.hash).toBe('tx1')
   })
 })
