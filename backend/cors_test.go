@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -81,5 +82,29 @@ func TestWithCORS_HandlesOptionsPreflight(t *testing.T) {
 	}
 	if w.Code != http.StatusNoContent {
 		t.Errorf("expected status 204, got %d", w.Code)
+	}
+}
+
+func TestWithCORS_AllowsInboxAuthHeadersAndMethods(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	handler := withCORS("*", next)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/inbox/NQ00TEST/messages", nil)
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "x-inbox-public-key, x-inbox-signature, x-inbox-issued-at")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	allowHeaders := strings.ToLower(w.Header().Get("Access-Control-Allow-Headers"))
+	for _, h := range []string{"x-inbox-public-key", "x-inbox-signature", "x-inbox-issued-at"} {
+		if !strings.Contains(allowHeaders, h) {
+			t.Errorf("Access-Control-Allow-Headers %q missing %q", allowHeaders, h)
+		}
+	}
+	allowMethods := w.Header().Get("Access-Control-Allow-Methods")
+	for _, m := range []string{"POST", "DELETE"} {
+		if !strings.Contains(allowMethods, m) {
+			t.Errorf("Access-Control-Allow-Methods %q missing %q", allowMethods, m)
+		}
 	}
 }
