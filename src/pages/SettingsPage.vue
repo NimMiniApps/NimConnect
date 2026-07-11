@@ -7,6 +7,8 @@ import { preferredCurrency, incomingAddress } from '../services/prefs'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { FIAT_CURRENCIES } from '../services/rates'
 import { clearHistoryCache } from '../services/history'
+import { clearOnboardingDone, clearBackupOnboardingDone } from '../services/onboarding'
+import { afterRestore, enableCloudAfterRestore } from '../services/restore'
 import { resetBootstrap } from '../services/wallet-bootstrap'
 import { createEncryptedBackup, parseEncryptedBackup } from '../services/backup'
 import {
@@ -95,6 +97,7 @@ async function importJson(event: Event) {
       const { added, skipped } = await store.importDocument(parsed)
       message.value = `Imported ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} duplicate/invalid` : ''}.`
       markLocalBackup()
+      await afterRestore()
     }
   } catch {
     message.value = 'That file is not a valid NimConnect export.'
@@ -111,6 +114,7 @@ async function onImportPassphrase(passphrase: string) {
     markLocalBackup()
     message.value = `Imported ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped} duplicate/invalid` : ''}.`
     pendingImport.value = null
+    await afterRestore()
   } catch {
     message.value = 'Wrong passphrase or corrupted backup.'
   }
@@ -194,9 +198,9 @@ async function onCloudRestorePassphrase(passphrase: string) {
     }
     const doc = await parseEncryptedBackup(file, passphrase)
     const { added, skipped } = await store.importDocument(doc)
-    setBackupSession(passphrase, address)
-    markPassphraseSet()
+    enableCloudAfterRestore(passphrase, address)
     message.value = `Restored ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''} from cloud.`
+    await afterRestore()
   } catch {
     message.value = 'Wrong passphrase or cloud backup unavailable.'
   }
@@ -221,6 +225,8 @@ async function resetApp() {
     clearHistoryCache()
     resetBootstrap()
     try { globalThis.localStorage?.removeItem('nimconnect:skipped-restore') } catch {}
+    clearOnboardingDone()
+    clearBackupOnboardingDone()
     message.value = 'All local data deleted.'
     await router.replace('/')
   } catch {
@@ -278,13 +284,16 @@ function cancelReset() {
         <button class="item" @click="restoreFromCloud">⬇ Restore from cloud</button>
         <button v-if="cloudBackupEnabled" class="item subtle" @click="disableCloudBackup">Disable cloud backup</button>
       </template>
-      <button class="item" @click="seedSamples">✨ Add sample contacts</button>
       <button type="button" class="item subtle" @click="showAdvanced = !showAdvanced">
         {{ showAdvanced ? '▾' : '▸' }} Advanced
       </button>
-      <button v-if="showAdvanced" class="item warn" @click="exportPlainJson">
-        Export unencrypted JSON
-      </button>
+      <template v-if="showAdvanced">
+        <p class="hint">Demo and power-user tools — not needed for normal use.</p>
+        <button class="item subtle" @click="seedSamples">✨ Add sample contacts (demo)</button>
+        <button class="item warn" @click="exportPlainJson">
+          Export unencrypted JSON
+        </button>
+      </template>
       <p v-if="message" class="message">{{ message }}</p>
     </div>
 

@@ -4,6 +4,7 @@ import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES, resolveMyAddresses, receiveAddress, walletStatus } from '../services/nimiq'
 import { makeRequestLink, transactionExplorerUrl } from '../services/links'
+import { sendPaymentRequest, inboxAvailable, newNonce } from '../services/inbox'
 import { makeProfileShareLink } from '../services/profile-share'
 import { fetchHistory, type HistoryItem } from '../services/history'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
@@ -29,11 +30,11 @@ const history = ref<HistoryItem[] | null>(null)
 const historyError = ref(false)
 const copied = ref(false)
 
+// Requests are always paid to *my* address — own profile or asking a contact.
 const requestLink = computed(() => {
-  const addr = props.own
-    ? (receiveAddress(props.profile.address) ?? props.profile.address)
-    : props.profile.address
-  return makeRequestLink(addr, amount.value ?? undefined)
+  const self = props.own ? props.profile.address : store.self?.address
+  if (!self) return ''
+  return makeRequestLink(receiveAddress(self) ?? self, amount.value ?? undefined)
 })
 const shareLink = computed(() => makeProfileShareLink(props.profile))
 const dateAdded = computed(() => new Date(props.profile.createdAt).toLocaleDateString())
@@ -82,7 +83,40 @@ function openSheet(which: 'send' | 'request' | 'history' | 'tip' | 'split' | 'in
     loadHistory()
     store.touchInteraction(props.profile.id)
   }
-  if (which === 'request') store.touchInteraction(props.profile.id)
+  if (which === 'request') {
+    store.touchInteraction(props.profile.id)
+    // One object id per sheet open: re-tapping Send delivers a reminder, not a duplicate
+    requestObjectId = newNonce()
+    sendingRequest.value = false
+    requestSent.value = false
+    requestError.value = null
+  }
+}
+
+let requestObjectId = ''
+const sendingRequest = ref(false)
+const requestSent = ref(false)
+const requestError = ref<string | null>(null)
+
+async function sendRequestToInbox() {
+  if (!store.self) return
+  sendingRequest.value = true
+  requestError.value = null
+  try {
+    await sendPaymentRequest({
+      recipient: props.profile.address,
+      // Payload must pay the wallet-signed sender, so use the raw profile address
+      payload: makeRequestLink(store.self.address, amount.value ?? undefined),
+      objectId: requestObjectId,
+      sender: store.self.address,
+    })
+    requestSent.value = true
+    setTimeout(() => (requestSent.value = false), 2500)
+  } catch (e) {
+    requestError.value = e instanceof Error ? e.message : 'Sending failed'
+  } finally {
+    sendingRequest.value = false
+  }
 }
 
 async function doSend() {
@@ -162,14 +196,10 @@ async function loadHistory() {
       <button class="action live" @click="openSheet('tip')">💛<span>Tip</span></button>
     </div>
     <div v-if="!own" class="actions">
-      <button class="action live" @click="openSheet('split')">🍕<span>Split Bill</span></button>
+      <button v-if="!own && profile.type === 'person'" class="action live" @click="openSheet('split')">🍕<span>Split Bill</span></button>
       <button class="action live" @click="openSheet('invoice')">🧾<span>Invoice</span></button>
       <button class="action live" @click="openSheet('history')">🕘<span>History</span></button>
     </div>
-    <div v-if="!own" class="actions future">
-      <button class="action" disabled>💬<span>Message</span></button>
-    </div>
-
     <button v-if="own" type="button" class="edit-profile" @click="$emit('edit')">
       <span aria-hidden="true">✎</span>
       Edit profile
@@ -186,8 +216,8 @@ async function loadHistory() {
     </div>
 
     <div v-if="!own" class="manage">
-      <button class="link" @click="$emit('edit')">Edit</button>
-      <button class="link danger" @click="$emit('remove')">Delete</button>
+      <button type="button" class="secondary" @click="$emit('edit')">Edit</button>
+      <button type="button" class="secondary danger" @click="$emit('remove')">Delete</button>
     </div>
 
     <ActionSheet :open="sheet === 'send'" title="Send NIM" @close="sheet = null">
@@ -216,15 +246,27 @@ async function loadHistory() {
     </ActionSheet>
 
     <ActionSheet :open="sheet === 'request'" title="Request payment" @close="sheet = null">
-      <label class="amount-label">
-        Amount (NIM, optional)
-        <input v-model.number="amount" type="number" min="0" step="any" placeholder="Any amount" />
-      </label>
-      <QrCode :text="requestLink" :size="220" />
-      <p class="hint">{{ profile.name }} can scan this QR or open the link to pay you.</p>
-      <button class="primary" @click="copyRequestLink">
-        Copy payment link
-      </button>
+      <template v-if="requestLink">
+        <label class="amount-label">
+          Amount (NIM, optional)
+          <input v-model.number="amount" type="number" min="0" step="any" placeholder="Any amount" />
+        </label>
+        <QrCode :text="requestLink" :size="220" />
+        <p class="hint">{{ profile.name }} can scan this QR or open the link to pay you.</p>
+        <button
+          v-if="!own && inboxAvailable() && store.self"
+          class="primary"
+          :disabled="sendingRequest"
+          @click="sendRequestToInbox"
+        >
+          {{ requestSent ? 'Sent!' : sendingRequest ? 'Sending…' : 'Send to their NimConnect' }}
+        </button>
+        <p v-if="requestError" class="hint err">{{ requestError }}</p>
+        <button class="primary" @click="copyRequestLink">
+          Copy payment link
+        </button>
+      </template>
+      <p v-else class="hint">Create your own profile first — payment requests are paid to your address.</p>
     </ActionSheet>
 
     <TipSheet v-if="!own" :profile="profile" :open="sheet === 'tip'" @close="sheet = null" />
@@ -281,8 +323,6 @@ async function loadHistory() {
 .balance-fiat { font-size: 12px; font-weight: 600; color: var(--text-2); }
 .balance-hint { font-size: 11px; font-weight: 600; color: var(--text-2); }
 .actions { display: flex; gap: 10px; }
-.actions.future { opacity: 0.45; }
-.actions.future .action { flex: 0 0 calc((100% - 20px) / 3); }
 .action {
   flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 12px 4px; min-height: 64px; font-size: 20px;
@@ -308,9 +348,13 @@ async function loadHistory() {
 .notes { padding: 16px 20px; }
 .notes h2 { font-size: 14px; color: var(--text-2); margin: 0 0 6px; }
 .notes p { margin: 0; white-space: pre-wrap; }
-.manage { display: flex; justify-content: center; gap: 24px; }
-.link { background: none; border: none; color: var(--nq-light-blue); font-weight: 700; cursor: pointer; min-height: 44px; }
-.link.danger { color: var(--nq-red); }
+.manage { display: flex; gap: 8px; }
+.manage .secondary { flex: 1; }
+.secondary {
+  min-height: 44px; padding: 0 16px; border-radius: var(--nimiq-radius-pill); cursor: pointer;
+  border: 1px solid var(--border); background: var(--card); color: var(--nq-light-blue); font-weight: 700;
+}
+.secondary.danger { color: var(--nq-red); }
 .amount-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .message-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .message-label input {

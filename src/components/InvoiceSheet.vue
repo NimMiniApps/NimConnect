@@ -58,6 +58,8 @@ async function create() {
     description.value = ''
     dueDate.value = ''
     expandedId.value = inv.id
+    // Deliver straight to their inbox; the button stays as re-send/reminder
+    if (inboxAvailable()) await sendToInbox(inv)
   } finally {
     creating.value = false
   }

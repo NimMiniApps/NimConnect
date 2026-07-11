@@ -89,6 +89,15 @@ export async function downloadCloudBackup(address: string): Promise<EncryptedBac
   }
 }
 
+/** True when a cloud backup already exists for this wallet address. */
+export async function cloudBackupExists(address: string): Promise<boolean> {
+  if (!hasApiBase()) return false
+  const res = await fetch(apiUrl(backupPath(address)), { method: 'HEAD' })
+  if (res.status === 404) return false
+  if (!res.ok) throw new Error(await backupErrorMessage(res))
+  return true
+}
+
 export function scheduleCloudSync(passphrase?: string, address?: string) {
   if (!cloudBackupEnabled.value || !hasApiBase()) return
   const s = session ?? (passphrase && address ? { passphrase, address } : null)

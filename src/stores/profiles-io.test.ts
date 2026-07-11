@@ -37,7 +37,7 @@ describe('import/export', () => {
 
     // v1 doc (no invoices key) still imports
     await expect(store2.importDocument({ app: 'NimConnect', version: 1, exportedAt: 1, profiles: [] }))
-      .resolves.toEqual({ added: 0, skipped: 0 })
+      .resolves.toEqual({ added: 0, skipped: 0, merged: 0 })
   })
 
   it('round-trips through export → import', async () => {
@@ -57,7 +57,7 @@ describe('import/export', () => {
     const store2 = useProfilesStore()
     await store2.load()
     const result = await store2.importDocument(JSON.parse(JSON.stringify(doc)))
-    expect(result).toEqual({ added: 1, skipped: 0 })
+    expect(result).toEqual({ added: 1, skipped: 0, merged: 0 })
     expect(store2.profiles[0].name).toBe('Alice')
     expect(store2.profiles[0].favorite).toBe(true)
     expect(store2.profiles[0].bio).toBe('Sister')
@@ -66,7 +66,7 @@ describe('import/export', () => {
     expect(store2.profiles[0].x).toBe('alice')
   })
 
-  it('skips duplicates and strips isSelf on import', async () => {
+  it('merges duplicates and restores isSelf on import', async () => {
     const store = useProfilesStore()
     await store.load()
     await store.add({ address: A, name: 'Alice' })
@@ -78,8 +78,10 @@ describe('import/export', () => {
       ],
     }
     const result = await store.importDocument(doc)
-    expect(result).toEqual({ added: 1, skipped: 1 })
-    expect(store.getByAddress(B)!.isSelf).toBe(false)
+    expect(result).toEqual({ added: 1, skipped: 0, merged: 1 })
+    expect(store.getByAddress(A)!.name).toBe('Dup')
+    expect(store.getByAddress(A)!.isSelf).toBe(false)
+    expect(store.getByAddress(B)!.isSelf).toBe(true)
   })
 
   it('strips unsafe URLs and handles on save/import', async () => {

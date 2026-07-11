@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useVisiblePolling } from '../composables/useVisiblePolling'
+import { useAfterRestoreRefresh } from '../composables/useAfterRestoreRefresh'
 import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore, matchPayments, isOverdue } from '../stores/invoices'
 import { useInboxStore } from '../stores/inbox'
@@ -23,21 +25,46 @@ const incomingLoading = ref(false)
 const incomingError = ref(false)
 const rates = ref<NimRates | null>(null)
 
-onMounted(async () => {
-  getRates().then(r => (rates.value = r))
-  await Promise.all([profilesStore.load(), invoicesStore.load(), inboxStore.load()])
+async function refreshPageData() {
+  await Promise.all([
+    profilesStore.reload(),
+    invoicesStore.reload(),
+    inboxStore.reload(),
+  ])
+  senderAliases.value = new Map()
   await loadIncoming()
-  if (profilesStore.self) inboxStore.refresh(profilesStore.self.address)
+  if (profilesStore.self) await inboxStore.refresh(profilesStore.self.address)
+}
+
+useAfterRestoreRefresh(refreshPageData)
+
+onMounted(() => {
+  getRates().then(r => (rates.value = r))
 })
 
 watch(() => profilesStore.self?.address, async (address, prev) => {
   if (address && address !== prev) await loadIncoming()
 })
 
+useVisiblePolling(() => loadIncoming(), 60_000)
+
 const pendingTotal = computed(() =>
   invoicesStore.pendingTotalNim.toLocaleString(undefined, { maximumFractionDigits: 2 }),
 )
 const incomingNewest = computed(() => newestFirst(incoming.value))
+
+/** Quick-send row: favorites first, then recent, deduped, capped. */
+const quickContacts = computed(() => {
+  const merged = [...profilesStore.favorites, ...profilesStore.recent]
+  return [...new Map(merged.map(p => [p.id, p])).values()].slice(0, 8)
+})
+
+/** Brand-new user: nothing to show yet — welcome them instead of empty sections. */
+const freshUser = computed(() =>
+  profilesStore.contacts.length === 0
+  && invoicesStore.pending.length === 0
+  && inboxStore.actionable.length === 0,
+)
 
 /** Compact invoice address → paired addresses it forwards to (Nimiq Pay pays from the paired account). */
 const senderAliases = ref<Map<string, Set<string>>>(new Map())
@@ -94,7 +121,7 @@ async function copyLink(id: string, amountNim: number, description: string) {
 }
 
 async function loadIncoming() {
-  if (!profilesStore.self) return
+  if (!profilesStore.self || incomingLoading.value) return
   incomingLoading.value = true
   incomingError.value = false
   try {
@@ -129,11 +156,33 @@ async function loadSenderAliases() {
   <div class="page">
     <header class="header">
       <div>
-        <h1>Activity</h1>
-        <p>Open payment follow-ups across your contacts.</p>
+        <h1>Home</h1>
+        <p>What needs your attention.</p>
       </div>
       <router-link to="/add" class="add-link" aria-label="Add contact">＋</router-link>
     </header>
+
+    <EmptyState
+      v-if="freshUser"
+      icon="👋"
+      title="Welcome to NimConnect"
+      hint="Add the people you pay — splits, requests and invoices show up here."
+    >
+      <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
+      <router-link to="/me" class="empty-action">Share profile</router-link>
+    </EmptyState>
+
+    <section v-if="quickContacts.length" class="quick-send">
+      <router-link
+        v-for="p in quickContacts"
+        :key="p.id"
+        :to="`/profile/${p.id}`"
+        class="quick-contact"
+      >
+        <Identicon :address="p.address" :size="52" />
+        <span class="quick-name">{{ p.name }}</span>
+      </router-link>
+    </section>
 
     <section v-if="invoicesStore.pending.length" class="summary">
       <div class="summary-main">
@@ -194,7 +243,7 @@ async function loadSenderAliases() {
       </template>
     </section>
 
-    <section class="activity-section invoice-section">
+    <section v-if="!freshUser" class="activity-section invoice-section">
       <div class="section-head">
         <h2>Open invoices</h2>
       </div>
@@ -261,7 +310,7 @@ async function loadSenderAliases() {
         title="No open invoices"
         hint="Create invoices from a contact profile, then track what is still pending here."
       >
-        <router-link to="/" class="empty-action primary-action">Choose contact</router-link>
+        <router-link to="/contacts" class="empty-action primary-action">Choose contact</router-link>
         <router-link to="/add" class="empty-action">Add contact</router-link>
       </EmptyState>
     </section>
@@ -313,7 +362,13 @@ async function loadSenderAliases() {
             >
               Explorer
             </a>
-            <router-link v-if="!profileFor(payment.sender)" to="/add" class="action primary">Add contact</router-link>
+            <router-link
+              v-if="!profileFor(payment.sender) && !payment.viaSwap"
+              :to="{ path: '/add', query: { address: payment.sender } }"
+              class="action primary"
+            >
+              Add contact
+            </router-link>
           </div>
         </article>
       </div>
@@ -352,6 +407,33 @@ async function loadSenderAliases() {
   text-decoration: none;
   font-size: 26px;
   background: var(--nimiq-gold-bg);
+}
+.quick-send {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 16px;
+  overflow-x: auto;
+  padding: 4px 2px;
+  scrollbar-width: none;
+}
+.quick-send::-webkit-scrollbar { display: none; }
+.quick-contact {
+  flex: 0 0 auto;
+  width: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-decoration: none;
+}
+.quick-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
 }
 .summary {
   display: grid;

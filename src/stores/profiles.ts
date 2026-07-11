@@ -30,6 +30,11 @@ export const useProfilesStore = defineStore('profiles', () => {
     loaded.value = true
   }
 
+  async function reload() {
+    profiles.value = await db.profiles.toArray()
+    loaded.value = true
+  }
+
   function getById(id: string): Profile | undefined {
     return profiles.value.find(p => p.id === id)
   }
@@ -227,27 +232,70 @@ export const useProfilesStore = defineStore('profiles', () => {
     await load()
   }
 
-  async function importDocument(doc: unknown): Promise<{ added: number; skipped: number }> {
+  async function importDocument(doc: unknown): Promise<{ added: number; skipped: number; merged: number }> {
     const d = doc as ExportDocument
     if (!d || typeof d !== 'object' || d.app !== 'NimConnect' || ![1, 2].includes(d.version) || !Array.isArray(d.profiles)) {
       throw new Error('invalid-export')
     }
     let added = 0
     let skipped = 0
+    let merged = 0
+
+    async function applySelfFlag(profileId: string) {
+      for (const p of profiles.value.filter(p => p.isSelf && p.id !== profileId)) {
+        await update(p.id, { isSelf: false })
+      }
+      await update(profileId, { isSelf: true })
+    }
+
     for (const raw of d.profiles) {
       try {
-        await add({
-          address: raw.address,
+        const address = normalize(String(raw.address ?? ''))
+        const fields = {
           name: String(raw.name ?? ''),
           notes: String(raw.notes ?? ''),
           tags: Array.isArray(raw.tags) ? raw.tags.map(String) : [],
           favorite: !!raw.favorite,
-          type: raw.type,
+          type: (raw.type ?? 'person') as ProfileType,
           bio: raw.bio ? String(raw.bio) : undefined,
           website: raw.website ? String(raw.website) : undefined,
           github: raw.github ? String(raw.github) : undefined,
           x: raw.x ? String(raw.x) : undefined,
-        })
+          ...(typeof raw.lastInteractionAt === 'number' ? { lastInteractionAt: raw.lastInteractionAt } : {}),
+        }
+        const existing = getByAddress(address)
+        if (existing) {
+          await update(existing.id, fields)
+          if (raw.isSelf) await applySelfFlag(existing.id)
+          merged++
+          continue
+        }
+        const now = Date.now()
+        const profile: Profile = {
+          id: uuid(),
+          address,
+          name: fields.name.trim(),
+          type: fields.type,
+          isSelf: !!raw.isSelf,
+          notes: fields.notes,
+          tags: [...fields.tags],
+          favorite: fields.favorite,
+          createdAt: now,
+          updatedAt: now,
+          ...(fields.bio ? { bio: fields.bio } : {}),
+          ...(safeUrl(fields.website) ? { website: safeUrl(fields.website) } : {}),
+          ...(safeHandle(fields.github, GITHUB_HANDLE) ? { github: safeHandle(fields.github, GITHUB_HANDLE) } : {}),
+          ...(safeHandle(fields.x, X_HANDLE) ? { x: safeHandle(fields.x, X_HANDLE) } : {}),
+          ...(fields.lastInteractionAt ? { lastInteractionAt: fields.lastInteractionAt } : {}),
+        }
+        if (profile.isSelf) {
+          for (const p of profiles.value.filter(p => p.isSelf)) {
+            await update(p.id, { isSelf: false })
+          }
+        }
+        await db.profiles.add(profile)
+        profiles.value.push(profile)
+        notifyDataChanged()
         added++
       } catch {
         skipped++
@@ -255,17 +303,18 @@ export const useProfilesStore = defineStore('profiles', () => {
     }
     if (Array.isArray(d.invoices)) {
       const invoicesStore = useInvoicesStore()
-      await invoicesStore.load()
+      await invoicesStore.reload()
       await invoicesStore.importMany(d.invoices)
     }
+    await reload()
     notifyDataChanged()
-    return { added, skipped }
+    return { added, skipped, merged }
   }
 
   return {
     profiles, loaded, self, contacts,
     sortedContacts, favorites, recent, allTags, search,
-    load, getById, getByAddress, add, update, remove, toggleFavorite, touchInteraction, ensureSelf,
+    load, reload, getById, getByAddress, add, update, remove, toggleFavorite, touchInteraction, ensureSelf,
     exportDocument, importDocument, resetAll,
   }
 })

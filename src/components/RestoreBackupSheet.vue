@@ -7,10 +7,11 @@ import { parseEncryptedBackup } from '../services/backup'
 import { markLocalBackup, markPassphraseSet } from '../services/backup-prefs'
 import { cloudBackupAvailable, downloadCloudBackup } from '../services/cloud-backup'
 import { getMyAddress } from '../services/nimiq'
+import { enableCloudAfterRestore } from '../services/restore'
 import type { EncryptedBackup } from '../types/profile'
 
 defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; restored: [] }>()
+const emit = defineEmits<{ skipped: []; restored: [] }>()
 
 const store = useProfilesStore()
 const fileInput = ref<HTMLInputElement>()
@@ -20,10 +21,11 @@ const message = ref('')
 const busy = ref(false)
 const cloudAvailable = computed(() => cloudBackupAvailable())
 const cloudBusy = ref(false)
+const pendingFromCloud = ref(false)
 
-function skip() {
+function startFresh() {
   try { globalThis.localStorage?.setItem('nimconnect:skipped-restore', '1') } catch {}
-  emit('close')
+  emit('skipped')
 }
 
 function pickFile() {
@@ -32,6 +34,7 @@ function pickFile() {
 
 async function onFile(event: Event) {
   message.value = ''
+  pendingFromCloud.value = false
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
   try {
@@ -44,7 +47,6 @@ async function onFile(event: Event) {
       message.value = `Imported ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`
       markLocalBackup()
       emit('restored')
-      emit('close')
     }
   } catch {
     message.value = 'That file is not a valid NimConnect backup.'
@@ -59,12 +61,17 @@ async function onPassphrase(passphrase: string) {
   try {
     const doc = await parseEncryptedBackup(pendingFile.value, passphrase)
     const { added, skipped } = await store.importDocument(doc)
-    markPassphraseSet()
+    if (pendingFromCloud.value) {
+      const address = store.self?.address ?? await getMyAddress()
+      if (address) enableCloudAfterRestore(passphrase, address)
+    } else {
+      markPassphraseSet()
+    }
     markLocalBackup()
     message.value = `Restored ${added} contact${added === 1 ? '' : 's'}${skipped ? `, skipped ${skipped}` : ''}.`
     pendingFile.value = null
+    pendingFromCloud.value = false
     emit('restored')
-    emit('close')
   } catch {
     message.value = 'Wrong passphrase or corrupted backup.'
   } finally {
@@ -87,6 +94,7 @@ async function restoreFromCloud() {
       return
     }
     pendingFile.value = file
+    pendingFromCloud.value = true
     passphraseOpen.value = true
   } catch {
     message.value = 'Could not reach cloud backup.'
@@ -97,7 +105,7 @@ async function restoreFromCloud() {
 </script>
 
 <template>
-  <ActionSheet :open="open" title="Restore your contacts" @close="emit('close')">
+  <ActionSheet :open="open" title="Restore your contacts" @close="startFresh">
     <p class="hint">No contacts found on this device. Restore from an encrypted backup?</p>
     <button type="button" class="item primary" :disabled="busy || cloudBusy" @click="pickFile">
       Choose backup file
@@ -111,7 +119,7 @@ async function restoreFromCloud() {
     >
       Restore from cloud
     </button>
-    <button type="button" class="item" :disabled="busy || cloudBusy" @click="skip">Start fresh</button>
+    <button type="button" class="item" :disabled="busy || cloudBusy" @click.stop="startFresh">Start fresh</button>
     <p v-if="message" class="message">{{ message }}</p>
     <input ref="fileInput" type="file" accept="application/json,.nimconnect" hidden @change="onFile" />
   </ActionSheet>

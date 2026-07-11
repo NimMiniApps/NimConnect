@@ -19,9 +19,6 @@ export function isInsideNimiqPaySync(): boolean {
 /** Reactive — updated once host detection finishes. */
 export const insideNimiqPay = ref(isInsideNimiqPaySync())
 
-/** False until we've waited for Nimiq Pay to inject the provider. */
-export const hostAppReady = ref(isInsideNimiqPaySync())
-
 /** Reactive status for UI — 'connecting' while awaiting Nimiq Pay approval. */
 export const walletStatus = ref<'idle' | 'connecting' | 'ready' | 'unavailable'>(
   insideNimiqPay.value ? 'idle' : 'unavailable',
@@ -55,16 +52,20 @@ export function detectHostApp(): Promise<boolean> {
   hostDetectPromise ??= (async () => {
     if (isInsideNimiqPaySync()) {
       insideNimiqPay.value = true
-      hostAppReady.value = true
       walletStatus.value = 'idle'
       return true
     }
-    const provider = await waitForProvider(5_000)
-    const inside = provider != null
-    insideNimiqPay.value = inside
-    hostAppReady.value = true
-    walletStatus.value = inside ? 'idle' : 'unavailable'
-    return inside
+    // Outside Nimiq Pay: show the landing page immediately instead of waiting
+    // up to 5s for a provider that will never arrive.
+    insideNimiqPay.value = false
+    walletStatus.value = 'unavailable'
+    // Nimiq Pay may inject the provider shortly after load — upgrade in the background.
+    void waitForProvider(5_000).then(provider => {
+      if (!provider) return
+      insideNimiqPay.value = true
+      walletStatus.value = 'idle'
+    })
+    return false
   })()
   return hostDetectPromise
 }

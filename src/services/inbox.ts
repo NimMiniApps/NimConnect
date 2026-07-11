@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2'
+import { bytesToHex } from '@noble/hashes/utils'
 import { apiUrl, hasApiBase } from './api'
 import { signChallenge } from './nimiq'
 import { db } from '../db/db'
@@ -51,9 +53,9 @@ export function buildReadMessage(address: string, issuedAt: number): string {
   return `nimconnect:inbox:read:v1\naddress=${compact(address)}\nissuedAt=${issuedAt}`
 }
 
+// noble instead of crypto.subtle: subtle is undefined in insecure contexts (plain-HTTP dev)
 export async function sha256Hex(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('')
+  return bytesToHex(sha256(new TextEncoder().encode(text)))
 }
 
 export function newNonce(): string {

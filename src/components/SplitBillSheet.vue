@@ -29,6 +29,8 @@ const created = ref(false)
 
 const filter = ref('')
 
+const splittable = computed(() => store.sortedContacts.filter(p => p.type === 'person'))
+
 onMounted(() => {
   void store.load()
   void invoicesStore.load()
@@ -37,7 +39,7 @@ onMounted(() => {
 watch(() => props.open, open => {
   if (!open) return
   void store.load()
-  selected.value = new Set(props.profile ? [props.profile.id] : [])
+  selected.value = new Set(props.profile?.type === 'person' ? [props.profile.id] : [])
   created.value = false
 })
 
@@ -46,12 +48,12 @@ watch([total, selected, includeMe, shares], () => {
 })
 
 const participants = computed(() =>
-  store.sortedContacts.filter(p => selected.value.has(p.id)),
+  splittable.value.filter(p => selected.value.has(p.id)),
 )
 
 // Selected pinned on top; the rest searchable so long lists stay usable
 const pickable = computed(() =>
-  store.search(filter.value).filter(p => !selected.value.has(p.id)),
+  store.search(filter.value).filter(p => p.type === 'person' && !selected.value.has(p.id)),
 )
 
 function toggle(id: string) {
@@ -176,7 +178,7 @@ function close() {
         </label>
 
         <input
-          v-if="store.sortedContacts.length > participants.length"
+          v-if="splittable.length > participants.length"
           v-model="filter"
           type="search"
           class="filter-input"
@@ -188,8 +190,8 @@ function close() {
           <span class="person-name">{{ p.name }}</span>
         </label>
         <p v-if="filter && pickable.length === 0" class="hint">No matches.</p>
-        <p v-if="store.loaded && store.sortedContacts.length === 0" class="hint">
-          Add a contact first, then come back to split a bill.
+        <p v-if="store.loaded && splittable.length === 0" class="hint">
+          Add a person contact first, then come back to split a bill.
           <router-link to="/add" class="inline-link" @click="close">Add contact</router-link>
         </p>
         <p v-else-if="total && participants.length === 0" class="hint">
@@ -228,7 +230,7 @@ function close() {
         </div>
         <p class="hint">
           Show each person their QR, or copy their link into any chat.
-          Track payments on <router-link to="/activity" class="inline-link" @click="close">Activity</router-link>.
+          Track payments on <router-link to="/" class="inline-link" @click="close">Home</router-link>.
         </p>
       </template>
     </template>

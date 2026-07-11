@@ -20,6 +20,11 @@ export const useInboxStore = defineStore('inbox', () => {
     loaded.value = true
   }
 
+  async function reload() {
+    items.value = await db.inboxItems.toArray()
+    loaded.value = true
+  }
+
   const actionable = computed(() =>
     items.value.filter(i => i.status === 'actionable').sort((a, b) => b.receivedAt - a.receivedAt),
   )
@@ -73,5 +78,5 @@ export const useInboxStore = defineStore('inbox', () => {
     await setStatus(item, 'dismissed')
   }
 
-  return { items, loaded, refreshing, selfAddress, actionable, badgeCount, load, refresh, pay, dismiss }
+  return { items, loaded, refreshing, selfAddress, actionable, badgeCount, load, reload, refresh, pay, dismiss }
 })

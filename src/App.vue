@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue'
-import { insideNimiqPay, hostAppReady, detectHostApp } from './services/nimiq'
+import { ref, onMounted, watch, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
+import { insideNimiqPay, walletStatus, detectHostApp } from './services/nimiq'
 import { bootstrapWallet } from './services/wallet-bootstrap'
 import { useProfilesStore } from './stores/profiles'
 import { useInboxStore } from './stores/inbox'
+import { useVisiblePolling } from './composables/useVisiblePolling'
 import type { ParsedPaymentRequest } from './services/links'
 import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
@@ -11,32 +13,99 @@ import QuickSendSheet from './components/QuickSendSheet.vue'
 import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
 import RestoreBackupSheet from './components/RestoreBackupSheet.vue'
+import OnboardingSheet from './components/OnboardingSheet.vue'
+import BackupOnboardingSheet from './components/BackupOnboardingSheet.vue'
+import { needsOnboarding, needsBackupOnboarding } from './services/onboarding'
+import { afterRestore } from './services/restore'
 
+const router = useRouter()
 const scanOpen = ref(false)
 const sendOpen = ref(false)
 const splitOpen = ref(false)
 const restoreOpen = ref(false)
+const onboardingOpen = ref(false)
+const backupOnboardingOpen = ref(false)
+const restoreOffered = ref(false)
+const dataVersion = ref(0)
 const pendingPayment = ref<ParsedPaymentRequest | null>(null)
 const browserMode = ref(hasBrowserModeOptIn())
 const inboxStore = useInboxStore()
+const profilesStore = useProfilesStore()
 inboxStore.load()
+useVisiblePolling(() => inboxStore.refresh(), 45_000)
 
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') inboxStore.refresh()
-  })
+function anyFirstRunSheetOpen() {
+  return restoreOpen.value || onboardingOpen.value || backupOnboardingOpen.value
+}
+
+function maybeShowOnboarding() {
+  if (needsOnboarding(profilesStore.self)) {
+    onboardingOpen.value = true
+  } else {
+    maybeShowBackupOnboarding()
+  }
+}
+
+function maybeShowBackupOnboarding() {
+  if (needsBackupOnboarding()) backupOnboardingOpen.value = true
+}
+
+function tryFirstRunPrompts() {
+  if (anyFirstRunSheetOpen()) return
+  if (
+    !restoreOffered.value
+    && profilesStore.contacts.length === 0
+    && !globalThis.localStorage?.getItem('nimconnect:skipped-restore')
+  ) {
+    restoreOpen.value = true
+    restoreOffered.value = true
+    return
+  }
+  maybeShowOnboarding()
 }
 
 async function initApp() {
   await bootstrapWallet()
-  const store = useProfilesStore()
-  await store.load()
-  if (store.self) inboxStore.selfAddress = store.self.address
-  if (
-    store.profiles.length === 0
-    && !globalThis.localStorage?.getItem('nimconnect:skipped-restore')
-  ) {
-    restoreOpen.value = true
+  await profilesStore.load()
+  if (profilesStore.self) inboxStore.selfAddress = profilesStore.self.address
+  tryFirstRunPrompts()
+}
+
+function onOnboardingFinished() {
+  onboardingOpen.value = false
+  maybeShowBackupOnboarding()
+}
+
+function onBackupOnboardingComplete() {
+  backupOnboardingOpen.value = false
+}
+
+async function onBackupRestored() {
+  backupOnboardingOpen.value = false
+  await afterRestore()
+  if (router.currentRoute.value.path === '/') {
+    dataVersion.value++
+  }
+}
+
+async function continueFirstRun() {
+  await bootstrapWallet()
+  await profilesStore.load()
+  if (profilesStore.self) inboxStore.selfAddress = profilesStore.self.address
+  await nextTick()
+  maybeShowOnboarding()
+}
+
+function onRestoreSkipped() {
+  restoreOpen.value = false
+  void continueFirstRun()
+}
+
+async function onRestoreComplete() {
+  restoreOpen.value = false
+  await afterRestore()
+  if (router.currentRoute.value.path === '/') {
+    dataVersion.value++
   }
 }
 
@@ -50,6 +119,19 @@ onMounted(async () => {
 
 watch(browserMode, enabled => {
   if (enabled) void initApp()
+})
+
+watch(() => profilesStore.self, () => {
+  if (profilesStore.self) inboxStore.selfAddress = profilesStore.self.address
+  tryFirstRunPrompts()
+})
+
+watch(insideNimiqPay, (inside, wasInside) => {
+  if (inside && !wasInside && browserMode.value) void initApp()
+})
+
+watch(walletStatus, status => {
+  if (status === 'ready') tryFirstRunPrompts()
 })
 
 function onContinueInBrowser() {
@@ -70,10 +152,8 @@ function onSendClose() {
 </script>
 
 <template>
-  <div v-if="!hostAppReady" class="boot" aria-busy="true" aria-label="Loading NimConnect" />
-
   <OpenInNimiqPayLanding
-    v-else-if="!insideNimiqPay && !browserMode"
+    v-if="!insideNimiqPay && !browserMode"
     @continue="onContinueInBrowser"
   />
 
@@ -85,16 +165,16 @@ function onSendClose() {
 
     <router-view v-slot="{ Component }">
       <transition name="page" mode="out-in">
-        <component :is="Component" />
+        <component :is="Component" :key="`${$route.path}-${dataVersion}`" />
       </transition>
     </router-view>
 
     <nav class="bottom-nav">
       <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
-        <span class="nav-icon">👥</span><span>Contacts</span>
+        <span class="nav-icon">🏠<span v-if="inboxStore.badgeCount" class="nav-badge">{{ inboxStore.badgeCount }}</span></span><span>Home</span>
       </router-link>
-      <router-link to="/activity" class="nav-item" :class="{ active: $route.path === '/activity' }">
-        <span class="nav-icon">🧾<span v-if="inboxStore.badgeCount" class="nav-badge">{{ inboxStore.badgeCount }}</span></span><span>Activity</span>
+      <router-link to="/contacts" class="nav-item" :class="{ active: $route.path === '/contacts' }">
+        <span class="nav-icon">👥</span><span>Contacts</span>
       </router-link>
       <button type="button" class="nav-item nav-scan" aria-label="Scan QR code" @click="scanOpen = true">
         <span class="scan-icon">▣</span><span>Scan</span>
@@ -110,17 +190,18 @@ function onSendClose() {
     <ScanSheet :open="scanOpen" @close="scanOpen = false" @pay="onScanPay" />
     <QuickSendSheet :open="sendOpen" :initial-payment="pendingPayment" @close="onSendClose" />
     <SplitBillSheet :open="splitOpen" @close="splitOpen = false" />
-    <RestoreBackupSheet :open="restoreOpen" @close="restoreOpen = false" />
+    <RestoreBackupSheet :open="restoreOpen" @skipped="onRestoreSkipped" @restored="onRestoreComplete" />
+    <OnboardingSheet :open="onboardingOpen" @close="onOnboardingFinished" @complete="onOnboardingFinished" />
+    <BackupOnboardingSheet
+      :open="backupOnboardingOpen"
+      @close="backupOnboardingOpen = false"
+      @complete="onBackupOnboardingComplete"
+      @restored="onBackupRestored"
+    />
   </div>
 </template>
 
 <style scoped>
-.boot {
-  max-width: 560px;
-  margin: 0 auto;
-  min-height: 100dvh;
-  background: var(--bg);
-}
 .app {
   max-width: 560px;
   margin: 0 auto;

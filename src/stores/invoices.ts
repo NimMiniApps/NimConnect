@@ -59,6 +59,11 @@ export const useInvoicesStore = defineStore('invoices', () => {
     loaded.value = true
   }
 
+  async function reload() {
+    invoices.value = await db.invoices.toArray()
+    loaded.value = true
+  }
+
   function byAddress(address: string): Invoice[] {
     return invoices.value
       .filter(i => i.address === address)
@@ -160,6 +165,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
     pending,
     pendingTotalNim,
     load,
+    reload,
     byAddress,
     pendingByAddress,
     create,
