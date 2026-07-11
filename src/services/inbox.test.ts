@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildSendMessage, buildReadMessage, sha256Hex, newNonce, capabilityFresh, isInboxContact, shouldAutoDeliverInbox } from './inbox'
+import { buildSendMessage, buildReadMessage, sha256Hex, newNonce, capabilityFresh, isInboxContact } from './inbox'
 
 describe('inbox canonical messages', () => {
   it('builds the send message exactly as the backend expects', () => {
