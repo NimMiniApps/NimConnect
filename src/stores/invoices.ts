@@ -82,6 +82,12 @@ export const useInvoicesStore = defineStore('invoices', () => {
     pending.value.reduce((sum, invoice) => sum + invoice.amountNim, 0),
   )
 
+  const paid = computed(() =>
+    invoices.value
+      .filter(i => i.status === 'paid')
+      .sort((a, b) => (b.paidAt ?? b.createdAt) - (a.paidAt ?? a.createdAt)),
+  )
+
   function pendingByAddress(address: string): Invoice[] {
     return pending.value.filter(i => i.address === address)
   }
@@ -111,6 +117,20 @@ export const useInvoicesStore = defineStore('invoices', () => {
     invoices.value.push(invoice)
     notifyDataChanged()
     return invoice
+  }
+
+  /** New pending invoice copying an existing one — repeat billing without retyping. */
+  async function duplicate(id: string): Promise<Invoice | undefined> {
+    const source = invoices.value.find(i => i.id === id)
+    if (!source) return
+    return create({
+      address: source.address,
+      amountNim: source.amountNim,
+      description: source.description,
+      ...(source.fiatAmount && source.fiatCurrency
+        ? { fiatAmount: source.fiatAmount, fiatCurrency: source.fiatCurrency }
+        : {}),
+    })
   }
 
   async function setStatus(id: string, status: Invoice['status']) {
@@ -163,12 +183,14 @@ export const useInvoicesStore = defineStore('invoices', () => {
     invoices,
     loaded,
     pending,
+    paid,
     pendingTotalNim,
     load,
     reload,
     byAddress,
     pendingByAddress,
     create,
+    duplicate,
     setStatus,
     remove,
     importMany,

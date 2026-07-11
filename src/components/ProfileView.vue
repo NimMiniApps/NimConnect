@@ -3,15 +3,17 @@ import { ref, computed, onMounted, watch } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES, resolveMyAddresses, receiveAddress, walletStatus } from '../services/nimiq'
-import { makeRequestLink, transactionExplorerUrl } from '../services/links'
-import { sendPaymentRequest, inboxAvailable, newNonce } from '../services/inbox'
+import { makeRequestLink, makePaymentShareLink, transactionExplorerUrl } from '../services/links'
+import { sendPaymentRequest, shouldAutoDeliverInbox, newNonce } from '../services/inbox'
 import { makeProfileShareLink } from '../services/profile-share'
-import { fetchHistory, type HistoryItem } from '../services/history'
+import { shareOrCopy, canShare, copyText } from '../services/share'
+import { fetchHistory, timestampMs, type HistoryItem } from '../services/history'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { preferredCurrency } from '../services/prefs'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
 import ActionSheet from './ActionSheet.vue'
+import CurrencyAmountInput from './CurrencyAmountInput.vue'
 import TipSheet from './TipSheet.vue'
 import SplitBillSheet from './SplitBillSheet.vue'
 import InvoiceSheet from './InvoiceSheet.vue'
@@ -35,6 +37,11 @@ const requestLink = computed(() => {
   const self = props.own ? props.profile.address : store.self?.address
   if (!self) return ''
   return makeRequestLink(receiveAddress(self) ?? self, amount.value ?? undefined)
+})
+const requestShareLink = computed(() => {
+  const self = props.own ? props.profile.address : store.self?.address
+  if (!self) return ''
+  return makePaymentShareLink(receiveAddress(self) ?? self, amount.value ?? undefined)
 })
 const shareLink = computed(() => makeProfileShareLink(props.profile))
 const dateAdded = computed(() => new Date(props.profile.createdAt).toLocaleDateString())
@@ -61,6 +68,24 @@ const netBalance = computed(() => {
   return history.value.reduce((sum, h) => sum + (h.incoming ? h.valueNim : -h.valueNim), 0)
 })
 
+/** NIM sent/received with this contact since the 1st of the current month. */
+const monthStats = computed(() => {
+  if (!history.value?.length) return null
+  const start = new Date()
+  start.setDate(1)
+  start.setHours(0, 0, 0, 0)
+  let sent = 0
+  let received = 0
+  for (const h of history.value) {
+    if (timestampMs(h.timestamp) < start.getTime()) continue
+    if (h.incoming) received += h.valueNim
+    else sent += h.valueNim
+  }
+  if (!sent && !received) return null
+  const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+  return { sent: fmt(sent), received: fmt(received) }
+})
+
 const netBalanceFiat = computed(() => {
   if (netBalance.value == null || preferredCurrency.value === 'NIM' || !rates.value) return null
   const amount = nimToFiat(Math.abs(netBalance.value), preferredCurrency.value, rates.value)
@@ -69,13 +94,18 @@ const netBalanceFiat = computed(() => {
 })
 
 async function copyAddress() {
-  await navigator.clipboard.writeText(props.profile.address)
+  await copyText(props.profile.address)
   copied.value = true
   setTimeout(() => (copied.value = false), 1500)
 }
 
+const sendAmountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
+const requestAmountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
+
 function openSheet(which: 'send' | 'request' | 'history' | 'tip' | 'split' | 'invoice') {
   amount.value = null
+  sendAmountInput.value?.reset()
+  requestAmountInput.value?.reset()
   message.value = ''
   sendResult.value = null
   sheet.value = which
@@ -90,6 +120,9 @@ function openSheet(which: 'send' | 'request' | 'history' | 'tip' | 'split' | 'in
     sendingRequest.value = false
     requestSent.value = false
     requestError.value = null
+    if (shouldAutoDeliverInbox(props.profile.address, store.contacts)) {
+      void sendRequestToInbox()
+    }
   }
 }
 
@@ -134,8 +167,14 @@ async function doSend() {
   }
 }
 
-function copyRequestLink() {
-  navigator.clipboard.writeText(requestLink.value)
+const requestLinkCopied = ref(false)
+
+async function copyRequestLink() {
+  const result = await shareOrCopy(requestShareLink.value, 'Payment request')
+  if (result === 'copied') {
+    requestLinkCopied.value = true
+    setTimeout(() => (requestLinkCopied.value = false), 1500)
+  }
   store.touchInteraction(props.profile.id)
 }
 
@@ -184,6 +223,9 @@ async function loadHistory() {
         <span v-if="netBalanceFiat" class="balance-fiat">{{ netBalanceFiat }}</span>
         <span class="balance-hint">{{ netBalance > 0 ? 'net received from them' : 'net sent to them' }}</span>
       </div>
+      <div v-if="!own && monthStats" class="month-stats">
+        This month: <span class="out">↑ {{ monthStats.sent }} NIM sent</span> · <span class="in">↓ {{ monthStats.received }} NIM received</span>
+      </div>
       <div class="meta">
         <span>Added {{ dateAdded }}</span>
         <span v-if="lastSeen"> · Last activity {{ lastSeen }}</span>
@@ -223,8 +265,8 @@ async function loadHistory() {
     <ActionSheet :open="sheet === 'send'" title="Send NIM" @close="sheet = null">
       <template v-if="insideNimiqPay">
         <label class="amount-label">
-          Amount (NIM)
-          <input v-model.number="amount" type="number" min="0.00001" step="any" placeholder="0.00" />
+          Amount
+          <CurrencyAmountInput ref="sendAmountInput" placeholder="0.00" @update:model-value="amount = $event" />
         </label>
         <label class="message-label">
           Message (optional, goes with the payment)
@@ -248,22 +290,29 @@ async function loadHistory() {
     <ActionSheet :open="sheet === 'request'" title="Request payment" @close="sheet = null">
       <template v-if="requestLink">
         <label class="amount-label">
-          Amount (NIM, optional)
-          <input v-model.number="amount" type="number" min="0" step="any" placeholder="Any amount" />
+          Amount (optional)
+          <CurrencyAmountInput ref="requestAmountInput" placeholder="Any amount" @update:model-value="amount = $event" />
         </label>
         <QrCode :text="requestLink" :size="220" />
-        <p class="hint">{{ profile.name }} can scan this QR or open the link to pay you.</p>
+        <p v-if="shouldAutoDeliverInbox(profile.address, store.contacts)" class="hint">
+          <template v-if="requestSent">Sent to {{ profile.name }}'s NimConnect.</template>
+          <template v-else-if="sendingRequest">Sending to {{ profile.name }}'s NimConnect…</template>
+          <template v-else-if="requestError">Inbox delivery failed — share the link below.</template>
+          <template v-else>{{ profile.name }} gets this in NimConnect when you confirm the wallet signature.</template>
+        </p>
+        <p v-else class="hint">{{ profile.name }} can scan this QR or open the shared link to pay you.</p>
         <button
-          v-if="!own && inboxAvailable() && store.self"
-          class="primary"
+          v-if="shouldAutoDeliverInbox(profile.address, store.contacts)"
+          type="button"
+          class="secondary"
           :disabled="sendingRequest"
           @click="sendRequestToInbox"
         >
-          {{ requestSent ? 'Sent!' : sendingRequest ? 'Sending…' : 'Send to their NimConnect' }}
+          {{ requestSent ? 'Sent!' : sendingRequest ? 'Sending…' : requestError ? 'Retry NimConnect' : 'Send again' }}
         </button>
         <p v-if="requestError" class="hint err">{{ requestError }}</p>
-        <button class="primary" @click="copyRequestLink">
-          Copy payment link
+        <button type="button" class="primary" @click="copyRequestLink">
+          {{ requestLinkCopied ? 'Copied!' : canShare() ? 'Share payment link' : 'Copy payment link' }}
         </button>
       </template>
       <p v-else class="hint">Create your own profile first — payment requests are paid to your address.</p>
@@ -313,6 +362,9 @@ async function loadHistory() {
 .tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
 .tag { background: var(--text-6); border: 1px solid var(--border); border-radius: var(--nimiq-radius-small); padding: 3px 10px; font-size: 12px; }
 .meta { font-size: 12px; color: var(--text-2); }
+.month-stats { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.month-stats .out { color: var(--nq-gold-dark); }
+.month-stats .in { color: var(--nq-green); }
 .balance {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 6px 16px; border-radius: var(--nimiq-radius-pill);

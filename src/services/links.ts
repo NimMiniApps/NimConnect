@@ -5,6 +5,7 @@ import {
   NimiqRequestLinkType,
   parseRequestLink,
 } from '@nimiq/utils/request-link-encoding'
+import { NIMPAY_OPEN_URL } from '../config/host-app'
 import { parseProfileShare, type SharedProfile } from './profile-share'
 
 export interface ParsedPaymentRequest {
@@ -56,8 +57,7 @@ function parseAppAddLink(text: string): ParsedPaymentRequest | null {
   return null
 }
 
-/** Parse a Nimiq address or payment request link (nimiq: URI, wallet safe link, etc.). */
-export function parsePaymentRequest(text: string): ParsedPaymentRequest | null {
+function parseNimiqPaymentPayload(text: string): ParsedPaymentRequest | null {
   const trimmed = text.trim()
   if (!trimmed) return null
 
@@ -77,6 +77,47 @@ export function parsePaymentRequest(text: string): ParsedPaymentRequest | null {
     ...(parsed.message ? { message: parsed.message } : {}),
     ...(parsed.label ? { label: parsed.label } : {}),
   }
+}
+
+function extractPayPayloadParam(text: string): string | null {
+  const hashMatch = text.match(/#\/?pay\?([^#]+)/i)
+  if (hashMatch) {
+    const r = new URLSearchParams(hashMatch[1]).get('r')
+    if (r) return r
+  }
+  try {
+    const url = new URL(text)
+    const fromHash = url.hash.match(/#\/?pay\?([^#]+)/i)
+    if (fromHash) {
+      const r = new URLSearchParams(fromHash[1]).get('r')
+      if (r) return r
+    }
+    return url.searchParams.get('r')
+  } catch {
+    return null
+  }
+}
+
+/** Extract the nimiq payload from a NimConnect / Nimiq Pay payment share URL. */
+export function parsePaymentShareLink(text: string): ParsedPaymentRequest | null {
+  const payload = extractPayPayloadParam(text.trim())
+  if (!payload) return null
+  try {
+    return parseNimiqPaymentPayload(decodeURIComponent(payload))
+  } catch {
+    return null
+  }
+}
+
+/** Parse a Nimiq address or payment request link (nimiq: URI, wallet safe link, etc.). */
+export function parsePaymentRequest(text: string): ParsedPaymentRequest | null {
+  const trimmed = text.trim()
+  if (!trimmed) return null
+
+  const shareLink = parsePaymentShareLink(trimmed)
+  if (shareLink) return shareLink
+
+  return parseNimiqPaymentPayload(trimmed)
 }
 
 export type ScanRequestType = 'split' | 'invoice' | 'request' | 'profile'
@@ -125,6 +166,15 @@ export function makeRequestLink(address: string, amountNim?: number, message?: s
     ...(amountNim ? { amount: nimToLunas(amountNim) } : {}),
     ...(message?.trim() ? { message: message.trim() } : {}),
   })
+}
+
+/**
+ * HTTPS link for messengers (WhatsApp, Telegram, …): opens NimConnect in Nimiq Pay
+ * and pre-fills the pay sheet. QR codes should keep using makeRequestLink() directly.
+ */
+export function makePaymentShareLink(address: string, amountNim?: number, message?: string): string {
+  const nimiq = makeRequestLink(address, amountNim, message)
+  return `${NIMPAY_OPEN_URL}#/pay?r=${encodeURIComponent(nimiq)}`
 }
 
 export function shortAddress(address: string): string {

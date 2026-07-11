@@ -6,7 +6,7 @@ import { bootstrapWallet } from './services/wallet-bootstrap'
 import { useProfilesStore } from './stores/profiles'
 import { useInboxStore } from './stores/inbox'
 import { useVisiblePolling } from './composables/useVisiblePolling'
-import type { ParsedPaymentRequest } from './services/links'
+import { parsePaymentRequest, type ParsedPaymentRequest } from './services/links'
 import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
 import QuickSendSheet from './components/QuickSendSheet.vue'
@@ -134,6 +134,15 @@ watch(walletStatus, status => {
   if (status === 'ready') tryFirstRunPrompts()
 })
 
+watch(
+  () => router.currentRoute.value.fullPath,
+  () => { void handleIncomingPaymentLink() },
+)
+
+watch([browserMode, insideNimiqPay], () => {
+  void handleIncomingPaymentLink()
+})
+
 function onContinueInBrowser() {
   enableBrowserMode()
   browserMode.value = true
@@ -148,6 +157,22 @@ function onScanPay(request: ParsedPaymentRequest) {
 function onSendClose() {
   sendOpen.value = false
   pendingPayment.value = null
+}
+
+async function handleIncomingPaymentLink() {
+  if (router.currentRoute.value.path !== '/pay') return
+  if (!browserMode.value && !insideNimiqPay.value) return
+
+  const raw = router.currentRoute.value.query.r
+  const parsed = typeof raw === 'string'
+    ? parsePaymentRequest(decodeURIComponent(raw))
+    : parsePaymentRequest(window.location.href)
+
+  await router.replace('/')
+  if (!parsed) return
+
+  pendingPayment.value = parsed
+  sendOpen.value = true
 }
 </script>
 

@@ -71,6 +71,25 @@ export function inboxAvailable(): boolean {
   return hasApiBase()
 }
 
+const compactAddress = (a: string) => a.replace(/\s+/g, '').toUpperCase()
+
+/** True when the address belongs to a saved contact (not self). */
+export function isInboxContact(
+  address: string,
+  contacts: readonly { isSelf?: boolean; address: string }[],
+): boolean {
+  const target = compactAddress(address)
+  return contacts.some(p => !p.isSelf && compactAddress(p.address) === target)
+}
+
+/** Auto-deliver payment requests to the inbox for saved contacts when the API is up. */
+export function shouldAutoDeliverInbox(
+  recipient: string,
+  contacts: readonly { isSelf?: boolean; address: string }[],
+): boolean {
+  return inboxAvailable() && isInboxContact(recipient, contacts)
+}
+
 async function inboxErrorMessage(res: Response): Promise<string> {
   if (res.status === 429) return 'Their inbox is full — share a link instead.'
   if (res.status === 401) return 'Wallet signature was rejected. Use Nimiq Pay with the same wallet as your profile.'

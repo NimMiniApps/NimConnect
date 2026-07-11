@@ -3,9 +3,11 @@ import { ref, computed, watch, onMounted } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore } from '../stores/invoices'
-import { makeRequestLink, nimToLunas } from '../services/links'
+import { makeRequestLink, makePaymentShareLink, nimToLunas } from '../services/links'
 import { receiveAddress } from '../services/nimiq'
 import { splitAmount } from '../utils/split'
+import { sendPaymentRequest, shouldAutoDeliverInbox, inboxAvailable } from '../services/inbox'
+import { shareOrCopy, canShare } from '../services/share'
 import ActionSheet from './ActionSheet.vue'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
@@ -26,6 +28,10 @@ const shares = ref<Record<string, number>>({})
 const copiedId = ref<string | null>(null)
 const creating = ref(false)
 const created = ref(false)
+const invoiceIds = ref<Record<string, string>>({})
+const sendingId = ref<string | null>(null)
+const sentId = ref<string | null>(null)
+const sendErrors = ref<Record<string, string>>({})
 
 const filter = ref('')
 
@@ -41,6 +47,8 @@ watch(() => props.open, open => {
   void store.load()
   selected.value = new Set(props.profile?.type === 'person' ? [props.profile.id] : [])
   created.value = false
+  invoiceIds.value = {}
+  sendErrors.value = {}
 })
 
 watch([total, selected, includeMe, shares], () => {
@@ -103,9 +111,15 @@ function linkFor(p: Profile): string {
 }
 
 async function copyLink(p: Profile) {
-  await navigator.clipboard.writeText(linkFor(p))
-  copiedId.value = p.id
-  setTimeout(() => (copiedId.value = null), 1500)
+  const addr = receiveAddress(store.self?.address) ?? store.self?.address ?? p.address
+  const result = await shareOrCopy(
+    makePaymentShareLink(addr, shares.value[p.id], splitDescription.value),
+    splitDescription.value,
+  )
+  if (result === 'copied') {
+    copiedId.value = p.id
+    setTimeout(() => (copiedId.value = null), 1500)
+  }
   await store.touchInteraction(p.id)
 }
 
@@ -113,17 +127,46 @@ const splitDescription = computed(() =>
   `Split${note.value.trim() ? `: ${note.value.trim()}` : ''}`,
 )
 
+async function sendToInbox(p: Profile, invoiceId: string) {
+  if (!store.self) return
+  sendingId.value = p.id
+  const nextErrors = { ...sendErrors.value }
+  delete nextErrors[p.id]
+  sendErrors.value = nextErrors
+  try {
+    await sendPaymentRequest({
+      recipient: p.address,
+      payload: makeRequestLink(store.self.address, shares.value[p.id], splitDescription.value),
+      objectId: invoiceId,
+      sender: store.self.address,
+    })
+    sentId.value = p.id
+    setTimeout(() => { if (sentId.value === p.id) sentId.value = null }, 2500)
+  } catch (e) {
+    sendErrors.value = {
+      ...sendErrors.value,
+      [p.id]: e instanceof Error ? e.message : 'Sending failed',
+    }
+  } finally {
+    sendingId.value = null
+  }
+}
+
 async function createRequests() {
   if (!valid.value || creating.value) return
   creating.value = true
+  invoiceIds.value = {}
+  sendErrors.value = {}
   try {
     for (const p of participants.value) {
-      await invoicesStore.create({
+      const inv = await invoicesStore.create({
         address: p.address,
         amountNim: shares.value[p.id],
         description: splitDescription.value,
       })
+      invoiceIds.value = { ...invoiceIds.value, [p.id]: inv.id }
       await store.touchInteraction(p.id)
+      if (shouldAutoDeliverInbox(p.address, store.contacts)) await sendToInbox(p, inv.id)
     }
     created.value = true
   } finally {
@@ -139,6 +182,8 @@ function close() {
   includeMe.value = true
   selected.value = new Set()
   created.value = false
+  invoiceIds.value = {}
+  sendErrors.value = {}
   emit('close')
 }
 </script>
@@ -210,7 +255,7 @@ function close() {
         :disabled="creating"
         @click="createRequests"
       >
-        {{ creating ? 'Saving…' : 'Create split requests' }}
+        {{ creating ? (inboxAvailable() ? 'Creating & sending…' : 'Saving…') : 'Create split requests' }}
       </button>
 
       <template v-if="created">
@@ -222,14 +267,32 @@ function close() {
             </div>
             <div class="request-detail">
               <QrCode :text="linkFor(p)" :size="180" />
-              <button type="button" class="secondary" @click="copyLink(p)">
-                {{ copiedId === p.id ? 'Copied!' : 'Copy request link' }}
-              </button>
+              <div class="request-actions">
+                <button
+                  v-if="inboxAvailable()"
+                  type="button"
+                  class="secondary"
+                  :disabled="sendingId === p.id"
+                  @click="sendToInbox(p, invoiceIds[p.id])"
+                >
+                  {{ sentId === p.id ? 'Sent!' : sendingId === p.id ? 'Sending…' : sendErrors[p.id] ? 'Retry NimConnect' : 'Send to their NimConnect' }}
+                </button>
+                <button type="button" class="secondary" @click="copyLink(p)">
+                  {{ copiedId === p.id ? 'Copied!' : canShare() ? 'Share request link' : 'Copy request link' }}
+                </button>
+              </div>
+              <p v-if="sendErrors[p.id]" class="err">{{ sendErrors[p.id] }}</p>
             </div>
           </div>
         </div>
         <p class="hint">
-          Show each person their QR, or copy their link into any chat.
+          <template v-if="inboxAvailable()">
+            Requests go to each person's NimConnect when you confirm the wallet signatures.
+            Share a QR or link if someone didn't get it.
+          </template>
+          <template v-else>
+            Show each person their QR, or copy their link into any chat.
+          </template>
           Track payments on <router-link to="/" class="inline-link" @click="close">Home</router-link>.
         </p>
       </template>
@@ -271,6 +334,7 @@ function close() {
 }
 .share { font-weight: 700; color: var(--nq-gold-dark); }
 .request-detail { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+.request-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .secondary {
   min-height: 44px; padding: 0 20px; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   border: 1px solid var(--border); background: var(--card); color: var(--nq-light-blue); font-weight: 700;

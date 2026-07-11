@@ -86,6 +86,41 @@ describe('invoices store', () => {
     expect(isOverdue(store.pending[1])).toBe(false)
   })
 
+  it('lists paid invoices newest-paid first', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const first = await store.create({ address: A, amountNim: 1, description: 'first paid' })
+    const second = await store.create({ address: A, amountNim: 2, description: 'second paid' })
+    await store.create({ address: A, amountNim: 3, description: 'still pending' })
+    await store.setStatus(first.id, 'paid')
+    await new Promise(r => setTimeout(r, 2))
+    await store.setStatus(second.id, 'paid')
+
+    expect(store.paid.map(i => i.description)).toEqual(['second paid', 'first paid'])
+  })
+
+  it('duplicates an invoice as a fresh pending copy', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const source = await store.create({
+      address: A, amountNim: 7, description: 'Rent', fiatAmount: 10, fiatCurrency: 'EUR',
+    })
+    await store.setStatus(source.id, 'paid')
+    await new Promise(r => setTimeout(r, 2))
+    const copy = await store.duplicate(source.id)
+
+    expect(copy).toBeTruthy()
+    expect(copy!.id).not.toBe(source.id)
+    expect(copy!.status).toBe('pending')
+    expect(copy!.paidAt).toBeUndefined()
+    expect(copy!.amountNim).toBe(7)
+    expect(copy!.description).toBe('Rent')
+    expect(copy!.fiatAmount).toBe(10)
+    expect(copy!.fiatCurrency).toBe('EUR')
+    expect(copy!.createdAt).toBeGreaterThan(source.createdAt)
+    expect(await store.duplicate('missing-id')).toBeUndefined()
+  })
+
   it('importMany preserves due dates', async () => {
     const store = useInvoicesStore()
     await store.load()

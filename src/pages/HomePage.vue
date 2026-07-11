@@ -6,7 +6,9 @@ import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore, matchPayments, isOverdue } from '../stores/invoices'
 import { useInboxStore } from '../stores/inbox'
 import InboxRequestCard from '../components/InboxRequestCard.vue'
-import { makeRequestLink, shortAddress, transactionExplorerUrl } from '../services/links'
+import { makeRequestLink, makePaymentShareLink, shortAddress, transactionExplorerUrl } from '../services/links'
+import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
+import { shareOrCopy, canShare } from '../services/share'
 import { fetchIncomingPayments, fetchForwardAddresses, newestFirst, type IncomingPayment } from '../services/history'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { resolveMyAddresses, receiveAddress } from '../services/nimiq'
@@ -19,6 +21,10 @@ const invoicesStore = useInvoicesStore()
 const inboxStore = useInboxStore()
 const copiedId = ref<string | null>(null)
 const payingId = ref<string | null>(null)
+const remindingId = ref<string | null>(null)
+const remindedId = ref<string | null>(null)
+const remindError = ref<string | null>(null)
+const paidExpanded = ref(false)
 const unknownExpanded = ref(false)
 const incoming = ref<IncomingPayment[]>([])
 const incomingLoading = ref(false)
@@ -107,17 +113,44 @@ async function payRequest(item: (typeof inboxStore.actionable)[number]) {
   }
 }
 
-function requestLink(amountNim: number, description: string): string | null {
+function paymentShareLink(amountNim: number, description: string): string | null {
   if (!profilesStore.self) return null
-  return makeRequestLink(receiveAddress(profilesStore.self.address) ?? profilesStore.self.address, amountNim, description || 'Invoice')
+  const addr = receiveAddress(profilesStore.self.address) ?? profilesStore.self.address
+  return makePaymentShareLink(addr, amountNim, description || 'Invoice')
 }
 
 async function copyLink(id: string, amountNim: number, description: string) {
-  const link = requestLink(amountNim, description)
+  const link = paymentShareLink(amountNim, description)
   if (!link) return
-  await navigator.clipboard.writeText(link)
-  copiedId.value = id
-  setTimeout(() => (copiedId.value = null), 1500)
+  const result = await shareOrCopy(link, description || 'Payment request')
+  if (result === 'copied') {
+    copiedId.value = id
+    setTimeout(() => (copiedId.value = null), 1500)
+  }
+}
+
+/** Re-send the payment request to the payer's NimConnect inbox. Reusing the
+ * invoice id as objectId makes repeat sends deliver as reminders, not duplicates. */
+async function remind(invoice: { id: string; address: string; amountNim: number; description: string }) {
+  const self = profilesStore.self
+  if (!self || remindingId.value) return
+  remindingId.value = invoice.id
+  remindError.value = null
+  try {
+    await sendPaymentRequest({
+      recipient: invoice.address,
+      // Payload must pay the wallet-signed sender, so use the raw self address
+      payload: makeRequestLink(self.address, invoice.amountNim, invoice.description || 'Invoice'),
+      objectId: invoice.id,
+      sender: self.address,
+    })
+    remindedId.value = invoice.id
+    setTimeout(() => (remindedId.value = null), 2500)
+  } catch (e) {
+    remindError.value = e instanceof Error ? e.message : 'Sending failed'
+  } finally {
+    remindingId.value = null
+  }
 }
 
 async function loadIncoming() {
@@ -291,7 +324,16 @@ async function loadSenderAliases() {
               :disabled="!profilesStore.self"
               @click="copyLink(invoice.id, invoice.amountNim, invoice.description)"
             >
-              {{ copiedId === invoice.id ? 'Copied' : 'Copy link' }}
+              {{ copiedId === invoice.id ? 'Copied' : canShare() ? 'Share link' : 'Copy link' }}
+            </button>
+            <button
+              v-if="inboxAvailable() && profilesStore.self && profileFor(invoice.address)"
+              type="button"
+              class="action"
+              :disabled="remindingId === invoice.id"
+              @click="remind(invoice)"
+            >
+              {{ remindedId === invoice.id ? 'Reminded ✓' : remindingId === invoice.id ? 'Sending…' : 'Remind' }}
             </button>
             <button type="button" class="action" @click="invoicesStore.setStatus(invoice.id, 'paid')">
               Mark paid
@@ -302,6 +344,7 @@ async function loadSenderAliases() {
           </div>
         </article>
       </div>
+      <p v-if="remindError" class="notice">{{ remindError }}</p>
     </template>
 
       <EmptyState
@@ -313,6 +356,48 @@ async function loadSenderAliases() {
         <router-link to="/contacts" class="empty-action primary-action">Choose contact</router-link>
         <router-link to="/add" class="empty-action">Add contact</router-link>
       </EmptyState>
+    </section>
+
+    <section v-if="invoicesStore.paid.length" class="activity-section">
+      <div class="section-head">
+        <h2>Recently paid</h2>
+        <button type="button" class="refresh" @click="paidExpanded = !paidExpanded">
+          {{ paidExpanded ? 'Hide' : `Show (${invoicesStore.paid.length})` }}
+        </button>
+      </div>
+      <div v-if="paidExpanded" class="invoice-list">
+        <article v-for="invoice in invoicesStore.paid.slice(0, 10)" :key="invoice.id" class="card invoice-card paid-card">
+          <div class="invoice-head">
+            <Identicon :address="invoice.address" :size="44" />
+            <div class="invoice-title">
+              <router-link
+                v-if="profileFor(invoice.address)"
+                :to="`/profile/${profileFor(invoice.address)!.id}`"
+                class="contact-link"
+              >
+                {{ contactName(invoice.address) }}
+              </router-link>
+              <span v-else class="contact-link missing">{{ contactName(invoice.address) }}</span>
+              <span class="invoice-date">
+                Paid {{ new Date(invoice.paidAt ?? invoice.createdAt).toLocaleDateString() }}
+              </span>
+            </div>
+            <div class="invoice-amount">
+              {{ invoice.amountNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+              <span v-if="invoice.fiatAmount" class="fiat">{{ invoice.fiatAmount }} {{ invoice.fiatCurrency }}</span>
+            </div>
+          </div>
+          <p class="description">{{ invoice.description || 'Invoice' }}</p>
+          <div class="actions">
+            <button type="button" class="action" @click="invoicesStore.duplicate(invoice.id)">
+              Duplicate
+            </button>
+            <button type="button" class="action danger" @click="invoicesStore.remove(invoice.id)">
+              Delete
+            </button>
+          </div>
+        </article>
+      </div>
     </section>
 
     <section class="activity-section incoming-section">
@@ -518,6 +603,7 @@ async function loadSenderAliases() {
 .invoice-list { display: flex; flex-direction: column; gap: 12px; }
 .incoming-list { display: flex; flex-direction: column; gap: 10px; }
 .invoice-card { padding: 14px; }
+.paid-card { opacity: 0.75; }
 .incoming-card { padding: 14px; overflow: hidden; }
 .invoice-head {
   display: flex;

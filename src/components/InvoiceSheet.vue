@@ -3,9 +3,10 @@ import { ref, computed, onMounted } from 'vue'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore, isOverdue } from '../stores/invoices'
-import { makeRequestLink } from '../services/links'
+import { makeRequestLink, makePaymentShareLink } from '../services/links'
 import { receiveAddress } from '../services/nimiq'
-import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
+import { sendPaymentRequest, shouldAutoDeliverInbox, inboxAvailable } from '../services/inbox'
+import { shareOrCopy, canShare } from '../services/share'
 import ActionSheet from './ActionSheet.vue'
 import QrCode from './QrCode.vue'
 import CurrencyAmountInput from './CurrencyAmountInput.vue'
@@ -58,17 +59,23 @@ async function create() {
     description.value = ''
     dueDate.value = ''
     expandedId.value = inv.id
-    // Deliver straight to their inbox; the button stays as re-send/reminder
-    if (inboxAvailable()) await sendToInbox(inv)
+    // Deliver to their inbox when they're a saved contact
+    if (shouldAutoDeliverInbox(props.profile.address, store.contacts)) await sendToInbox(inv)
   } finally {
     creating.value = false
   }
 }
 
 async function copyLink(id: string, amountNim: number, desc: string) {
-  await navigator.clipboard.writeText(linkFor(amountNim, desc))
-  copiedId.value = id
-  setTimeout(() => (copiedId.value = null), 1500)
+  const addr = receiveAddress(store.self?.address) ?? store.self?.address ?? props.profile.address
+  const result = await shareOrCopy(
+    makePaymentShareLink(addr, amountNim, desc || 'Invoice'),
+    desc || 'Invoice',
+  )
+  if (result === 'copied') {
+    copiedId.value = id
+    setTimeout(() => (copiedId.value = null), 1500)
+  }
 }
 
 async function sendToInbox(inv: { id: string; amountNim: number; description: string }) {
@@ -139,7 +146,7 @@ function close() {
             <p v-if="inv.status === 'pending'" class="pay-hint">Payer: tap Scan in the bottom bar and scan this QR.</p>
             <div class="detail-actions">
               <button v-if="inv.status === 'pending'" type="button" class="secondary" @click="copyLink(inv.id, inv.amountNim, inv.description)">
-                {{ copiedId === inv.id ? 'Copied!' : 'Copy link' }}
+                {{ copiedId === inv.id ? 'Copied!' : canShare() ? 'Share link' : 'Copy link' }}
               </button>
               <button
                 v-if="inv.status === 'pending' && inboxAvailable() && store.self"

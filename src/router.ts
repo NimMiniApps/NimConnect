@@ -10,6 +10,7 @@ export const router = createRouter({
     { path: '/edit/:id', component: () => import('./pages/ProfileFormPage.vue') },
     { path: '/me', component: () => import('./pages/MyProfilePage.vue') },
     { path: '/settings', component: () => import('./pages/SettingsPage.vue') },
+    { path: '/pay', component: () => import('./pages/PayPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

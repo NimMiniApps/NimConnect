@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   makeRequestLink,
+  makePaymentShareLink,
   makeAppAddLink,
   parsePaymentRequest,
+  parsePaymentShareLink,
   classifyScan,
   shortAddress,
   nimToLunas,
@@ -14,6 +16,24 @@ import type { Profile } from '../types/profile'
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 
 describe('links', () => {
+  it('creates HTTPS payment share links for messengers', () => {
+    const link = makePaymentShareLink(A, 5, 'Split: dinner')
+    expect(link).toMatch(/^https:\/\/nimpay\.app\/miniapps\/open\//)
+    expect(link).toContain('#/pay?r=')
+    const parsed = parsePaymentRequest(link)
+    expect(parsed?.recipient).toBe(A)
+    expect(parsed?.amountNim).toBe(5)
+    expect(parsed?.message).toBe('Split: dinner')
+  })
+
+  it('parses payment share links from pasted URLs', () => {
+    const link = makePaymentShareLink(A, 2, 'Invoice')
+    expect(parsePaymentShareLink(link)?.amountNim).toBe(2)
+    const intent = classifyScan(link)
+    expect(intent?.requestType).toBe('invoice')
+    expect(intent?.hasAmount).toBe(true)
+  })
+
   it('creates a nimiq: request link without amount', () => {
     const link = makeRequestLink(A)
     expect(link.startsWith('nimiq:')).toBe(true)
