@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES, resolveMyAddresses, receiveAddress, walletStatus } from '../services/nimiq'
@@ -22,6 +23,7 @@ const props = defineProps<{ profile: Profile; own?: boolean }>()
 defineEmits<{ edit: []; remove: [] }>()
 
 const store = useProfilesStore()
+const route = useRoute()
 const sheet = ref<'send' | 'request' | 'history' | 'tip' | 'split' | 'invoice' | null>(null)
 const amount = ref<number | null>(null)
 const message = ref('')
@@ -55,6 +57,7 @@ onMounted(() => {
   if (props.own) return
   getRates().then(r => (rates.value = r))
   if (store.self) loadHistory()
+  if (route.query.sheet === 'invoice') openSheet('invoice')
 })
 
 watch(() => walletStatus.value, (status, prev) => {
@@ -92,6 +95,14 @@ const netBalanceFiat = computed(() => {
   if (amount == null) return null
   return `≈ ${amount.toLocaleString(undefined, { style: 'currency', currency: preferredCurrency.value })}`
 })
+
+/** "≈ 1.23 €" at today's rate, or null when NIM-only / rates missing. */
+function fiatApprox(nim: number): string | null {
+  if (preferredCurrency.value === 'NIM' || !rates.value) return null
+  const amount = nimToFiat(nim, preferredCurrency.value, rates.value)
+  if (amount == null) return null
+  return `≈ ${amount.toLocaleString(undefined, { style: 'currency', currency: preferredCurrency.value })}`
+}
 
 async function copyAddress() {
   await copyText(props.profile.address)
@@ -331,6 +342,7 @@ async function loadHistory() {
           <span class="dir" :class="h.incoming ? 'in' : 'out'">{{ h.incoming ? '←' : '→' }}</span>
           <span class="value">
             {{ h.incoming ? '+' : '−' }}{{ h.valueNim }} NIM
+            <span v-if="fiatApprox(h.valueNim)" class="tx-fiat">{{ fiatApprox(h.valueNim) }}</span>
             <span v-if="h.message" class="tx-message">“{{ h.message }}”</span>
           </span>
           <span class="when">{{ new Date(h.timestamp * (h.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}</span>
@@ -432,6 +444,7 @@ async function loadHistory() {
 .dir.out { color: var(--nq-red); }
 .value { flex: 1; font-weight: 700; }
 .tx-message { display: block; font-weight: 400; font-size: 13px; color: var(--text-2); }
+.tx-fiat { display: inline-block; margin-left: 6px; font-weight: 400; font-size: 12px; color: var(--text-2); }
 .when { color: var(--text-2); font-size: 13px; }
 .tx-link { color: var(--nq-light-blue); font-size: 13px; font-weight: 800; text-decoration: none; }
 </style>

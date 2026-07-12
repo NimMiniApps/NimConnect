@@ -12,6 +12,7 @@ import { makeRequestLink, makePaymentShareLink, shortAddress, transactionExplore
 import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
 import { shareOrCopy, canShare } from '../services/share'
 import { fetchIncomingPayments, fetchForwardAddresses, newestFirst, type IncomingPayment } from '../services/history'
+import { newActivity, getLastSeen, setLastSeen } from '../services/activity'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { resolveMyAddresses, receiveAddress } from '../services/nimiq'
 import { preferredCurrency } from '../services/prefs'
@@ -47,6 +48,9 @@ const remindError = ref<string | null>(null)
 const paidExpanded = ref(false)
 const unknownExpanded = ref(false)
 const incoming = ref<IncomingPayment[]>([])
+const myAddresses = ref<string[]>([])
+const lastSeenAt = ref<number | null>(null)
+const dueDismissed = ref(false)
 const incomingLoading = ref(false)
 const incomingError = ref(false)
 const rates = ref<NimRates | null>(null)
@@ -107,6 +111,37 @@ const senderAliases = ref<Map<string, Set<string>>>(new Map())
 
 /** Pending invoices that look settled by an incoming payment — confirmed with one tap. */
 const detectedPaid = computed(() => matchPayments(invoicesStore.pending, incoming.value, senderAliases.value))
+
+/** Banner data: what changed since the last dismiss. Null until first load resolves. */
+const activity = computed(() => {
+  if (lastSeenAt.value == null) return null
+  const a = newActivity({
+    payments: incoming.value,
+    inboxItems: inboxStore.actionable,
+    invoices: invoicesStore.pending,
+    lastSeenAt: lastSeenAt.value,
+  })
+  return { ...a, dueInvoices: dueDismissed.value ? [] : a.dueInvoices }
+})
+
+const bannerSummary = computed(() => {
+  if (!activity.value) return null
+  const parts: string[] = []
+  const p = activity.value.payments.length
+  if (p) parts.push(`${p} payment${p === 1 ? '' : 's'} received`)
+  const r = activity.value.requests.length
+  if (r) parts.push(`${r} new request${r === 1 ? '' : 's'}`)
+  const d = activity.value.dueInvoices.length
+  if (d) parts.push(`${d} invoice${d === 1 ? '' : 's'} due`)
+  return parts.length ? parts.join(' · ') : null
+})
+
+function dismissBanner() {
+  const now = Date.now()
+  setLastSeen(myAddresses.value, now)
+  lastSeenAt.value = now
+  dueDismissed.value = true // due invoices are not timestamp-gated; hide for this session
+}
 
 /** One-line summary under the page title — names what actually needs action. */
 const attentionSubtitle = computed(() => {
@@ -206,7 +241,14 @@ async function loadIncoming() {
   incomingLoading.value = true
   incomingError.value = false
   try {
-    incoming.value = await fetchIncomingPayments(await resolveMyAddresses(profilesStore.self.address))
+    myAddresses.value = await resolveMyAddresses(profilesStore.self.address)
+    incoming.value = await fetchIncomingPayments(myAddresses.value)
+    // First run for this wallet: nothing pre-existing is "new"
+    if (lastSeenAt.value == null) {
+      const seen = getLastSeen(myAddresses.value)
+      if (seen == null) setLastSeen(myAddresses.value)
+      lastSeenAt.value = seen ?? Date.now()
+    }
     await loadSenderAliases()
     await bucketsStore.recordChainContributions(incoming.value)
   } catch {
@@ -253,6 +295,44 @@ async function loadSenderAliases() {
       <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
       <router-link to="/me" class="empty-action">Share profile</router-link>
     </EmptyState>
+
+    <section v-if="bannerSummary && activity" class="card activity-banner" role="status">
+      <div class="banner-head">
+        <span class="banner-summary">🔔 {{ bannerSummary }}</span>
+        <button type="button" class="banner-dismiss" aria-label="Dismiss" @click="dismissBanner">✕</button>
+      </div>
+      <div class="banner-items">
+        <router-link
+          v-for="p in activity.payments.slice(0, 3)"
+          :key="p.hash"
+          :to="profileFor(p.sender) ? `/profile/${profileFor(p.sender)!.id}` : { path: '/add', query: { address: p.sender } }"
+          class="banner-item"
+        >
+          +{{ p.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM from {{ contactName(p.sender) }}
+        </router-link>
+        <template v-for="item in activity.requests.slice(0, 3)" :key="item.id">
+          <router-link
+            v-if="profileFor(item.sender)"
+            :to="`/profile/${profileFor(item.sender)!.id}`"
+            class="banner-item"
+          >
+            Request from {{ contactName(item.sender) }}
+          </router-link>
+        </template>
+        <template v-for="inv in activity.dueInvoices.slice(0, 3)" :key="inv.id">
+          <router-link
+            v-if="profileFor(inv.address)"
+            :to="{ path: `/profile/${profileFor(inv.address)!.id}`, query: { sheet: 'invoice' } }"
+            class="banner-item due"
+          >
+            {{ isOverdue(inv) ? 'Overdue' : 'Due soon' }}: {{ inv.description || 'Invoice' }} — {{ contactName(inv.address) }}
+          </router-link>
+          <span v-else class="banner-item due">
+            {{ isOverdue(inv) ? 'Overdue' : 'Due soon' }}: {{ inv.description || 'Invoice' }} — {{ contactName(inv.address) }}
+          </span>
+        </template>
+      </div>
+    </section>
 
     <section v-if="inboxStore.actionable.length" class="activity-section attention-section">
       <div class="section-head">
@@ -871,4 +951,14 @@ async function loadSenderAliases() {
 .bucket-amount { flex: 0 0 auto; font-weight: 700; font-size: 13px; color: var(--nq-gold-dark); }
 .bucket-bar { height: 8px; border-radius: 4px; background: var(--text-6); overflow: hidden; }
 .bucket-fill { height: 100%; border-radius: 4px; background: var(--nimiq-gold-bg); transition: width 0.3s ease; }
+.activity-banner { padding: 12px 14px; margin-bottom: 14px; border-left: 4px solid var(--nq-gold); }
+.banner-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.banner-summary { font-size: 13px; font-weight: 800; }
+.banner-dismiss {
+  min-width: 32px; min-height: 32px; border: none; background: none; cursor: pointer;
+  color: var(--text-2); font-size: 14px;
+}
+.banner-items { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.banner-item { font-size: 13px; color: var(--nq-light-blue); text-decoration: none; font-weight: 600; }
+.banner-item.due { color: var(--nq-gold-dark); }
 </style>
