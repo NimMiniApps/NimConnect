@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { db } from '../db/db'
-import { useInvoicesStore, matchPayments, isOverdue } from './invoices'
+import { useInvoicesStore, matchPayments, isOverdue, addMonthClamped } from './invoices'
 import type { Invoice } from '../types/profile'
 import type { IncomingPayment } from '../services/history'
 
@@ -197,6 +197,109 @@ describe('matchPayments', () => {
       [pay('tx1', A, 10, Math.floor(createdAt / 1000) + 60)],
     )
     expect(matches.get('i1')?.hash).toBe('tx1')
+  })
+})
+
+describe('addMonthClamped', () => {
+  it('advances a mid-month date by one calendar month', () => {
+    const d = new Date(addMonthClamped(new Date(2026, 0, 15).getTime()))
+    expect([d.getFullYear(), d.getMonth(), d.getDate()]).toEqual([2026, 1, 15])
+  })
+
+  it('clamps Jan 31 to the last day of February', () => {
+    const d = new Date(addMonthClamped(new Date(2026, 0, 31).getTime()))
+    expect([d.getFullYear(), d.getMonth(), d.getDate()]).toEqual([2026, 1, 28])
+  })
+
+  it('clamps to Feb 29 in leap years', () => {
+    const d = new Date(addMonthClamped(new Date(2028, 0, 31).getTime()))
+    expect([d.getFullYear(), d.getMonth(), d.getDate()]).toEqual([2028, 1, 29])
+  })
+})
+
+describe('recurring invoices', () => {
+  beforeEach(async () => {
+    setActivePinia(createPinia())
+    await db.invoices.clear()
+  })
+
+  it('markPaid without repeat marks paid and creates no successor', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const inv = await store.create({ address: A, amountNim: 10, description: 'One-off' })
+    await store.markPaid(inv.id)
+    expect(store.invoices).toHaveLength(1)
+    expect(store.invoices[0].status).toBe('paid')
+    expect(store.invoices[0].successorInvoiceId).toBeUndefined()
+  })
+
+  it('markPaid on a repeating invoice creates one pending successor, due one interval later', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const due = new Date(2026, 6, 1).getTime()
+    const inv = await store.create({ address: A, amountNim: 10, description: 'Rent', dueAt: due, repeat: 'monthly' })
+    await store.markPaid(inv.id)
+
+    const source = store.invoices.find(i => i.id === inv.id)!
+    expect(source.status).toBe('paid')
+    expect(source.successorInvoiceId).toBeTypeOf('string')
+
+    const successor = store.invoices.find(i => i.id === source.successorInvoiceId)!
+    expect(successor.status).toBe('pending')
+    expect(successor.address).toBe(A)
+    expect(successor.amountNim).toBe(10)
+    expect(successor.repeat).toBe('monthly')
+    expect(successor.dueAt).toBe(addMonthClamped(due))
+    expect(await db.invoices.get(successor.id)).toBeTruthy()
+  })
+
+  it('weekly repeat advances dueAt by 7 days; no dueAt falls back to paidAt + interval', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const due = new Date(2026, 6, 1).getTime()
+    const weekly = await store.create({ address: A, amountNim: 5, description: 'W', dueAt: due, repeat: 'weekly' })
+    const noDue = await store.create({ address: A, amountNim: 5, description: 'N', repeat: 'weekly' })
+    await store.markPaid(weekly.id)
+    await store.markPaid(noDue.id)
+
+    const wSucc = store.invoices.find(i => i.id === store.invoices.find(x => x.id === weekly.id)!.successorInvoiceId)!
+    expect(wSucc.dueAt).toBe(due + 7 * 86_400_000)
+
+    const nSource = store.invoices.find(i => i.id === noDue.id)!
+    const nSucc = store.invoices.find(i => i.id === nSource.successorInvoiceId)!
+    expect(nSucc.dueAt).toBe(nSource.paidAt! + 7 * 86_400_000)
+  })
+
+  it('double and concurrent markPaid create exactly one successor', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const inv = await store.create({ address: A, amountNim: 10, description: 'Rent', repeat: 'monthly' })
+    await Promise.all([store.markPaid(inv.id), store.markPaid(inv.id)])
+    await store.markPaid(inv.id)
+    expect(store.invoices).toHaveLength(2)
+    expect(await db.invoices.count()).toBe(2)
+  })
+
+  it('paid → pending → paid round trip never creates a second successor', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    const inv = await store.create({ address: A, amountNim: 10, description: 'Rent', repeat: 'monthly' })
+    await store.markPaid(inv.id)
+    await store.setStatus(inv.id, 'pending')
+    expect(store.invoices.find(i => i.id === inv.id)!.successorInvoiceId).toBeTypeOf('string')
+    await store.markPaid(inv.id)
+    expect(store.invoices).toHaveLength(2)
+  })
+
+  it('importMany passes repeat and successorInvoiceId through', async () => {
+    const store = useInvoicesStore()
+    await store.load()
+    await store.importMany([{
+      id: 'imp-1', address: A, amountNim: 3, description: 'x', status: 'pending',
+      createdAt: Date.now(), repeat: 'monthly', successorInvoiceId: 'imp-2',
+    } as Invoice])
+    expect(store.invoices[0].repeat).toBe('monthly')
+    expect(store.invoices[0].successorInvoiceId).toBe('imp-2')
   })
 })
 

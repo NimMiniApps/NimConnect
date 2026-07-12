@@ -39,6 +39,10 @@ export interface Invoice {
   /** Original fiat entry when the invoice was priced in fiat (converted to NIM at creation) */
   fiatAmount?: number
   fiatCurrency?: string
+  /** Recreate as a new pending invoice when this one is paid. Unindexed — no Dexie migration needed */
+  repeat?: 'weekly' | 'monthly'
+  /** Id of the successor created when a repeating invoice was paid — guards against duplicates */
+  successorInvoiceId?: string
 }
 
 export type BucketStatus = 'active' | 'completed'

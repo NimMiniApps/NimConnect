@@ -12,6 +12,21 @@ export function isOverdue(invoice: Invoice, now = Date.now()): boolean {
   return invoice.status === 'pending' && !!invoice.dueAt && invoice.dueAt < now
 }
 
+/** One calendar month later, clamped to the target month's last day (Jan 31 → Feb 28/29). */
+export function addMonthClamped(ms: number): number {
+  const d = new Date(ms)
+  const day = d.getDate()
+  d.setDate(1)
+  d.setMonth(d.getMonth() + 1)
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+  d.setDate(Math.min(day, lastDay))
+  return d.getTime()
+}
+
+function nextDueAt(repeat: 'weekly' | 'monthly', from: number): number {
+  return repeat === 'weekly' ? from + 7 * 86_400_000 : addMonthClamped(from)
+}
+
 /**
  * Suggest pending invoices that look paid: an incoming payment from the invoice
  * address, for at least the invoice amount, sent after the invoice was created.
@@ -99,6 +114,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
     fiatAmount?: number
     fiatCurrency?: string
     dueAt?: number
+    repeat?: 'weekly' | 'monthly'
   }): Promise<Invoice> {
     if (!(input.amountNim > 0)) throw new Error('invalid-amount')
     const invoice: Invoice = {
@@ -112,6 +128,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
       ...(input.fiatAmount && input.fiatCurrency
         ? { fiatAmount: input.fiatAmount, fiatCurrency: input.fiatCurrency }
         : {}),
+      ...(input.repeat ? { repeat: input.repeat } : {}),
     }
     await db.invoices.add(invoice)
     invoices.value.push(invoice)
@@ -146,6 +163,42 @@ export const useInvoicesStore = defineStore('invoices', () => {
     notifyDataChanged()
   }
 
+  /** Atomic paid transition: creates the repeat successor exactly once, even under
+   * concurrent calls, a crash mid-transition, or a paid → pending → paid round trip. */
+  async function markPaid(id: string) {
+    const result = await db.transaction('rw', db.invoices, async () => {
+      const source = await db.invoices.get(id)
+      if (!source || source.status === 'paid') return null
+      const updated: Invoice = { ...source, status: 'paid', paidAt: Date.now() }
+      let successor: Invoice | null = null
+      if (source.repeat && !source.successorInvoiceId) {
+        successor = {
+          id: uuid(),
+          address: source.address,
+          amountNim: source.amountNim,
+          description: source.description,
+          status: 'pending',
+          createdAt: Date.now(),
+          repeat: source.repeat,
+          // Cadence stays anchored to the schedule: advance from the prior due date,
+          // not from when it happened to be paid (may create an already-overdue successor)
+          dueAt: nextDueAt(source.repeat, source.dueAt ?? updated.paidAt!),
+          ...(source.fiatAmount && source.fiatCurrency
+            ? { fiatAmount: source.fiatAmount, fiatCurrency: source.fiatCurrency }
+            : {}),
+        }
+        updated.successorInvoiceId = successor.id
+        await db.invoices.add(JSON.parse(JSON.stringify(successor)))
+      }
+      await db.invoices.put(JSON.parse(JSON.stringify(updated)))
+      return { updated, successor }
+    })
+    if (!result) return
+    invoices.value = invoices.value.map(i => (i.id === id ? result.updated : i))
+    if (result.successor) invoices.value.push(result.successor)
+    notifyDataChanged()
+  }
+
   async function remove(id: string) {
     await db.invoices.delete(id)
     invoices.value = invoices.value.filter(i => i.id !== id)
@@ -170,6 +223,8 @@ export const useInvoicesStore = defineStore('invoices', () => {
         ...(raw.fiatAmount && raw.fiatCurrency
           ? { fiatAmount: Number(raw.fiatAmount), fiatCurrency: String(raw.fiatCurrency) }
           : {}),
+        ...(raw.repeat === 'weekly' || raw.repeat === 'monthly' ? { repeat: raw.repeat } : {}),
+        ...(raw.successorInvoiceId ? { successorInvoiceId: String(raw.successorInvoiceId) } : {}),
       }
       await db.invoices.add(invoice)
       invoices.value.push(invoice)
@@ -192,6 +247,7 @@ export const useInvoicesStore = defineStore('invoices', () => {
     create,
     duplicate,
     setStatus,
+    markPaid,
     remove,
     importMany,
   }
