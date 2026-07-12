@@ -207,6 +207,9 @@ async function handleIncomingPaymentLink() {
       <button type="button" class="nav-item nav-button" @click="splitOpen = true">
         <span class="nav-icon">🍕</span><span>Split</span>
       </button>
+      <router-link to="/insights" class="nav-item" :class="{ active: $route.path === '/insights' }">
+        <span class="nav-icon">📊</span><span>Insights</span>
+      </router-link>
       <router-link to="/me" class="nav-item" :class="{ active: $route.path === '/me' || $route.path === '/settings' }">
         <span class="nav-icon">🪪</span><span>Profile</span>
       </router-link>
