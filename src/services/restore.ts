@@ -3,6 +3,7 @@ import { router } from '../router'
 import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore } from '../stores/invoices'
 import { useInboxStore } from '../stores/inbox'
+import { useBucketsStore } from '../stores/buckets'
 import { cloudBackupEnabled, markCloudSync, markPassphraseSet } from './backup-prefs'
 import { setBackupSession } from './cloud-backup'
 import { markOnboardingDone, markBackupOnboardingDone } from './onboarding'
@@ -23,10 +24,12 @@ export async function afterRestore(): Promise<void> {
   const profiles = useProfilesStore()
   const invoices = useInvoicesStore()
   const inbox = useInboxStore()
+  const buckets = useBucketsStore()
 
   await profiles.reload()
   await invoices.reload()
   await inbox.reload()
+  await buckets.reload()
 
   if (profiles.self) {
     inbox.selfAddress = profiles.self.address

@@ -41,13 +41,46 @@ export interface Invoice {
   fiatCurrency?: string
 }
 
+export type BucketStatus = 'active' | 'completed'
+
+/** One entry in a bucket's contribution ledger — persisted, never recomputed from history. */
+export interface BucketContribution {
+  id: string
+  /** 'chain' = auto-detected tagged payment; 'manual' = organizer adjustment, never deduped */
+  source: 'chain' | 'manual'
+  amountNim: number
+  /** Normalized NQ sender address when known */
+  sender?: string
+  /** Set for source 'chain' — dedupe key against re-detection */
+  txHash?: string
+  /** Manual entries: free-text label / contact name */
+  note?: string
+  at: number
+}
+
+/** Shared savings goal. Funds land in the organizer's own wallet; contributions are
+ * identified by a tag in the payment message, not by address balance. */
+export interface Bucket {
+  id: string
+  name: string
+  goalNim: number
+  /** Original fiat entry when the goal was priced in fiat (converted to NIM at creation) */
+  fiatGoal?: number
+  fiatCurrency?: string
+  status: BucketStatus
+  createdAt: number
+  completedAt?: number
+  contributions: BucketContribution[]
+}
+
 export interface ExportDocument {
   app: 'NimConnect'
-  /** v1 exports had profiles only; v2 adds invoices */
-  version: 1 | 2
+  /** v1 exports had profiles only; v2 adds invoices; v3 adds buckets */
+  version: 1 | 2 | 3
   exportedAt: number
   profiles: Profile[]
   invoices?: Invoice[]
+  buckets?: Bucket[]
 }
 
 export interface EncryptedBackup {

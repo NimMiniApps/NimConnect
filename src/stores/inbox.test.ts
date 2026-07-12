@@ -48,6 +48,27 @@ describe('inbox store', () => {
     expect((await db.inboxItems.get('a'))?.status).toBe('paid')
   })
 
+  it('pay accepts an amount override for open-amount bucket requests', async () => {
+    const { sendNim } = await import('../services/nimiq')
+    const payload = makeRequestLink(SENDER, undefined, '🪣 Barcelona #a1b2c3d4')
+    await db.inboxItems.add({ id: 'b', objectId: 'bucket-1', type: 'payment-request', sender: SENDER, payload, sentAt: 1, receivedAt: 1, status: 'actionable', importedAt: 1, reminders: 0 })
+    const store = useInboxStore()
+    await store.load()
+    await store.pay(store.items[0], 25)
+    const sendNimMock = vi.mocked(sendNim)
+    expect(sendNimMock.mock.calls[sendNimMock.mock.calls.length - 1][1]).toBe(25)
+    expect(sendNimMock.mock.calls[sendNimMock.mock.calls.length - 1][2]).toBe('🪣 Barcelona #a1b2c3d4')
+    expect((await db.inboxItems.get('b'))?.status).toBe('paid')
+  })
+
+  it('pay rejects missing amount on open-amount requests', async () => {
+    const payload = makeRequestLink(SENDER, undefined, '🪣 Barcelona #a1b2c3d4')
+    await db.inboxItems.add({ id: 'c', objectId: 'bucket-1', type: 'payment-request', sender: SENDER, payload, sentAt: 1, receivedAt: 1, status: 'actionable', importedAt: 1, reminders: 0 })
+    const store = useInboxStore()
+    await store.load()
+    await expect(store.pay(store.items[0])).rejects.toThrow('invalid-amount')
+  })
+
   it('dismiss marks dismissed and deletes unsupported remotely', async () => {
     const { deleteInboxMessage } = await import('../services/inbox')
     await db.inboxItems.add({ id: 'b', objectId: 'o2', type: 'future', sender: SENDER, payload: 'p', sentAt: 1, receivedAt: 1, status: 'unsupported', importedAt: 1, reminders: 0 })

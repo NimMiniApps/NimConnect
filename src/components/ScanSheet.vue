@@ -34,6 +34,7 @@ const title = computed(() => {
   switch (intent.value?.requestType) {
     case 'split': return 'Split request'
     case 'invoice': return 'Invoice'
+    case 'bucket': return 'Trip bucket'
     case 'request': return 'Payment request'
     default: return contact.value ? contact.value.name : 'Nimiq address'
   }

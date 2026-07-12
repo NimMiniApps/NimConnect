@@ -1,11 +1,12 @@
 import Dexie, { type Table } from 'dexie'
-import type { Invoice, Profile, InboxItem, KvEntry } from '../types/profile'
+import type { Invoice, Profile, InboxItem, KvEntry, Bucket } from '../types/profile'
 
 class NimConnectDB extends Dexie {
   profiles!: Table<Profile, string>
   invoices!: Table<Invoice, string>
   inboxItems!: Table<InboxItem, string>
   kv!: Table<KvEntry, string>
+  buckets!: Table<Bucket, string>
 
   constructor() {
     super('nimconnect')
@@ -22,6 +23,13 @@ class NimConnectDB extends Dexie {
       invoices: 'id, address, status',
       inboxItems: 'id, objectId, sender, status',
       kv: 'key',
+    })
+    this.version(4).stores({
+      profiles: 'id, &address',
+      invoices: 'id, address, status',
+      inboxItems: 'id, objectId, sender, status',
+      kv: 'key',
+      buckets: 'id, status',
     })
   }
 }

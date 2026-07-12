@@ -116,3 +116,13 @@ describe('links', () => {
     expect(profile?.hasAmount).toBe(false)
   })
 })
+
+describe('bucket scan classification', () => {
+  it('classifies a bucket payment link by its 🪣 message prefix', () => {
+    const link = makeRequestLink('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF', undefined, '🪣 Barcelona #a1b2c3d4')
+    const intent = classifyScan(link)
+    expect(intent?.requestType).toBe('bucket')
+    expect(intent?.hasAmount).toBe(false)
+    expect(intent?.message).toBe('🪣 Barcelona #a1b2c3d4')
+  })
+})

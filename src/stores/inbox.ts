@@ -62,11 +62,13 @@ export const useInboxStore = defineStore('inbox', () => {
     items.value = items.value.map(i => (i.id === item.id ? updated : i))
   }
 
-  /** Pay the request via the wallet, then mark it paid. */
-  async function pay(item: InboxItem) {
+  /** Pay the request via the wallet, then mark it paid. Amount override supports open-amount bucket requests. */
+  async function pay(item: InboxItem, amountNim?: number) {
     const parsed = parsePaymentRequest(item.payload)
-    if (!parsed?.amountNim) throw new Error('invalid-request')
-    await sendNim(parsed.recipient, parsed.amountNim, parsed.message)
+    if (!parsed) throw new Error('invalid-request')
+    const amount = amountNim ?? parsed.amountNim
+    if (amount == null || !(amount > 0)) throw new Error('invalid-amount')
+    await sendNim(parsed.recipient, amount, parsed.message)
     await setStatus(item, 'paid')
   }
 

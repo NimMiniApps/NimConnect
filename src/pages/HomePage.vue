@@ -4,8 +4,10 @@ import { useVisiblePolling } from '../composables/useVisiblePolling'
 import { useAfterRestoreRefresh } from '../composables/useAfterRestoreRefresh'
 import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore, matchPayments, isOverdue } from '../stores/invoices'
+import { useBucketsStore, bucketTotalNim } from '../stores/buckets'
 import { useInboxStore } from '../stores/inbox'
 import InboxRequestCard from '../components/InboxRequestCard.vue'
+import BucketSheet from '../components/BucketSheet.vue'
 import { makeRequestLink, makePaymentShareLink, shortAddress, transactionExplorerUrl } from '../services/links'
 import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
 import { shareOrCopy, canShare } from '../services/share'
@@ -15,10 +17,28 @@ import { resolveMyAddresses, receiveAddress } from '../services/nimiq'
 import { preferredCurrency } from '../services/prefs'
 import EmptyState from '../components/EmptyState.vue'
 import Identicon from '../components/Identicon.vue'
+import type { Bucket } from '../types/profile'
 
 const profilesStore = useProfilesStore()
 const invoicesStore = useInvoicesStore()
+const bucketsStore = useBucketsStore()
 const inboxStore = useInboxStore()
+const bucketSheetOpen = ref(false)
+const selectedBucketId = ref<string | null>(null)
+const inviteBucketId = ref<string | null>(null)
+const selectedBucket = computed<Bucket | null>(() =>
+  bucketsStore.buckets.find(b => b.id === selectedBucketId.value) ?? null,
+)
+
+function openBucket(id: string | null, startInviting = false) {
+  selectedBucketId.value = id
+  inviteBucketId.value = startInviting ? id : null
+  bucketSheetOpen.value = true
+}
+
+function bucketProgress(b: Bucket): number {
+  return Math.min(100, (bucketTotalNim(b) / b.goalNim) * 100)
+}
 const copiedId = ref<string | null>(null)
 const payingId = ref<string | null>(null)
 const remindingId = ref<string | null>(null)
@@ -36,6 +56,7 @@ async function refreshPageData() {
     profilesStore.reload(),
     invoicesStore.reload(),
     inboxStore.reload(),
+    bucketsStore.reload(),
   ])
   senderAliases.value = new Map()
   await loadIncoming()
@@ -45,6 +66,7 @@ async function refreshPageData() {
 useAfterRestoreRefresh(refreshPageData)
 
 onMounted(() => {
+  bucketsStore.load()
   getRates().then(r => (rates.value = r))
 })
 
@@ -72,11 +94,37 @@ const freshUser = computed(() =>
   && inboxStore.actionable.length === 0,
 )
 
+const overdueInvoices = computed(() => invoicesStore.pending.filter(i => isOverdue(i)))
+
+function hasRequestFrom(profile: { address: string }): boolean {
+  const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
+  const addr = compact(profile.address)
+  return inboxStore.actionable.some(i => compact(i.sender) === addr)
+}
+
 /** Compact invoice address → paired addresses it forwards to (Nimiq Pay pays from the paired account). */
 const senderAliases = ref<Map<string, Set<string>>>(new Map())
 
 /** Pending invoices that look settled by an incoming payment — confirmed with one tap. */
 const detectedPaid = computed(() => matchPayments(invoicesStore.pending, incoming.value, senderAliases.value))
+
+/** One-line summary under the page title — names what actually needs action. */
+const attentionSubtitle = computed(() => {
+  const parts: string[] = []
+  const requests = inboxStore.actionable.length
+  if (requests) parts.push(`${requests} payment request${requests === 1 ? '' : 's'}`)
+  const toConfirm = detectedPaid.value.size
+  if (toConfirm) parts.push(`${toConfirm} payment${toConfirm === 1 ? '' : 's'} to confirm`)
+  const overdue = overdueInvoices.value.length
+  if (overdue) parts.push(`${overdue} overdue invoice${overdue === 1 ? '' : 's'}`)
+  if (parts.length) return `${parts.join(' · ')} — review below.`
+  if (invoicesStore.pending.length) {
+    const n = invoicesStore.pending.length
+    return `${n} open invoice${n === 1 ? '' : 's'} you're waiting on.`
+  }
+  if (freshUser.value) return 'Add people you pay — activity shows up here.'
+  return 'Send, request, and track payments with your people.'
+})
 
 /** "≈ 1.23 €" in the user's preferred fiat currency, or null when NIM-only / rates missing. */
 function fiatApprox(nim: number): string | null {
@@ -102,10 +150,10 @@ const visibleUnknown = computed(() =>
   unknownExpanded.value ? unknownRequests.value : unknownRequests.value.slice(0, 2),
 )
 
-async function payRequest(item: (typeof inboxStore.actionable)[number]) {
+async function payRequest(item: (typeof inboxStore.actionable)[number], amountNim?: number) {
   payingId.value = item.id
   try {
-    await inboxStore.pay(item)
+    await inboxStore.pay(item, amountNim)
   } catch {
     // wallet popup dismissed or send failed — no state change (spec)
   } finally {
@@ -160,6 +208,7 @@ async function loadIncoming() {
   try {
     incoming.value = await fetchIncomingPayments(await resolveMyAddresses(profilesStore.self.address))
     await loadSenderAliases()
+    await bucketsStore.recordChainContributions(incoming.value)
   } catch {
     incomingError.value = true
   } finally {
@@ -190,7 +239,7 @@ async function loadSenderAliases() {
     <header class="header">
       <div>
         <h1>Home</h1>
-        <p>What needs your attention.</p>
+        <p>{{ attentionSubtitle }}</p>
       </div>
       <router-link to="/add" class="add-link" aria-label="Add contact">＋</router-link>
     </header>
@@ -205,16 +254,47 @@ async function loadSenderAliases() {
       <router-link to="/me" class="empty-action">Share profile</router-link>
     </EmptyState>
 
-    <section v-if="quickContacts.length" class="quick-send">
-      <router-link
-        v-for="p in quickContacts"
-        :key="p.id"
-        :to="`/profile/${p.id}`"
-        class="quick-contact"
-      >
-        <Identicon :address="p.address" :size="52" />
-        <span class="quick-name">{{ p.name }}</span>
-      </router-link>
+    <section v-if="inboxStore.actionable.length" class="activity-section attention-section">
+      <div class="section-head">
+        <h2>Needs your attention</h2>
+        <button type="button" class="refresh" :disabled="inboxStore.refreshing" @click="inboxStore.refresh()">
+          {{ inboxStore.refreshing ? 'Checking…' : 'Refresh' }}
+        </button>
+      </div>
+
+      <div class="invoice-list">
+        <InboxRequestCard
+          v-for="item in knownRequests"
+          :key="item.id"
+          :item="item"
+          :contact-name="contactName(item.sender)"
+          :paying="payingId === item.id"
+          @pay="payRequest(item, $event)"
+          @dismiss="inboxStore.dismiss(item)"
+        />
+      </div>
+
+      <template v-if="unknownRequests.length">
+        <div class="section-head unknown-head">
+          <h2>Requests from unknown senders ({{ unknownRequests.length }})</h2>
+        </div>
+        <div class="invoice-list">
+          <InboxRequestCard
+            v-for="item in visibleUnknown"
+            :key="item.id"
+            :item="item"
+            :paying="payingId === item.id"
+            @pay="payRequest(item, $event)"
+            @dismiss="inboxStore.dismiss(item)"
+          />
+        </div>
+        <button
+          v-if="unknownRequests.length > 2 && !unknownExpanded"
+          type="button" class="refresh show-more" @click="unknownExpanded = true"
+        >
+          Show all {{ unknownRequests.length }}
+        </button>
+      </template>
     </section>
 
     <section v-if="invoicesStore.pending.length" class="summary">
@@ -233,47 +313,22 @@ async function loadSenderAliases() {
       Connect inside Nimiq Pay to copy payment links to your wallet address.
     </p>
 
-    <section v-if="inboxStore.actionable.length" class="activity-section">
-      <div class="section-head">
-        <h2>Requests for you</h2>
-        <button type="button" class="refresh" :disabled="inboxStore.refreshing" @click="inboxStore.refresh()">
-          {{ inboxStore.refreshing ? 'Checking…' : 'Refresh' }}
-        </button>
-      </div>
-
-      <div class="invoice-list">
-        <InboxRequestCard
-          v-for="item in knownRequests"
-          :key="item.id"
-          :item="item"
-          :contact-name="contactName(item.sender)"
-          :paying="payingId === item.id"
-          @pay="payRequest(item)"
-          @dismiss="inboxStore.dismiss(item)"
-        />
-      </div>
-
-      <template v-if="unknownRequests.length">
-        <div class="section-head unknown-head">
-          <h2>Requests from unknown senders ({{ unknownRequests.length }})</h2>
-        </div>
-        <div class="invoice-list">
-          <InboxRequestCard
-            v-for="item in visibleUnknown"
-            :key="item.id"
-            :item="item"
-            :paying="payingId === item.id"
-            @pay="payRequest(item)"
-            @dismiss="inboxStore.dismiss(item)"
-          />
-        </div>
-        <button
-          v-if="unknownRequests.length > 2 && !unknownExpanded"
-          type="button" class="refresh show-more" @click="unknownExpanded = true"
+    <section v-if="quickContacts.length && !freshUser" class="quick-send-section">
+      <h2 class="quick-send-label">Quick send</h2>
+      <div class="quick-send">
+        <router-link
+          v-for="p in quickContacts"
+          :key="p.id"
+          :to="`/profile/${p.id}`"
+          class="quick-contact"
         >
-          Show all {{ unknownRequests.length }}
-        </button>
-      </template>
+          <span class="quick-avatar">
+            <Identicon :address="p.address" :size="52" />
+            <span v-if="hasRequestFrom(p)" class="quick-badge" aria-label="Payment request waiting">!</span>
+          </span>
+          <span class="quick-name">{{ p.name }}</span>
+        </router-link>
+      </div>
     </section>
 
     <section v-if="!freshUser" class="activity-section invoice-section">
@@ -356,6 +411,38 @@ async function loadSenderAliases() {
         <router-link to="/contacts" class="empty-action primary-action">Choose contact</router-link>
         <router-link to="/add" class="empty-action">Add contact</router-link>
       </EmptyState>
+    </section>
+
+    <section v-if="!freshUser || bucketsStore.buckets.length" class="activity-section">
+      <div class="section-head">
+        <h2>Trip buckets</h2>
+        <button type="button" class="refresh" @click="openBucket(null)">＋ New</button>
+      </div>
+      <p v-if="!bucketsStore.buckets.length" class="subtle">
+        Save up together — create a bucket and share the link with friends.
+      </p>
+      <div v-else class="invoice-list">
+        <button
+          v-for="b in [...bucketsStore.active, ...bucketsStore.completed]"
+          :key="b.id"
+          type="button"
+          class="card bucket-card"
+          :class="{ 'bucket-done': b.status === 'completed' }"
+          @click="openBucket(b.id)"
+        >
+          <div class="bucket-head">
+            <span class="bucket-name">🪣 {{ b.name }}</span>
+            <span class="bucket-amount">
+              {{ bucketTotalNim(b).toLocaleString(undefined, { maximumFractionDigits: 2 }) }}
+              / {{ b.goalNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+              <template v-if="b.status === 'completed'"> ✓</template>
+            </span>
+          </div>
+          <div class="bucket-bar">
+            <div class="bucket-fill" :style="{ width: `${bucketProgress(b)}%` }" />
+          </div>
+        </button>
+      </div>
     </section>
 
     <section v-if="invoicesStore.paid.length" class="activity-section">
@@ -459,6 +546,14 @@ async function loadSenderAliases() {
       </div>
       <p v-else class="subtle">No incoming payments found yet.</p>
     </section>
+
+    <BucketSheet
+      :open="bucketSheetOpen"
+      :bucket="selectedBucket"
+      :start-inviting="inviteBucketId != null && inviteBucketId === selectedBucketId"
+      @close="bucketSheetOpen = false"
+      @open-bucket="id => openBucket(id, true)"
+    />
   </div>
 </template>
 
@@ -493,10 +588,17 @@ async function loadSenderAliases() {
   font-size: 26px;
   background: var(--nimiq-gold-bg);
 }
+.quick-send-section { margin-bottom: 16px; }
+.quick-send-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
 .quick-send {
   display: flex;
   gap: 14px;
-  margin-bottom: 16px;
   overflow-x: auto;
   padding: 4px 2px;
   scrollbar-width: none;
@@ -510,6 +612,23 @@ async function loadSenderAliases() {
   align-items: center;
   gap: 4px;
   text-decoration: none;
+}
+.quick-avatar { position: relative; display: inline-flex; }
+.quick-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nq-red);
+  color: var(--nimiq-white);
+  font-size: 11px;
+  font-weight: 800;
+  border: 2px solid var(--bg);
 }
 .quick-name {
   max-width: 100%;
@@ -570,6 +689,7 @@ async function loadSenderAliases() {
   font-size: 13px;
 }
 .activity-section { margin-top: 18px; }
+.attention-section { margin-top: 0; }
 .section-head {
   min-height: 36px;
   display: flex;
@@ -740,4 +860,15 @@ async function loadSenderAliases() {
   color: var(--nimiq-white);
   background: var(--nimiq-gold-bg);
 }
+.bucket-card {
+  width: 100%; padding: 14px; cursor: pointer; text-align: left;
+  border: 1px solid var(--border); font: inherit; color: var(--text);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.bucket-done { opacity: 0.7; }
+.bucket-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.bucket-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bucket-amount { flex: 0 0 auto; font-weight: 700; font-size: 13px; color: var(--nq-gold-dark); }
+.bucket-bar { height: 8px; border-radius: 4px; background: var(--text-6); overflow: hidden; }
+.bucket-fill { height: 100%; border-radius: 4px; background: var(--nimiq-gold-bg); transition: width 0.3s ease; }
 </style>

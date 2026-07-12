@@ -3,25 +3,29 @@ import { computed, ref } from 'vue'
 import type { InboxItem } from '../types/profile'
 import { parsePaymentRequest, shortAddress } from '../services/links'
 import Identicon from './Identicon.vue'
+import CurrencyAmountInput from './CurrencyAmountInput.vue'
 
 const props = defineProps<{
   item: InboxItem
   contactName?: string // undefined = unknown sender
   paying?: boolean
 }>()
-const emit = defineEmits<{ pay: []; dismiss: [] }>()
+const emit = defineEmits<{ pay: [amountNim?: number]; dismiss: [] }>()
 
 const confirming = ref(false)
+const payAmount = ref<number | null>(null)
 const parsed = computed(() => parsePaymentRequest(props.item.payload))
+const isBucket = computed(() => parsed.value?.message?.trim().startsWith('🪣') ?? false)
+const needsAmount = computed(() => parsed.value?.amountNim == null || !(parsed.value.amountNim > 0))
 
-function onPay() {
+function onPay(amount?: number) {
   // Unknown senders always get an explicit confirmation step (spec).
   if (!props.contactName && !confirming.value) {
     confirming.value = true
     return
   }
   confirming.value = false
-  emit('pay')
+  emit('pay', amount)
 }
 </script>
 
@@ -41,6 +45,7 @@ function onPay() {
       <div v-if="parsed?.amountNim" class="request-amount">
         {{ parsed.amountNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
       </div>
+      <div v-else-if="isBucket" class="request-amount bucket-label">Trip bucket</div>
     </div>
 
     <p v-if="parsed?.message" class="request-desc">{{ parsed.message }}</p>
@@ -50,13 +55,34 @@ function onPay() {
         You are about to pay someone <strong>not in your contacts</strong>.
         Funds go to:<br /><code>{{ item.sender }}</code>
       </p>
+      <div v-if="needsAmount" class="amount-field">
+        <CurrencyAmountInput placeholder="Amount to send" @update:model-value="payAmount = $event" />
+      </div>
       <div class="request-actions">
-        <button type="button" class="action danger-solid" :disabled="paying" @click="onPay">Pay anyway</button>
+        <button
+          type="button"
+          class="action danger-solid"
+          :disabled="paying || (needsAmount && !payAmount)"
+          @click="onPay(needsAmount ? payAmount ?? undefined : undefined)"
+        >
+          {{ isBucket ? 'Contribute anyway' : 'Pay anyway' }}
+        </button>
         <button type="button" class="action" @click="confirming = false">Cancel</button>
       </div>
     </div>
     <div v-else class="request-actions">
-      <button v-if="parsed?.amountNim" type="button" class="action primary" :disabled="paying" @click="onPay">
+      <template v-if="needsAmount">
+        <CurrencyAmountInput placeholder="Amount to contribute" @update:model-value="payAmount = $event" />
+        <button
+          type="button"
+          class="action primary"
+          :disabled="paying || !payAmount"
+          @click="onPay(payAmount ?? undefined)"
+        >
+          {{ paying ? 'Paying…' : isBucket ? 'Contribute' : 'Pay' }}
+        </button>
+      </template>
+      <button v-else type="button" class="action primary" :disabled="paying" @click="onPay()">
         {{ paying ? 'Paying…' : 'Pay' }}
       </button>
       <button type="button" class="action" @click="emit('dismiss')">Dismiss</button>
@@ -77,10 +103,12 @@ function onPay() {
   font-size: 11px; font-weight: 700; color: var(--nq-gold-dark);
 }
 .request-amount { text-align: right; font-weight: 700; color: var(--nq-gold-dark); flex: 0 0 auto; }
+.bucket-label { font-size: 12px; color: var(--nq-light-blue); }
 .request-desc { margin: 12px 0 0; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
 .confirm { margin-top: 12px; padding: 10px 12px; border-radius: var(--radius); background: rgba(216, 65, 62, 0.08); font-size: 13px; }
 .confirm code { overflow-wrap: anywhere; font-size: 12px; }
-.request-actions { display: flex; gap: 8px; margin-top: 12px; }
+.amount-field { margin-top: 10px; }
+.request-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .request-actions .action {
   min-height: 42px; padding: 0 16px; border: 1px solid var(--border); border-radius: 21px;
   background: var(--bg); color: var(--nq-light-blue); cursor: pointer;

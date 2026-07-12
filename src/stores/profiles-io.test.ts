@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { db } from '../db/db'
 import { useProfilesStore } from './profiles'
 import { useInvoicesStore } from './invoices'
+import { useBucketsStore } from './buckets'
 
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 const B = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
@@ -12,6 +13,7 @@ describe('import/export', () => {
     setActivePinia(createPinia())
     await db.profiles.clear()
     await db.invoices.clear()
+    await db.buckets.clear()
   })
 
   it('round-trips invoices in a v2 export and accepts v1 without them', async () => {
@@ -49,7 +51,7 @@ describe('import/export', () => {
     })
     const doc = await store.exportDocument()
     expect(doc.app).toBe('NimConnect')
-    expect(doc.version).toBe(2)
+    expect(doc.version).toBe(3)
     expect(doc.profiles).toHaveLength(1)
 
     await db.profiles.clear()
@@ -110,5 +112,34 @@ describe('import/export', () => {
     await store.load()
     await expect(store.importDocument({ nope: true })).rejects.toThrow('invalid-export')
     await expect(store.importDocument('[]')).rejects.toThrow('invalid-export')
+  })
+})
+
+describe('bucket export/import round trip', () => {
+  it('exports version 3 with buckets and imports them back', async () => {
+    const profiles = useProfilesStore()
+    const buckets = useBucketsStore()
+    await profiles.load()
+    await buckets.load()
+    await buckets.create({ name: 'Barcelona', goalNim: 100 })
+
+    const doc = await profiles.exportDocument()
+    expect(doc.version).toBe(3)
+    expect(doc.buckets).toHaveLength(1)
+
+    await profiles.resetAll()
+    expect(buckets.buckets).toHaveLength(0)
+    expect(await db.buckets.count()).toBe(0)
+
+    await profiles.importDocument(JSON.parse(JSON.stringify(doc)))
+    expect(buckets.buckets.map(b => b.name)).toEqual(['Barcelona'])
+  })
+
+  it('still accepts v1 and v2 documents without buckets', async () => {
+    const profiles = useProfilesStore()
+    await profiles.load()
+    await expect(profiles.importDocument({
+      app: 'NimConnect', version: 2, exportedAt: Date.now(), profiles: [],
+    })).resolves.toBeTruthy()
   })
 })

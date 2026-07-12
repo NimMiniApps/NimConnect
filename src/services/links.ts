@@ -120,7 +120,7 @@ export function parsePaymentRequest(text: string): ParsedPaymentRequest | null {
   return parseNimiqPaymentPayload(trimmed)
 }
 
-export type ScanRequestType = 'split' | 'invoice' | 'request' | 'profile'
+export type ScanRequestType = 'split' | 'invoice' | 'request' | 'profile' | 'bucket'
 
 export interface ScanIntent extends ParsedPaymentRequest {
   requestType: ScanRequestType
@@ -148,7 +148,8 @@ export function classifyScan(text: string): ScanIntent | null {
   let requestType: ScanRequestType = 'profile'
 
   if (hasAmount || message.trim()) {
-    if (/^split/i.test(message)) requestType = 'split'
+    if (message.trim().startsWith('🪣')) requestType = 'bucket'
+    else if (/^split/i.test(message)) requestType = 'split'
     else if (/invoice/i.test(message)) requestType = 'invoice'
     else requestType = 'request'
   }

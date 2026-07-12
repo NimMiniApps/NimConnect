@@ -5,6 +5,7 @@ import { db } from '../db/db'
 import type { ExportDocument, Profile, ProfileType } from '../types/profile'
 import { uuid } from '../utils/uuid'
 import { useInvoicesStore } from './invoices'
+import { useBucketsStore } from './buckets'
 import { notifyDataChanged } from '../services/cloud-backup'
 
 export interface NewProfile {
@@ -207,13 +208,16 @@ export const useProfilesStore = defineStore('profiles', () => {
 
   async function exportDocument(): Promise<ExportDocument> {
     const invoicesStore = useInvoicesStore()
+    const bucketsStore = useBucketsStore()
     await invoicesStore.load()
+    await bucketsStore.load()
     return {
       app: 'NimConnect',
-      version: 2,
+      version: 3,
       exportedAt: Date.now(),
       profiles: JSON.parse(JSON.stringify(profiles.value)),
       invoices: JSON.parse(JSON.stringify(invoicesStore.invoices)),
+      buckets: JSON.parse(JSON.stringify(bucketsStore.buckets)),
     }
   }
 
@@ -222,6 +226,9 @@ export const useProfilesStore = defineStore('profiles', () => {
     await db.invoices.clear()
     const invoicesStore = useInvoicesStore()
     invoicesStore.invoices = []
+    await db.buckets.clear()
+    const bucketsStore = useBucketsStore()
+    bucketsStore.buckets = []
     await db.profiles.clear()
     if (await db.profiles.count() > 0) {
       await db.delete()
@@ -234,7 +241,7 @@ export const useProfilesStore = defineStore('profiles', () => {
 
   async function importDocument(doc: unknown): Promise<{ added: number; skipped: number; merged: number }> {
     const d = doc as ExportDocument
-    if (!d || typeof d !== 'object' || d.app !== 'NimConnect' || ![1, 2].includes(d.version) || !Array.isArray(d.profiles)) {
+    if (!d || typeof d !== 'object' || d.app !== 'NimConnect' || ![1, 2, 3].includes(d.version) || !Array.isArray(d.profiles)) {
       throw new Error('invalid-export')
     }
     let added = 0
@@ -305,6 +312,11 @@ export const useProfilesStore = defineStore('profiles', () => {
       const invoicesStore = useInvoicesStore()
       await invoicesStore.reload()
       await invoicesStore.importMany(d.invoices)
+    }
+    if (Array.isArray(d.buckets)) {
+      const bucketsStore = useBucketsStore()
+      await bucketsStore.reload()
+      await bucketsStore.importMany(d.buckets)
     }
     await reload()
     notifyDataChanged()
