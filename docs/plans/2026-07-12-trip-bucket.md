@@ -1082,8 +1082,243 @@ git commit -m "feat: trip buckets on home — progress cards and chain contribut
 
 ---
 
+### Task 6: Amount-less inbox requests become payable (recipient side)
+
+**Files:**
+- Modify: `src/stores/inbox.ts:65-70` (`pay`)
+- Modify: `src/components/InboxRequestCard.vue`
+- Modify: `src/pages/HomePage.vue:105-114` (`payRequest`) and the two `@pay` bindings
+- Test: `src/stores/inbox.test.ts` (append)
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks (independent — buckets send amount-less requests, but this works for any amount-less payment request).
+- Produces: `inbox.pay(item: InboxItem, amountNim?: number)` — payload amount wins when present, otherwise the override is required. `InboxRequestCard` emits `pay: [amountNim?: number]`.
+
+- [ ] **Step 1: Write the failing test**
+
+Append inside the `describe('inbox store')` block of `src/stores/inbox.test.ts`:
+
+```ts
+  it('pay uses the caller amount for amount-less requests', async () => {
+    const { sendNim } = await import('../services/nimiq')
+    vi.mocked(sendNim).mockClear()
+    await db.inboxItems.add({ id: 'd', objectId: 'o4', type: 'payment-request', sender: SENDER, payload: makeRequestLink(SENDER, undefined, '🪣 Trip #a1b2c3d4'), sentAt: 1, receivedAt: 1, status: 'actionable', importedAt: 1, reminders: 0 })
+    const store = useInboxStore()
+    await store.load()
+    await expect(store.pay(store.items[0])).rejects.toThrow('invalid-request')
+    await store.pay(store.items[0], 25)
+    const call = vi.mocked(sendNim).mock.calls[0]
+    expect(call[1]).toBe(25)
+    expect(call[2]).toBe('🪣 Trip #a1b2c3d4')
+    expect((await db.inboxItems.get('d'))?.status).toBe('paid')
+  })
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run src/stores/inbox.test.ts`
+Expected: FAIL — `pay` throws `invalid-request` even with the amount argument.
+
+- [ ] **Step 3: Implement the store change**
+
+In `src/stores/inbox.ts`, replace `pay`:
+
+```ts
+  /** Pay the request via the wallet, then mark it paid. Amount-less requests
+   * (e.g. bucket contributions) take the caller-chosen amount. */
+  async function pay(item: InboxItem, amountNim?: number) {
+    const parsed = parsePaymentRequest(item.payload)
+    const amount = parsed?.amountNim ?? amountNim
+    if (!parsed || !amount || !(amount > 0)) throw new Error('invalid-request')
+    await sendNim(parsed.recipient, amount, parsed.message)
+    await setStatus(item, 'paid')
+  }
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run src/stores/inbox.test.ts`
+Expected: PASS.
+
+- [ ] **Step 5: Update `InboxRequestCard.vue`**
+
+Script changes — add `CurrencyAmountInput` import, an `amount` ref, emit the amount:
+
+```ts
+import CurrencyAmountInput from './CurrencyAmountInput.vue'
+```
+
+```ts
+const emit = defineEmits<{ pay: [amountNim?: number]; dismiss: [] }>()
+```
+
+```ts
+const amount = ref<number | null>(null)
+const canPay = computed(() => !!parsed.value?.amountNim || (amount.value != null && amount.value > 0))
+
+function onPay() {
+  // Unknown senders always get an explicit confirmation step (spec).
+  if (!props.contactName && !confirming.value) {
+    confirming.value = true
+    return
+  }
+  confirming.value = false
+  emit('pay', parsed.value?.amountNim ? undefined : amount.value ?? undefined)
+}
+```
+
+Template changes — in the non-confirming actions block, replace the Pay button so amount-less requests get an input:
+
+```html
+    <div v-else class="request-actions">
+      <CurrencyAmountInput
+        v-if="!parsed?.amountNim"
+        class="amount-input"
+        placeholder="Amount"
+        @update:model-value="amount = $event"
+      />
+      <button type="button" class="action primary" :disabled="paying || !canPay" @click="onPay">
+        {{ paying ? 'Paying…' : 'Pay' }}
+      </button>
+      <button type="button" class="action" @click="emit('dismiss')">Dismiss</button>
+    </div>
+```
+
+Also make the confirm-step "Pay anyway" respect the amount (it calls the same `onPay`, no change needed) and add a style:
+
+```css
+.amount-input { flex: 1; min-width: 0; }
+```
+
+- [ ] **Step 6: Forward the amount in `HomePage.vue`**
+
+Change `payRequest`:
+
+```ts
+async function payRequest(item: (typeof inboxStore.actionable)[number], amountNim?: number) {
+  payingId.value = item.id
+  try {
+    await inboxStore.pay(item, amountNim)
+  } catch {
+    // wallet popup dismissed or send failed — no state change (spec)
+  } finally {
+    payingId.value = null
+  }
+}
+```
+
+And both `<InboxRequestCard>` usages (known and unknown lists):
+
+```html
+          @pay="amountNim => payRequest(item, amountNim)"
+```
+
+- [ ] **Step 7: Full suite, type check, commit**
+
+Run: `npm run test` and `npx vue-tsc --noEmit -p tsconfig.app.json` — expected: PASS / no errors.
+
+```bash
+git add src/stores/inbox.ts src/stores/inbox.test.ts src/components/InboxRequestCard.vue src/pages/HomePage.vue
+git commit -m "feat: pay amount-less inbox requests with a chosen amount"
+```
+
+---
+
+### Task 7: Send bucket to contacts' NimConnect inboxes (sender side)
+
+**Files:**
+- Modify: `src/components/BucketSheet.vue` (from Task 4)
+
+**Interfaces:**
+- Consumes: `sendPaymentRequest`, `inboxAvailable` from `../services/inbox` (existing); `bucketMessage` (Task 1); the BucketSheet detail view (Task 4).
+- Produces: per-contact "Send" in the bucket sheet delivering the request with `objectId = bucket.id` (re-sends become reminders).
+
+- [ ] **Step 1: Add sending logic to `BucketSheet.vue`**
+
+Add imports:
+
+```ts
+import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
+```
+
+Add state + action in the script:
+
+```ts
+const sendingTo = ref<string | null>(null)
+const sentTo = ref<string | null>(null)
+const sendError = ref<string | null>(null)
+
+async function sendToContact(address: string) {
+  if (!props.bucket || !store.self || sendingTo.value) return
+  sendingTo.value = address
+  sendError.value = null
+  try {
+    await sendPaymentRequest({
+      recipient: address,
+      // Payload must pay the wallet-signed sender (inbox trust rule), so raw self address
+      payload: makeRequestLink(store.self.address, undefined, bucketMessage(props.bucket)),
+      objectId: props.bucket.id,
+      sender: store.self.address,
+    })
+    sentTo.value = address
+    setTimeout(() => (sentTo.value = null), 2500)
+  } catch (e) {
+    sendError.value = e instanceof Error ? e.message : 'Sending failed'
+  } finally {
+    sendingTo.value = null
+  }
+}
+```
+
+- [ ] **Step 2: Add the contacts list to the detail template**
+
+Insert after the `.detail-actions` div, before the manual-add form (active buckets with a connected wallet only):
+
+```html
+      <div v-if="bucket.status === 'active' && store.self && inboxAvailable() && store.sortedContacts.length" class="send-contacts">
+        <p class="manual-label">Invite contacts — sends the bucket to their NimConnect:</p>
+        <div class="list">
+          <div v-for="c in store.sortedContacts" :key="c.id" class="contribution">
+            <Identicon :address="c.address" :size="32" />
+            <span class="who">{{ c.name }}</span>
+            <button
+              type="button"
+              class="secondary send-btn"
+              :disabled="sendingTo === c.address"
+              @click="sendToContact(c.address)"
+            >
+              {{ sentTo === c.address ? 'Sent!' : sendingTo === c.address ? 'Sending…' : 'Send' }}
+            </button>
+          </div>
+        </div>
+        <p v-if="sendError" class="hint send-error">{{ sendError }}</p>
+      </div>
+```
+
+Add styles:
+
+```css
+.send-contacts { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.send-btn { min-height: 36px; padding: 0 14px; font-size: 13px; }
+.send-error { color: var(--nq-red); }
+```
+
+- [ ] **Step 3: Verify and commit**
+
+Run: `npm run test` and `npm run build` — expected: PASS / clean build.
+
+Manual check (needs the Docker backend for the inbox API): create a bucket, open it, "Invite contacts" list appears with Send buttons; without the backend the section hides via `inboxAvailable()`.
+
+```bash
+git add src/components/BucketSheet.vue
+git commit -m "feat: send bucket invites to contacts' NimConnect inboxes"
+```
+
+---
+
 ## Self-Review Notes
 
 - Spec coverage: data model + ledger (Task 1), tag/QR/share split + scan (Tasks 1–2), backup/export/reset/restore hops (Task 3), sheet + home section + polling wiring (Tasks 4–5). Deadlines/refunds/goal-editing intentionally absent (spec: out of scope).
 - `MESSAGE_MAX_BYTES` is duplicated in `buckets.ts` (with a sync comment) instead of importing `services/nimiq.ts`, keeping the store free of the wallet-SDK module in tests.
 - `recordChainContributions` only scans active buckets — a completed bucket stops accruing; reopening resumes on the next poll.
+- Tasks 6–7 add inbox sharing: recipient-side amount-less pay is generic (any amount-less payment request becomes payable), sender-side lives in the bucket sheet. Paying a bucket inbox request marks it `paid` and it leaves "Requests for you" — repeat contributions go through the share link/QR, which stays available.

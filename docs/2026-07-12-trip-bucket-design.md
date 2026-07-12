@@ -76,6 +76,15 @@ organizer adjustments and are never deduped against chain entries.
   optional contact), mirroring how invoices can be manually marked paid.
 - Contributor display: sender addresses resolve to names through the existing
   profiles store; unknown senders show a short address.
+- **Sharing with contacts (inbox):** the bucket sheet lists contacts with a
+  per-contact "Send" that delivers the bucket request to their NimConnect
+  inbox via `sendPaymentRequest` (`objectId = bucket.id` so re-sends arrive
+  as reminders; payload pays the raw self address per the inbox trust rule).
+  Recipient side: amount-less payment requests already import as
+  `actionable`, but `inbox.pay()` and `InboxRequestCard` require an amount —
+  `pay(item, amountNim?)` gains an override and the card shows an amount
+  input + Pay when the request has none. The paid message carries the bucket
+  tag, so the contribution auto-counts in the organizer's ledger.
 - Scanning: `ScanRequestType` in `links.ts` gains a `bucket` member
   (`classifyScan` detects the `🪣` message prefix), and `ScanSheet.vue`'s
   title/copy switch gets a matching case so a scanned bucket QR reads
