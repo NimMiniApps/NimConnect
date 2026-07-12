@@ -29,9 +29,13 @@ Dexie **v4 migration** adds a `buckets` table (`id, status`).
 
 ```ts
 interface BucketContribution {
+  id: string                 // uuid
+  source: 'chain' | 'manual'
   amountNim: number
-  sender?: string   // Nimiq address when known
-  at: number        // epoch ms
+  sender?: string            // Nimiq address when known
+  txHash?: string            // set for source 'chain' — dedupe key
+  note?: string              // manual entries: free-text label/contact name
+  at: number                 // epoch ms
 }
 
 interface Bucket {
@@ -43,26 +47,40 @@ interface Bucket {
   status: 'active' | 'completed'
   createdAt: number
   completedAt?: number
-  manualContributions: BucketContribution[]
+  contributions: BucketContribution[]   // persisted ledger, chain + manual
 }
 ```
 
+Contributions are a **persisted ledger** on the bucket, not recomputed from
+history on every view: `fetchIncomingPayments` only fetches the last 100 txs
+per address, so tagged contributions to a long-running bucket would fall out
+of the window. Instead, each polling pass appends newly seen tagged payments
+(`source: 'chain'`, deduped by `txHash`) to the bucket record; once recorded,
+a contribution survives regardless of the fetch window. Manual entries are
+organizer adjustments and are never deduped against chain entries.
+
 ## Contribution tracking
 
-- Share link/QR: existing `makePaymentShareLink(myAddress, undefined, message)`
-  with **no fixed amount** and message `"🪣 <name> #<short-id>"` where
-  `<short-id>` is the first 8 hex chars of the bucket id.
-- Matching: a pure function `matchContributions(buckets, payments)` beside
-  `matchPayments` in the invoices store area — sums `fetchIncomingPayments`
-  results whose message contains `#<short-id>`, newest data wins, plus
-  `manualContributions`.
+- Payment message: `"🪣 <name> #<short-id>"` where `<short-id>` is the first
+  8 chars of the bucket id, with **no fixed amount**.
+- Two link forms, per the existing contract in `links.ts`: the **QR code**
+  encodes `makeRequestLink(myAddress, undefined, message)` (native `nimiq:`
+  URI); the **messenger share URL** uses
+  `makePaymentShareLink(myAddress, undefined, message)`.
+- Matching: a pure function `matchContributions(bucket, payments)` beside
+  `matchPayments` — returns `fetchIncomingPayments` results whose message
+  contains `#<short-id>` and whose `txHash` is not already in the bucket's
+  ledger. The store appends matches as `source: 'chain'` contributions.
 - Payments that lost the tag (payer edited the message): organizer adds them
   via a **manual add contribution** action on the bucket sheet (amount +
   optional contact), mirroring how invoices can be manually marked paid.
 - Contributor display: sender addresses resolve to names through the existing
   profiles store; unknown senders show a short address.
-- `classifyScan` gains a `bucket` request type (message starts with `🪣`) so
-  scanning a bucket QR opens the pay sheet with message pre-filled.
+- Scanning: `ScanRequestType` in `links.ts` gains a `bucket` member
+  (`classifyScan` detects the `🪣` message prefix), and `ScanSheet.vue`'s
+  title/copy switch gets a matching case so a scanned bucket QR reads
+  "Trip bucket" instead of generic "Payment request". Covered by tests in
+  `links.test.ts` and the scan-sheet behavior.
 
 ## UI
 
@@ -79,13 +97,22 @@ interface Bucket {
 
 `stores/buckets.ts`, same shape as `stores/invoices.ts`:
 `load / reload / create / setStatus / remove / addManualContribution /
-importMany`, calling `notifyDataChanged()` for cloud backup. Tests for the
-store and for `matchContributions`.
+recordChainContributions / importMany`, calling `notifyDataChanged()` for
+cloud backup. Tests for the store and for `matchContributions`.
 
 ## Backup / restore
 
-Buckets join JSON export/import and the encrypted cloud-backup payload,
-following exactly what invoices did in the v2 migration work.
+Buckets follow the exact path invoices took, touching every hop explicitly:
+
+- `ExportDocument` in `types/profile.ts` becomes `version: 1 | 2 | 3` with an
+  optional `buckets?: Bucket[]` field; `exportDocument()` in
+  `stores/profiles.ts` emits version 3 and includes buckets.
+- `importDocument()` accepts versions 1–3 and calls
+  `bucketsStore.importMany()` when `buckets` is present.
+- `resetAll()` clears the `buckets` table and store state.
+- `afterRestore()` in `services/restore.ts` reloads the buckets store.
+- Cloud backup needs no format change (it wraps the export document), but
+  its tests should cover a buckets round-trip.
 
 ## Error handling
 
