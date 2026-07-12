@@ -369,7 +369,7 @@ async function loadSenderAliases() {
           <p v-if="detectedPaid.has(invoice.id)" class="detected">
             ✓ Payment detected — {{ detectedPaid.get(invoice.id)!.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
             received {{ new Date(detectedPaid.get(invoice.id)!.timestamp * (detectedPaid.get(invoice.id)!.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}.
-            <button type="button" class="detected-confirm" @click="invoicesStore.setStatus(invoice.id, 'paid')">Mark paid</button>
+            <button type="button" class="detected-confirm" @click="invoicesStore.markPaid(invoice.id)">Mark paid</button>
           </p>
 
           <div class="actions">
@@ -390,7 +390,7 @@ async function loadSenderAliases() {
             >
               {{ remindedId === invoice.id ? 'Reminded ✓' : remindingId === invoice.id ? 'Sending…' : 'Remind' }}
             </button>
-            <button type="button" class="action" @click="invoicesStore.setStatus(invoice.id, 'paid')">
+            <button type="button" class="action" @click="invoicesStore.markPaid(invoice.id)">
               Mark paid
             </button>
             <button type="button" class="action danger" @click="invoicesStore.remove(invoice.id)">

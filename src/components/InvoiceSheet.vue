@@ -22,6 +22,7 @@ const fiat = ref<{ amount: number; currency: string } | null>(null)
 const amountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
 const description = ref('')
 const dueDate = ref('')
+const repeat = ref<'' | 'weekly' | 'monthly'>('')
 const creating = ref(false)
 const expandedId = ref<string | null>(null)
 const copiedId = ref<string | null>(null)
@@ -51,6 +52,7 @@ async function create() {
       fiatAmount: fiat.value?.amount,
       fiatCurrency: fiat.value?.currency,
       ...(dueAt && Number.isFinite(dueAt) ? { dueAt } : {}),
+      ...(repeat.value ? { repeat: repeat.value } : {}),
     })
     await store.touchInteraction(props.profile.id)
     amount.value = null
@@ -58,6 +60,7 @@ async function create() {
     amountInput.value?.reset()
     description.value = ''
     dueDate.value = ''
+    repeat.value = ''
     expandedId.value = inv.id
     // Deliver to their inbox when they're a saved contact
     if (shouldAutoDeliverInbox(props.profile.address, store.contacts)) await sendToInbox(inv)
@@ -123,6 +126,14 @@ function close() {
             Due date (optional)
             <input v-model="dueDate" type="date" />
           </label>
+          <label class="due-label">
+            Repeats
+            <select v-model="repeat">
+              <option value="">Never</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+          </label>
         </div>
         <button type="submit" class="primary" :disabled="!amount || creating">Create invoice</button>
       </form>
@@ -140,7 +151,7 @@ function close() {
           </button>
           <div v-if="expandedId === inv.id" class="detail">
             <p class="when">
-              Created {{ new Date(inv.createdAt).toLocaleDateString() }}<template v-if="inv.dueAt"> · <span :class="{ overdue: isOverdue(inv) }">{{ isOverdue(inv) ? 'Overdue since' : 'Due' }} {{ new Date(inv.dueAt).toLocaleDateString() }}</span></template><template v-if="inv.paidAt"> · Paid {{ new Date(inv.paidAt).toLocaleDateString() }}</template>
+              Created {{ new Date(inv.createdAt).toLocaleDateString() }}<template v-if="inv.dueAt"> · <span :class="{ overdue: isOverdue(inv) }">{{ isOverdue(inv) ? 'Overdue since' : 'Due' }} {{ new Date(inv.dueAt).toLocaleDateString() }}</span></template><template v-if="inv.paidAt"> · Paid {{ new Date(inv.paidAt).toLocaleDateString() }}</template><template v-if="inv.repeat"> · Repeats {{ inv.repeat }}</template>
             </p>
             <QrCode v-if="inv.status === 'pending'" :text="linkFor(inv.amountNim, inv.description)" :size="180" />
             <p v-if="inv.status === 'pending'" class="pay-hint">Payer: tap Scan in the bottom bar and scan this QR.</p>
@@ -157,7 +168,7 @@ function close() {
               >
                 {{ sentId === inv.id ? 'Sent!' : sendingId === inv.id ? 'Sending…' : 'Send to their NimConnect' }}
               </button>
-              <button type="button" class="secondary" @click="invoicesStore.setStatus(inv.id, inv.status === 'paid' ? 'pending' : 'paid')">
+              <button type="button" class="secondary" @click="inv.status === 'paid' ? invoicesStore.setStatus(inv.id, 'pending') : invoicesStore.markPaid(inv.id)">
                 {{ inv.status === 'paid' ? 'Mark pending' : 'Mark paid' }}
               </button>
               <button type="button" class="secondary danger" @click="invoicesStore.remove(inv.id)">Delete</button>
@@ -173,7 +184,7 @@ function close() {
 <style scoped>
 .new-invoice { display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px; }
 .new-fields { display: flex; flex-direction: column; gap: 8px; }
-.new-fields input {
+.new-fields input, .new-fields select {
   font: inherit; padding: 10px 12px; min-height: 44px;
   border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
