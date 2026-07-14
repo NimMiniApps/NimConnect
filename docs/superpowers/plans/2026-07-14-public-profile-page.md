@@ -278,6 +278,17 @@ const handle = computed(() => String(route.params.handle ?? '').toLowerCase())
 const displayName = computed(() => profile.value?.display_name || `@${handle.value}`)
 const payUri = computed(() => (claim.value ? makeRequestLink(claim.value.address) : ''))
 
+// The backend rejects non-http(s) website URLs at publish time; this guard
+// keeps javascript:/data: URIs out of href even if served data is ever stale.
+const safeWebsite = computed(() => {
+  try {
+    const u = new URL(profile.value?.website ?? '')
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null
+  } catch {
+    return null
+  }
+})
+
 onMounted(async () => {
   try {
     const resolved = await resolveHandle(handle.value)
@@ -309,9 +320,9 @@ onMounted(async () => {
         <h1>{{ displayName }}</h1>
         <p class="handle">@{{ claim.handle }}</p>
         <p v-if="profile?.bio" class="bio">{{ profile.bio }}</p>
-        <ul v-if="profile?.website || profile?.github || profile?.x" class="socials">
-          <li v-if="profile?.website">
-            <a :href="profile.website" target="_blank" rel="noopener noreferrer nofollow">🌐 Website</a>
+        <ul v-if="safeWebsite || profile?.github || profile?.x" class="socials">
+          <li v-if="safeWebsite">
+            <a :href="safeWebsite" target="_blank" rel="noopener noreferrer nofollow">🌐 Website</a>
           </li>
           <li v-if="profile?.github">
             <a :href="`https://github.com/${profile.github}`" target="_blank" rel="noopener noreferrer">GitHub</a>
