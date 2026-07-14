@@ -283,6 +283,11 @@ async function loadSenderAliases() {
         <h1>Home</h1>
         <p>{{ attentionSubtitle }}</p>
       </div>
+      <router-link
+        :to="{ path: '/me', query: { sheet: 'request' } }"
+        class="add-link"
+        aria-label="Request payment"
+      >📥</router-link>
       <router-link to="/add" class="add-link" aria-label="Add contact">＋</router-link>
     </header>
 

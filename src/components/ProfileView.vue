@@ -54,10 +54,11 @@ const lastSeen = computed(() =>
 const rates = ref<NimRates | null>(null)
 
 onMounted(() => {
+  const q = route.query.sheet
+  if (q === 'invoice' || q === 'request') openSheet(q)
   if (props.own) return
   getRates().then(r => (rates.value = r))
   if (store.self) loadHistory()
-  if (route.query.sheet === 'invoice') openSheet('invoice')
 })
 
 watch(() => walletStatus.value, (status, prev) => {
