@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   makeRequestLink,
   makePaymentShareLink,
+  makeNimiqPayDeepLink,
   makeAppAddLink,
   parsePaymentRequest,
   parsePaymentShareLink,
@@ -16,14 +17,21 @@ import type { Profile } from '../types/profile'
 const A = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 
 describe('links', () => {
-  it('creates HTTPS payment share links for messengers', () => {
+  it('creates payment share links on the NimConnect origin', () => {
     const link = makePaymentShareLink(A, 5, 'Split: dinner')
-    expect(link).toMatch(/^https:\/\/nimpay\.app\/miniapps\/open\//)
-    expect(link).toContain('#/pay?r=')
+    expect(link).toMatch(/^https:\/\/nimconnect\.nimiqminiapps\.com\/?#\/pay\?r=/)
     const parsed = parsePaymentRequest(link)
     expect(parsed?.recipient).toBe(A)
     expect(parsed?.amountNim).toBe(5)
     expect(parsed?.message).toBe('Split: dinner')
+  })
+
+  it('creates Nimiq Pay deep links for the public pay page', () => {
+    const link = makeNimiqPayDeepLink(A, 5, 'Split: dinner')
+    expect(link).toMatch(/^https:\/\/nimpay\.app\/miniapps\/open\//)
+    const parsed = parsePaymentRequest(link)
+    expect(parsed?.recipient).toBe(A)
+    expect(parsed?.amountNim).toBe(5)
   })
 
   it('parses payment share links from pasted URLs', () => {

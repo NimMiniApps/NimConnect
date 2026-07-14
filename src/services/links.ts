@@ -170,10 +170,17 @@ export function makeRequestLink(address: string, amountNim?: number, message?: s
 }
 
 /**
- * HTTPS link for messengers (WhatsApp, Telegram, …): opens NimConnect in Nimiq Pay
- * and pre-fills the pay sheet. QR codes should keep using makeRequestLink() directly.
+ * HTTPS link for messengers (WhatsApp, Telegram, …): opens NimConnect's public
+ * pay page — amount, message, QR, address — payable by anyone, no app needed.
+ * QR codes should keep using makeRequestLink() directly.
  */
 export function makePaymentShareLink(address: string, amountNim?: number, message?: string): string {
+  const nimiq = makeRequestLink(address, amountNim, message)
+  return `${appOrigin()}#/pay?r=${encodeURIComponent(nimiq)}`
+}
+
+/** Deep link that opens the request inside Nimiq Pay (used by the public pay page). */
+export function makeNimiqPayDeepLink(address: string, amountNim?: number, message?: string): string {
   const nimiq = makeRequestLink(address, amountNim, message)
   return `${NIMPAY_OPEN_URL}#/pay?r=${encodeURIComponent(nimiq)}`
 }
