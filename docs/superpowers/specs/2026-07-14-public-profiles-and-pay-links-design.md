@@ -32,11 +32,11 @@ Nimiq-ecosystem contact layer:
 ## 1. On-chain handle registry
 
 - **Claim** = dust transaction (minimum amount) from the claiming address to a
-  well-known **registry address**, with text data payload:
-  `NCC:` + hex(`magic[2]="NC"` `version=0x01` `type` `handle-bytes`)
-  - `type`: `0x01 CLAIM`, `0x02 RELEASE`
+  well-known **registry address**, with plain-text data payload:
+  `NCC:v1:claim:<handle>` (release: `NCC:v1:release:<handle>`) — human-readable
+  in explorers, parseable by any indexer without a binary codec.
   - Handle: 3–26 chars, `[a-z0-9_]`, lowercase only. 26-char max keeps the
-    envelope within Nimiq Pay's 64-char text transaction limit, so claims work
+    payload within Nimiq Pay's 64-char text transaction limit, so claims work
     from inside the mini app.
 - **Resolution**: earliest valid claim by `(block_height, tx_index)` wins the
   handle, permanently binding handle → sender address. Later claims for the
