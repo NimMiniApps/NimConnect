@@ -10,6 +10,9 @@ import { parsePaymentRequest, type ParsedPaymentRequest } from './services/links
 import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './components/PublicPayLanding.vue'
+import PublicProfileLanding from './components/PublicProfileLanding.vue'
+import { parsePublicAddRoute } from './services/profile-share'
+import { isDesktopBrowser } from './utils/device'
 import QuickSendSheet from './components/QuickSendSheet.vue'
 import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
@@ -29,7 +32,9 @@ const backupOnboardingOpen = ref(false)
 const restoreOffered = ref(false)
 const dataVersion = ref(0)
 const pendingPayment = ref<ParsedPaymentRequest | null>(null)
-const browserMode = ref(hasBrowserModeOptIn())
+const desktopBrowser = ref(typeof window !== 'undefined' && isDesktopBrowser())
+const browserMode = ref(false)
+const allowBrowserContinue = computed(() => !desktopBrowser.value)
 // Parseable /pay payload while outside Nimiq Pay → public request page.
 const publicPayRequest = computed<ParsedPaymentRequest | null>(() => {
   if (router.currentRoute.value.path !== '/pay') return null
@@ -38,6 +43,13 @@ const publicPayRequest = computed<ParsedPaymentRequest | null>(() => {
     ? parsePaymentRequest(decodeURIComponent(raw))
     : parsePaymentRequest(window.location.href)
 })
+// Shared profile on /add while outside Nimiq Pay → public profile page.
+const publicSharedProfile = computed(() => {
+  if (router.currentRoute.value.path !== '/add') return null
+  return parsePublicAddRoute(router.currentRoute.value.query as Record<string, unknown>)
+})
+// Public profile pages render for everyone — no install wall.
+const publicProfileRoute = computed(() => router.currentRoute.value.path.startsWith('/u/'))
 const inboxStore = useInboxStore()
 const profilesStore = useProfilesStore()
 inboxStore.load()
@@ -119,8 +131,12 @@ async function onRestoreComplete() {
 }
 
 onMounted(async () => {
+  desktopBrowser.value = isDesktopBrowser()
   const inside = await detectHostApp()
-  if (inside || browserMode.value) {
+  if (inside) {
+    browserMode.value = true
+    await initApp()
+  } else if (!desktopBrowser.value && hasBrowserModeOptIn()) {
     browserMode.value = true
     await initApp()
   }
@@ -153,6 +169,7 @@ watch([browserMode, insideNimiqPay], () => {
 })
 
 function onContinueInBrowser() {
+  if (desktopBrowser.value) return
   enableBrowserMode()
   browserMode.value = true
 }
@@ -189,10 +206,19 @@ async function handleIncomingPaymentLink() {
   <PublicPayLanding
     v-if="!insideNimiqPay && !browserMode && publicPayRequest"
     :payment="publicPayRequest"
+    :allow-browser-continue="allowBrowserContinue"
     @continue="onContinueInBrowser"
   />
+  <PublicProfileLanding
+    v-else-if="!insideNimiqPay && !browserMode && publicSharedProfile"
+    :profile="publicSharedProfile"
+    :allow-browser-continue="allowBrowserContinue"
+    @continue="onContinueInBrowser"
+  />
+  <router-view v-else-if="!insideNimiqPay && !browserMode && publicProfileRoute" />
   <OpenInNimiqPayLanding
     v-else-if="!insideNimiqPay && !browserMode"
+    :allow-browser-continue="allowBrowserContinue"
     @continue="onContinueInBrowser"
   />
 

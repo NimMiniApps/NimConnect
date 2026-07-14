@@ -11,6 +11,7 @@ export const router = createRouter({
     { path: '/me', component: () => import('./pages/MyProfilePage.vue') },
     { path: '/settings', component: () => import('./pages/SettingsPage.vue') },
     { path: '/pay', component: () => import('./pages/PayPage.vue') },
+    { path: '/u/:handle', component: () => import('./pages/PublicProfilePage.vue') },
     { path: '/insights', component: () => import('./pages/InsightsPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
