@@ -393,3 +393,95 @@ git commit -m "feat: show public request page for /pay links opened outside Nimi
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 4: "Request payment" entry point on Home
+
+Requesting a payment to yourself currently only works via Profile tab → Request on your own card, and the existing `?sheet=` deep-link never fires for the own profile because `ProfileView`'s `onMounted` returns early (`src/components/ProfileView.vue:58-62`). Fix the ordering, accept `request` as a sheet query value, and add a Home header button linking to `/me?sheet=request`. No service logic → no unit test (component convention, see Global Constraints); verified manually.
+
+**Files:**
+- Modify: `src/components/ProfileView.vue:57-62` (onMounted)
+- Modify: `src/pages/HomePage.vue:281-287` (header)
+
+**Interfaces:**
+- Consumes: existing `openSheet(which)` and `route.query` in ProfileView; nothing from Tasks 1–3.
+- Produces: deep link `/me?sheet=request` (also works on contact profiles: `/profile/:id?sheet=request`).
+
+- [ ] **Step 1: Handle the sheet query before the own-profile early return**
+
+In `src/components/ProfileView.vue`, replace the `onMounted` block (lines 57–62):
+
+```ts
+onMounted(() => {
+  if (props.own) return
+  getRates().then(r => (rates.value = r))
+  if (store.self) loadHistory()
+  if (route.query.sheet === 'invoice') openSheet('invoice')
+})
+```
+
+with:
+
+```ts
+onMounted(() => {
+  const q = route.query.sheet
+  if (q === 'invoice' || q === 'request') openSheet(q)
+  if (props.own) return
+  getRates().then(r => (rates.value = r))
+  if (store.self) loadHistory()
+})
+```
+
+- [ ] **Step 2: Add the Request button to the Home header**
+
+In `src/pages/HomePage.vue`, replace the header (lines 281–287):
+
+```vue
+    <header class="header">
+      <div>
+        <h1>Home</h1>
+        <p>{{ attentionSubtitle }}</p>
+      </div>
+      <router-link to="/add" class="add-link" aria-label="Add contact">＋</router-link>
+    </header>
+```
+
+with:
+
+```vue
+    <header class="header">
+      <div>
+        <h1>Home</h1>
+        <p>{{ attentionSubtitle }}</p>
+      </div>
+      <router-link
+        :to="{ path: '/me', query: { sheet: 'request' } }"
+        class="add-link"
+        aria-label="Request payment"
+      >📥</router-link>
+      <router-link to="/add" class="add-link" aria-label="Add contact">＋</router-link>
+    </header>
+```
+
+(The `.header` is already `display: flex` with the text block first; the two icon links sit side by side. `.add-link`'s existing styles apply to both.)
+
+- [ ] **Step 3: Build and run the test suite**
+
+Run: `npm run build && npm run test -- --run`
+Expected: both PASS.
+
+- [ ] **Step 4: Manual verification**
+
+1. `npm run dev`, open `http://localhost:5173/` with browser mode enabled (or continue in browser once) and a profile set up.
+2. On Home, click the 📥 header button: expected → Profile tab with the **Request** sheet open (amount input, QR, share link).
+3. Regression: open a contact and use `?sheet=invoice` flow from the Home banner (or visit `/#/profile/<id>?sheet=invoice` directly): invoice sheet still opens.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/components/ProfileView.vue src/pages/HomePage.vue
+git commit -m "feat: request-payment shortcut on Home; sheet deep links work on own profile
+
+Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+```
