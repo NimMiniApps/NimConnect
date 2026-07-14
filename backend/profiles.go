@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -55,6 +56,11 @@ func validateProfilePayload(raw string) error {
 			if !isString || len(s) > cap {
 				return errBadRequest
 			}
+			// website is rendered as a link on public pages — http(s) only,
+			// so javascript:/data: URIs can never reach an href.
+			if key == "website" && !isSafeHTTPURL(s) {
+				return errBadRequest
+			}
 			continue
 		}
 		if key == "tags" {
@@ -73,6 +79,11 @@ func validateProfilePayload(raw string) error {
 		return errBadRequest // unknown key
 	}
 	return nil
+}
+
+func isSafeHTTPURL(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
 type ProfilePutRequest struct {

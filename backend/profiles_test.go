@@ -102,6 +102,9 @@ func TestProfilePayloadValidation(t *testing.T) {
 		`{"bio":"` + strings.Repeat("x", 400) + `"}`, // over cap
 		`{"tags":["a","b","c","d","e","f","g","h","i"]}`, // too many tags
 		`{"tags":[1]}`,                           // non-string tag
+		`{"website":"javascript:alert(1)"}`,      // non-http(s) scheme -> XSS via href
+		`{"website":"data:text/html,x"}`,         // non-http(s) scheme
+		`{"website":"https://"}`,                 // no host
 	}
 	for _, profile := range bad {
 		req, _ := putReq(t, 1000, profile)
