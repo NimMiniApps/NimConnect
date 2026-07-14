@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { insideNimiqPay, walletStatus, detectHostApp } from './services/nimiq'
 import { bootstrapWallet } from './services/wallet-bootstrap'
@@ -9,6 +9,7 @@ import { useVisiblePolling } from './composables/useVisiblePolling'
 import { parsePaymentRequest, type ParsedPaymentRequest } from './services/links'
 import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
+import PublicPayLanding from './components/PublicPayLanding.vue'
 import QuickSendSheet from './components/QuickSendSheet.vue'
 import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
@@ -29,6 +30,14 @@ const restoreOffered = ref(false)
 const dataVersion = ref(0)
 const pendingPayment = ref<ParsedPaymentRequest | null>(null)
 const browserMode = ref(hasBrowserModeOptIn())
+// Parseable /pay payload while outside Nimiq Pay → public request page.
+const publicPayRequest = computed<ParsedPaymentRequest | null>(() => {
+  if (router.currentRoute.value.path !== '/pay') return null
+  const raw = router.currentRoute.value.query.r
+  return typeof raw === 'string'
+    ? parsePaymentRequest(decodeURIComponent(raw))
+    : parsePaymentRequest(window.location.href)
+})
 const inboxStore = useInboxStore()
 const profilesStore = useProfilesStore()
 inboxStore.load()
@@ -177,8 +186,13 @@ async function handleIncomingPaymentLink() {
 </script>
 
 <template>
+  <PublicPayLanding
+    v-if="!insideNimiqPay && !browserMode && publicPayRequest"
+    :payment="publicPayRequest"
+    @continue="onContinueInBrowser"
+  />
   <OpenInNimiqPayLanding
-    v-if="!insideNimiqPay && !browserMode"
+    v-else-if="!insideNimiqPay && !browserMode"
     @continue="onContinueInBrowser"
   />
 
