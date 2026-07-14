@@ -166,3 +166,14 @@ func claimSubmitHandler(syncer *HandleSyncer, registry *HandleRegistry) http.Han
 		json.NewEncoder(w).Encode(map[string]any{"status": status, "claim": body})
 	}
 }
+
+func handleByAddressHandler(registry *HandleRegistry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claim, ok := registry.ResolveAddress(r.PathValue("address"))
+		if !ok {
+			writeJSONError(w, http.StatusNotFound, "no handle")
+			return
+		}
+		writeCached(w, r, claim.TxHash, claim)
+	}
+}

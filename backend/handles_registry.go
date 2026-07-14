@@ -37,9 +37,12 @@ func NewHandleRegistry(path string, reserved map[string]bool) *HandleRegistry {
 }
 
 // Rebuild replaces the registry from the registry address's full inbound tx
-// list, applying claims and releases in chain order.
-// ponytail: full-history rebuild each sweep; switch to cursor-paged
-// incremental sync when the registry address accumulates >~10k txs.
+// list, applying claims in chain order (earliest wins; no release semantics
+// in the shared NimFeed protocol). Resolution follows the chain unfiltered —
+// the reserved list only gates NimConnect's own claim UI (see Available).
+// ponytail: full-history rebuild each sweep; the NimFeed catalog address also
+// carries posts/follows, so switch to cursor-paged incremental sync once the
+// sweep gets slow (>~10k txs).
 func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 	ordered := make([]rpcTx, len(txs))
 	copy(ordered, txs)
@@ -53,24 +56,16 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 	next := map[string]HandleClaim{}
 	for _, tx := range ordered {
 		action := parseClaimData(tx.data())
-		if action == nil || r.reserved[action.Handle] {
+		if action == nil {
 			continue
 		}
-		switch action.Verb {
-		case "claim":
-			if _, taken := next[action.Handle]; !taken {
-				next[action.Handle] = HandleClaim{
-					Handle:      action.Handle,
-					Address:     normalizeAddress(tx.sender()),
-					TxHash:      tx.Hash,
-					BlockHeight: tx.BlockNumber,
-					TxIndex:     tx.TransactionIndex,
-				}
-			}
-		case "release":
-			if owner, taken := next[action.Handle]; taken &&
-				compactAddress(owner.Address) == compactAddress(tx.sender()) {
-				delete(next, action.Handle)
+		if _, taken := next[action.Handle]; !taken {
+			next[action.Handle] = HandleClaim{
+				Handle:      action.Handle,
+				Address:     normalizeAddress(tx.sender()),
+				TxHash:      tx.Hash,
+				BlockHeight: tx.BlockNumber,
+				TxIndex:     tx.TransactionIndex,
 			}
 		}
 	}
@@ -113,4 +108,18 @@ func (r *HandleRegistry) Available(handle string) (bool, string) {
 		return false, "taken"
 	}
 	return true, ""
+}
+
+// ResolveAddress finds the handle owned by an address.
+// ponytail: O(n) scan; index it if the registry ever holds >~50k handles.
+func (r *HandleRegistry) ResolveAddress(address string) (HandleClaim, bool) {
+	compact := compactAddress(address)
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, claim := range r.handles {
+		if compactAddress(claim.Address) == compact {
+			return claim, true
+		}
+	}
+	return HandleClaim{}, false
 }

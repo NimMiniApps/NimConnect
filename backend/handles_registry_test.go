@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-func claimTx(hash, sender, verb, handle string, block, index uint64) rpcTx {
+func claimTx(hash, sender, handle string, block, index uint64) rpcTx {
 	return rpcTx{
 		Hash: hash, Sender: sender, Recipient: "NQ77 REGISTRY",
-		Data:        hex.EncodeToString([]byte(makeClaimPayload(verb, handle))),
+		Data:        hex.EncodeToString([]byte(makeClaimPayload(handle))),
 		BlockNumber: block, TransactionIndex: index,
 	}
 }
@@ -23,9 +23,9 @@ func TestRebuildEarliestClaimWins(t *testing.T) {
 	r := newTestRegistry(t)
 	err := r.Rebuild([]rpcTx{
 		// Out of chain order on purpose — Rebuild must sort.
-		claimTx("t2", "NQ22 LATE", "claim", "chuck", 10, 0),
-		claimTx("t1", "NQ11 EARLY", "claim", "chuck", 5, 3),
-		claimTx("t3", "NQ33 OTHER", "claim", "alice", 10, 1),
+		claimTx("t2", "NQ22 LATE", "chuck", 10, 0),
+		claimTx("t1", "NQ11 EARLY", "chuck", 5, 3),
+		claimTx("t3", "NQ33 OTHER", "alice", 10, 1),
 		{Hash: "junk", Sender: "NQ44", Data: "zznothex", BlockNumber: 1}, // ignored
 	})
 	if err != nil {
@@ -43,8 +43,8 @@ func TestRebuildEarliestClaimWins(t *testing.T) {
 func TestRebuildSameBlockOrdersByTxIndex(t *testing.T) {
 	r := newTestRegistry(t)
 	r.Rebuild([]rpcTx{
-		claimTx("t2", "NQ22 SECOND", "claim", "chuck", 5, 7),
-		claimTx("t1", "NQ11 FIRST", "claim", "chuck", 5, 2),
+		claimTx("t2", "NQ22 SECOND", "chuck", 5, 7),
+		claimTx("t1", "NQ11 FIRST", "chuck", 5, 2),
 	})
 	claim, _ := r.Resolve("chuck")
 	if claim.TxHash != "t1" {
@@ -52,25 +52,27 @@ func TestRebuildSameBlockOrdersByTxIndex(t *testing.T) {
 	}
 }
 
-func TestReleaseFreesHandleForReclaim(t *testing.T) {
+func TestClaimsArePermanent(t *testing.T) {
+	// The shared NimFeed protocol has no release type: once claimed, later
+	// claims for the same handle never displace the owner.
 	r := newTestRegistry(t)
 	r.Rebuild([]rpcTx{
-		claimTx("t1", "NQ11 OWNER", "claim", "chuck", 5, 0),
-		claimTx("t2", "NQ22 THIEF", "release", "chuck", 6, 0), // not owner -> ignored
-		claimTx("t3", "NQ11 OWNER", "release", "chuck", 7, 0), // owner releases
-		claimTx("t4", "NQ22 THIEF", "claim", "chuck", 8, 0),   // reclaim works
+		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
+		claimTx("t2", "NQ22 THIEF", "chuck", 800, 0),
 	})
 	claim, ok := r.Resolve("chuck")
-	if !ok || compactAddress(claim.Address) != "NQ22THIEF" {
-		t.Fatalf("handle should be reclaimed after owner release: %+v ok=%v", claim, ok)
+	if !ok || compactAddress(claim.Address) != "NQ11OWNER" {
+		t.Fatalf("original owner should keep the handle: %+v ok=%v", claim, ok)
 	}
 }
 
-func TestReservedHandlesNeverClaimable(t *testing.T) {
+func TestReservedHandlesGateUIOnly(t *testing.T) {
+	// Reserved names block NimConnect's claim UI, but resolution follows the
+	// chain — a name claimed via NimFeed must resolve identically here.
 	r := newTestRegistry(t)
-	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 X", "claim", "nimiq", 5, 0)})
-	if _, ok := r.Resolve("nimiq"); ok {
-		t.Fatal("reserved handle must not resolve")
+	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 X", "nimiq", 5, 0)})
+	if _, ok := r.Resolve("nimiq"); !ok {
+		t.Fatal("chain-claimed reserved handle must still resolve")
 	}
 	if ok, reason := r.Available("nimiq"); ok || reason != "reserved" {
 		t.Fatalf("want reserved, got ok=%v reason=%q", ok, reason)
@@ -83,10 +85,22 @@ func TestReservedHandlesNeverClaimable(t *testing.T) {
 	}
 }
 
+func TestResolveAddress(t *testing.T) {
+	r := newTestRegistry(t)
+	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)})
+	claim, ok := r.ResolveAddress("NQ11OWNER") // spacing-insensitive
+	if !ok || claim.Handle != "chuck" {
+		t.Fatalf("want chuck, got %+v ok=%v", claim, ok)
+	}
+	if _, ok := r.ResolveAddress("NQ99 NOBODY"); ok {
+		t.Fatal("unknown address must not resolve")
+	}
+}
+
 func TestRegistryPersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "handles.json")
 	r := NewHandleRegistry(path, map[string]bool{})
-	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "claim", "chuck", 5, 0)})
+	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)})
 
 	reloaded := NewHandleRegistry(path, map[string]bool{})
 	if _, ok := reloaded.Resolve("chuck"); !ok {

@@ -15,7 +15,7 @@ func syncTestServer(t *testing.T, calls *atomic.Int64) *httptest.Server {
 	t.Helper()
 	txsJSON, _ := json.Marshal([]rpcTx{{
 		Hash: "t1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY",
-		Data:        hex.EncodeToString([]byte("NCC:v1:claim:chuck")),
+		Data:        hex.EncodeToString([]byte(makeClaimPayload("chuck"))),
 		BlockNumber: 5,
 	}})
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

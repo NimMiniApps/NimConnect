@@ -19,6 +19,7 @@ func handlesTestMux(t *testing.T, registry *HandleRegistry, profiles *ProfileSto
 	mux.HandleFunc("PUT /api/profile/{address}", profilePutHandler(profiles))
 	mux.HandleFunc("DELETE /api/profile/{address}", profileDeleteHandler(profiles))
 	mux.HandleFunc("GET /api/handles/check", handleCheckHandler(registry))
+	mux.HandleFunc("GET /api/handles/by-address/{address}", handleByAddressHandler(registry))
 	if syncer != nil {
 		mux.HandleFunc("POST /api/handles/claims", claimSubmitHandler(syncer, registry))
 	}
@@ -30,7 +31,7 @@ func seededRegistry(t *testing.T) *HandleRegistry {
 	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true})
 	r.Rebuild([]rpcTx{{
 		Hash: "t1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY",
-		Data: hex.EncodeToString([]byte("NCC:v1:claim:chuck")), BlockNumber: 5,
+		Data: hex.EncodeToString([]byte(makeClaimPayload("chuck"))), BlockNumber: 5,
 	}})
 	return r
 }
@@ -156,5 +157,24 @@ func TestHandleCheckAdvisory(t *testing.T) {
 		if got["available"] != expected["available"] || got["reason"] != expected["reason"] {
 			t.Errorf("%s: got %v want %v", handle, got, expected)
 		}
+	}
+}
+
+func TestHandleByAddress(t *testing.T) {
+	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(t.TempDir()), nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/handles/by-address/NQ11OWNER", nil))
+	if rec.Code != 200 {
+		t.Fatalf("want 200, got %d", rec.Code)
+	}
+	var claim HandleClaim
+	json.Unmarshal(rec.Body.Bytes(), &claim)
+	if claim.Handle != "chuck" {
+		t.Fatalf("unexpected claim: %+v", claim)
+	}
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/handles/by-address/NQ11000000000000000000000000000000AB", nil))
+	if rec.Code != 404 && rec.Code != 400 {
+		t.Fatalf("unknown address: want 404 (or 400 for invalid), got %d", rec.Code)
 	}
 }

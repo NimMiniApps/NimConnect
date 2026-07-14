@@ -62,6 +62,7 @@ func main() {
 		mux.HandleFunc("PUT /api/profile/{address}", profilePutHandler(profiles))
 		mux.HandleFunc("DELETE /api/profile/{address}", profileDeleteHandler(profiles))
 		mux.HandleFunc("GET /api/handles/check", handleCheckHandler(registry))
+		mux.HandleFunc("GET /api/handles/by-address/{address}", handleByAddressHandler(registry))
 		mux.HandleFunc("POST /api/handles/claims", claimSubmitHandler(syncer, registry))
 	}
 

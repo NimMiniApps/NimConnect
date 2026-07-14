@@ -23,36 +23,42 @@ Nimiq-ecosystem contact layer:
 
 ## Non-goals
 
-- Shared namespace with NimFeed (NimConnect claims use their own protocol
-  prefix/namespace).
-- Handle transfers or marketplace. A `RELEASE` type frees a handle; that's it.
+- Handle transfers, releases, or marketplace. The shared NimFeed protocol has
+  no release type — claims are permanent. If releases are ever wanted, extend
+  the NimFeed protocol and both apps adopt it together.
 - Third-party write access to profiles. Read-only resolve API only.
 - Running our own Nimiq node (public API now; swappable later).
 
 ## 1. On-chain handle registry
 
-- **Claim** = dust transaction (minimum amount) from the claiming address to a
-  well-known **registry address**, with plain-text data payload:
-  `NCC:v1:claim:<handle>` (release: `NCC:v1:release:<handle>`) — human-readable
-  in explorers, parseable by any indexer without a binary codec.
-  - Handle: 3–26 chars, `[a-z0-9_]`, lowercase only. 26-char max keeps the
-    payload within Nimiq Pay's 64-char text transaction limit, so claims work
-    from inside the mini app.
+- **Shared registry with NimFeed** (decision revised 2026-07-14; both projects
+  have the same owner): `@chuck` is ONE identity across NimFeed, NimConnect,
+  and anything else that indexes the chain, and every existing NimFeed
+  username resolves in NimConnect from day one.
+- **Claim** = dust transaction to the NimFeed **catalog address** (mainnet
+  `NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y`) carrying a NimFeed
+  `PROFILE_CLAIM` payload: raw binary `"NF" 0x01 0x01 <username> [0x00
+  <display name>]` (Hub) or the `NFH:` + hex text envelope (Nimiq Pay).
+  NimConnect sends username-only claims — display names live in the off-chain
+  profile.
+  - Username: 3–31 chars, `[a-z0-9_]`, lowercase (NimFeed's rules). Claims
+    from inside Nimiq Pay are capped at 26 chars by the 64-char text
+    transaction limit; longer names claim via NimFeed/Hub in a browser.
 - **Resolution**: earliest valid claim by `(block_height, tx_index)` wins the
   handle, permanently binding handle → sender address. Later claims for the
-  same handle are ignored. `RELEASE` by the owner frees the handle; it is
-  immediately re-claimable (chain ordering is deterministic, so no cooldown is
-  needed for correctness).
+  same handle are ignored. No release: claims are permanent.
+- **Reserved names gate NimConnect's claim UI only.** Resolution always
+  follows the chain — a reserved name claimed via NimFeed still resolves
+  here, otherwise the shared namespace would fork between apps.
 - **Finality / reorgs**: the indexer records a claim only once its tx is
   finalized per the RPC (Nimiq PoS has fast finality). Conflict resolution is
   always recomputed from chain order, so a late-discovered earlier claim
   displaces a wrongly-recorded winner.
-- **Forward compatibility**: the indexer ignores unknown `type` bytes, so
-  future types (TRANSFER, VERIFY, …) can be added without breaking old
-  indexers.
+- **Forward compatibility**: the indexer ignores non-`PROFILE_CLAIM` types
+  (posts, follows, future NimFeed types), so protocol growth doesn't break it.
 - **Reserved list**: loaded from `reserved-handles.json` at startup (built-in
   default set: nimiq, nimconnect, admin, support, wallet, pay, official, …);
-  rejected by the backend indexer and the UI.
+  gates the claim UI and availability check only — never resolution.
 - The chain is the source of truth. Any product can independently index claims;
   NimConnect's backend is a convenience indexer, not an authority.
 
