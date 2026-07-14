@@ -64,6 +64,9 @@ func main() {
 		mux.HandleFunc("GET /api/handles/check", handleCheckHandler(registry))
 		mux.HandleFunc("GET /api/handles/by-address/{address}", handleByAddressHandler(registry))
 		mux.HandleFunc("POST /api/handles/claims", claimSubmitHandler(syncer, registry))
+
+		publicOrigin := getEnv("PUBLIC_APP_ORIGIN", "https://nimconnect.nimiqminiapps.com")
+		mux.HandleFunc("GET /p/{handle}", publicPageHandler(registry, profiles, publicOrigin))
 	}
 
 	log.Printf("NimConnect backend listening on :%s commit=%s build_time=%s", port, CommitHash, BuildTime)
