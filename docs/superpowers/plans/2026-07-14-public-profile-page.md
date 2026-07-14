@@ -102,7 +102,7 @@ func TestPublicPageEscapesProfileContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	registry := newTestRegistry(t)
-	registry.Rebuild([]rpcTx{claimTx("t1", address, "claim", "evil", 5, 0)})
+	registry.Rebuild([]rpcTx{claimTx("t1", address, "evil", 5, 0)})
 
 	rec := httptest.NewRecorder()
 	publicPageMux(t, registry, profiles).ServeHTTP(rec, httptest.NewRequest("GET", "/p/evil", nil))
