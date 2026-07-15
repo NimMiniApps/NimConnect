@@ -30,6 +30,8 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('Ada Lovelace')
     expect(wrapper.text()).toContain('Add to NimConnect')
     expect(wrapper.text()).not.toMatch(/chain verification|on-chain verified/i)
+    expect(wrapper.get('[data-public-tertiary]').text()).toContain('Google Play')
+    expect(wrapper.get('[data-public-secondary]').text()).not.toContain('Google Play')
   })
 
   it('places a payment request in the common public surface with its payment actions', () => {
@@ -51,5 +53,7 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('Dinner split')
     expect(wrapper.text()).toContain('Pay with Nimiq Pay')
     expect(wrapper.text()).toContain('Pay with Nimiq Wallet')
+    expect(wrapper.get('[data-public-tertiary]').text()).toContain('App Store')
+    expect(wrapper.get('[data-public-secondary]').text()).not.toContain('App Store')
   })
 })

@@ -11,6 +11,7 @@ describe('PublicSurface', () => {
         panel: 'Send NIM',
         primary: 'Pay',
         secondary: 'Add',
+        tertiary: 'Stores',
       },
     })
 
@@ -19,6 +20,7 @@ describe('PublicSurface', () => {
     expect(wrapper.get('[data-public-panel]').text()).toContain('Send NIM')
     expect(wrapper.get('[data-public-primary]').text()).toContain('Pay')
     expect(wrapper.get('[data-public-secondary]').text()).toContain('Add')
+    expect(wrapper.get('[data-public-tertiary]').text()).toContain('Stores')
     expect(wrapper.get('.public-surface__footer').text()).toBe('Shared via NimConnect')
     expect(wrapper.get('.public-surface__footer strong').text()).toBe('NimConnect')
   })

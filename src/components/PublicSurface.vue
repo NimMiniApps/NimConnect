@@ -11,7 +11,8 @@ withDefaults(defineProps<{
 const slots = useSlots()
 const hasPrimary = computed(() => Boolean(slots.primary))
 const hasSecondary = computed(() => Boolean(slots.secondary))
-const hasActions = computed(() => hasPrimary.value || hasSecondary.value)
+const hasTertiary = computed(() => Boolean(slots.tertiary))
+const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasTertiary.value)
 </script>
 
 <template>
@@ -36,6 +37,9 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value)
         </div>
         <div v-if="hasSecondary" class="public-surface__secondary" data-public-secondary>
           <slot name="secondary" />
+        </div>
+        <div v-if="hasTertiary" class="public-surface__tertiary" data-public-tertiary>
+          <slot name="tertiary" />
         </div>
       </div>
 
@@ -109,7 +113,8 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value)
 }
 
 .public-surface__primary,
-.public-surface__secondary {
+.public-surface__secondary,
+.public-surface__tertiary {
   display: grid;
   gap: 0.5rem;
 }
@@ -149,6 +154,89 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value)
   background: transparent;
   border-color: #bdc9e5;
   color: var(--public-ink);
+}
+
+.public-surface__tertiary {
+  border-top: 1px solid #dce7ff;
+  padding-top: 1rem;
+}
+
+.public-surface :deep(.public-landing__identity),
+.public-surface :deep(.public-landing__panel),
+.public-surface :deep(.public-landing__footer),
+.public-surface :deep(.public-landing__stores) {
+  display: grid;
+  justify-items: center;
+}
+
+.public-surface :deep(.public-landing__identity) {
+  gap: 0.625rem;
+}
+
+.public-surface :deep(.public-landing__panel) {
+  gap: 0.75rem;
+  text-align: center;
+}
+
+.public-surface :deep(.public-landing__panel > p),
+.public-surface :deep(.public-landing__footer p),
+.public-surface :deep(.public-landing__stores p) {
+  margin: 0;
+}
+
+.public-surface :deep(.public-landing__panel > span),
+.public-surface :deep(.public-landing__footer),
+.public-surface :deep(.public-landing__stores p) {
+  color: var(--text-2);
+}
+
+.public-surface :deep(.public-landing__panel > span),
+.public-surface :deep(.public-landing__stores p),
+.public-surface :deep(.public-landing__footer p),
+.public-surface :deep(.public-landing__footer button) {
+  font-size: 0.8125rem;
+}
+
+.public-surface :deep(.public-landing__stores) {
+  gap: 0.5rem;
+}
+
+.public-surface :deep(.public-landing__stores p) {
+  font-weight: 700;
+}
+
+.public-surface :deep(.public-landing__stores > div) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.public-surface :deep(.public-landing__stores a) {
+  border: 1px solid #bdc9e5;
+  border-radius: 0.75rem;
+  color: var(--text);
+  font-size: 0.8125rem;
+  font-weight: 800;
+  padding: 0.625rem 0.75rem;
+  text-decoration: none;
+}
+
+.public-surface :deep(.public-landing__footer) {
+  gap: 0.25rem;
+  text-align: center;
+}
+
+.public-surface :deep(.public-landing__footer button) {
+  background: none;
+  border: 0;
+  color: var(--nq-light-blue);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.5rem;
+  text-decoration: underline;
+  text-underline-offset: 0.1875rem;
 }
 
 .public-surface__footer {
