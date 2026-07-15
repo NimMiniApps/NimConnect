@@ -10,12 +10,15 @@ const props = withDefaults(defineProps<{
 
 const copied = ref(false)
 let resetTimeout: ReturnType<typeof setTimeout> | undefined
+let unmounted = false
 
 async function copyAddress() {
   try {
     if (!navigator.clipboard?.writeText) return
 
     await navigator.clipboard.writeText(props.address)
+    if (unmounted) return
+
     copied.value = true
     if (resetTimeout) clearTimeout(resetTimeout)
     resetTimeout = setTimeout(() => {
@@ -27,6 +30,7 @@ async function copyAddress() {
 }
 
 onBeforeUnmount(() => {
+  unmounted = true
   if (resetTimeout) clearTimeout(resetTimeout)
 })
 </script>

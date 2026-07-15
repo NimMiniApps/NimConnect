@@ -50,4 +50,23 @@ describe('PublicAddressCopy', () => {
     expect(wrapper.get('[data-public-address]').text()).toBe(address)
     expect(wrapper.get('button').text()).toBe('Copy address')
   })
+
+  it('does not schedule copy feedback when the clipboard resolves after unmount', async () => {
+    vi.useFakeTimers()
+    let resolveWrite!: () => void
+    const writeText = vi.fn(() => new Promise<void>((resolve) => {
+      resolveWrite = resolve
+    }))
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const wrapper = mount(PublicAddressCopy, {
+      props: { address },
+    })
+
+    await wrapper.get('button').trigger('click')
+    wrapper.unmount()
+    resolveWrite()
+    await Promise.resolve()
+
+    expect(vi.getTimerCount()).toBe(0)
+  })
 })
