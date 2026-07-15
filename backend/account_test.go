@@ -8,10 +8,13 @@ import (
 	"testing"
 )
 
+// Real mainnet fixture: NQ76… is a Nimiq Pay swap HTLC created by NQ34…;
+// the creation data embeds owner (bytes 0-20) and provider (20-40).
 const (
-	testOwner   = "NQ23 AS8D J6RE V397 3QXH 2UEG T6V1 L11M 2579"
-	testHTLC    = "NQ03 064C F89U 6LT7 6PDT R1PJ XJ99 368N 1LKH"
-	testCatalog = "NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y"
+	testOwner        = "NQ34 J72V CP5Y 0X8M KDGV EAYU LKYH XPXG CCH7"
+	testHTLC         = "NQ76 YJ3N D8L3 RY6C 0QEM NXN1 EG7K SB5G 9VL4"
+	testCatalog      = "NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y"
+	testCreationData = "91c5d65cbf079159b61d72bfca4ff1f5fd063227a70b9e44a448b5183ac4e186cd749d3d889fff840100000000000000000000000000000000000000"
 )
 
 // htlcChainRPC fakes the two RPC views the syncer needs: the catalog's tx
@@ -25,8 +28,11 @@ func htlcChainRPC(t *testing.T, pruned bool) *NimiqRPC {
 		Data:        hexOfString(makeClaimPayload("androiddev")),
 		BlockNumber: 5,
 	}
+	// The funding tx's sender is the user's PREVIOUS HTLC (Pay rotates
+	// contracts every ~2 weeks) — the owner must come from the creation data.
 	creation := rpcTx{
-		Hash: "t0", Sender: testOwner, Recipient: testHTLC, ToType: 2,
+		Hash: "t0", Sender: "NQ55 78E0 DF46 SJJJ LBLB 2NGS 075Y 00XR CL8R", FromType: 2,
+		Recipient: testHTLC, ToType: 2, Data: testCreationData,
 		BlockNumber: 4,
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

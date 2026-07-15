@@ -137,6 +137,23 @@ func claimantAddress(tx rpcTx, htlcCreator func(address string) string) string {
 	return tx.sender()
 }
 
+// htlcOwnerFromCreationData extracts the HTLC's owner from contract creation
+// data (layout: sender[20] recipient[20] hash fields…). Nimiq Pay always sets
+// the sender to the account's main (top-up) address — even when the contract
+// is funded FROM the previous HTLC during the ~2-week rotation — so this is
+// the reliable owner source when the contract is gone from account state.
+func htlcOwnerFromCreationData(dataHex string) string {
+	raw, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(dataHex), "0x"))
+	if err != nil || len(raw) < 40 {
+		return ""
+	}
+	addr, err := userFriendlyAddress(raw[:20])
+	if err != nil {
+		return ""
+	}
+	return addr
+}
+
 // builtinReserved blocks claiming through NimConnect's UI only. Resolution
 // always follows the chain — a reserved name claimed via NimFeed still
 // resolves here, otherwise the shared namespace would fork between apps.

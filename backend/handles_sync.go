@@ -56,7 +56,11 @@ func (s *HandleSyncer) htlcCreator(address string) string {
 		if txs, err := s.rpc.GetTransactionsByAddress(address, 100); err == nil {
 			for _, tx := range txs {
 				if tx.ToType == htlcContractType && compactAddress(tx.recipient()) == key {
-					resolved = normalizeAddress(tx.sender())
+					// Use the owner embedded in the creation DATA, not the
+					// funding tx's sender: Pay rotates HTLCs every ~2 weeks
+					// and funds the new contract from the old one, so the
+					// sender can be the previous HTLC rather than the user.
+					resolved = htlcOwnerFromCreationData(tx.data())
 					break
 				}
 			}

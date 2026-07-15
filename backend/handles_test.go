@@ -128,3 +128,16 @@ func TestClaimantAddress(t *testing.T) {
 		t.Fatalf("nil resolver fallback: got %q", got)
 	}
 }
+
+func TestHTLCOwnerFromCreationData(t *testing.T) {
+	// Real mainnet creation data of NQ76 YJ3N… (owner NQ34 J72V…).
+	const data = "91c5d65cbf079159b61d72bfca4ff1f5fd063227a70b9e44a448b5183ac4e186cd749d3d889fff840100000000000000000000000000000000000000"
+	if got := htlcOwnerFromCreationData(data); got != "NQ34 J72V CP5Y 0X8M KDGV EAYU LKYH XPXG CCH7" {
+		t.Fatalf("owner from creation data: got %q", got)
+	}
+	for _, bad := range []string{"", "zz", "91c5d6"} {
+		if got := htlcOwnerFromCreationData(bad); got != "" {
+			t.Fatalf("expected empty for %q, got %q", bad, got)
+		}
+	}
+}
