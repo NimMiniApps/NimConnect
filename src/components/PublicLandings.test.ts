@@ -29,6 +29,7 @@ describe('public landings', () => {
     })
 
     expect(wrapper.find('.public-surface').exists()).toBe(true)
+    expect(wrapper.find('.public-landing__identity, .public-landing__panel, .public-landing__footer').exists()).toBe(false)
     expect(wrapper.get('[data-public-context]').text()).toBe('Shared profile')
     expect(wrapper.text()).toContain('Ada Lovelace')
     expect(wrapper.text()).toContain('Add to NimConnect')
@@ -62,6 +63,7 @@ describe('public landings', () => {
     })
 
     expect(wrapper.find('.public-surface').exists()).toBe(true)
+    expect(wrapper.find('.public-landing__identity, .public-landing__panel, .public-landing__footer').exists()).toBe(false)
     expect(wrapper.get('[data-public-context]').text()).toBe('Payment request')
     expect(wrapper.text()).toContain('12.5 NIM')
     expect(wrapper.text()).toContain('Dinner split')

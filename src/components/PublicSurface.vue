@@ -96,6 +96,9 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
 }
 
 .public-surface__identity {
+  display: grid;
+  gap: 0.625rem;
+  justify-items: center;
   text-align: center;
 }
 
@@ -104,8 +107,15 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
   border: 1px solid #dce7ff;
   border-radius: 1.25rem;
   box-shadow: 0 1rem 2.5rem rgb(31 35 72 / 0.1);
+  display: grid;
+  gap: 0.75rem;
+  justify-items: center;
   padding: clamp(1rem, 3vw, 1.5rem);
+  text-align: center;
 }
+
+.public-surface__panel :slotted(p) { margin: 0; }
+.public-surface__panel :slotted(span) { color: var(--text-2); font-size: 0.8125rem; }
 
 .public-surface__actions {
   display: grid;
@@ -161,44 +171,17 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
   padding-top: 1rem;
 }
 
-.public-surface :deep(.public-landing__identity),
-.public-surface :deep(.public-landing__panel),
-.public-surface :deep(.public-landing__footer) {
-  display: grid;
-  justify-items: center;
-}
-
-.public-surface :deep(.public-landing__identity) {
-  gap: 0.625rem;
-}
-
-.public-surface :deep(.public-landing__panel) {
-  gap: 0.75rem;
-  text-align: center;
-}
-
-.public-surface :deep(.public-landing__panel > p),
-.public-surface :deep(.public-landing__footer p) {
-  margin: 0;
-}
-
-.public-surface :deep(.public-landing__panel > span),
-.public-surface :deep(.public-landing__footer) {
+.public-surface__footer {
   color: var(--text-2);
-}
-
-.public-surface :deep(.public-landing__panel > span),
-.public-surface :deep(.public-landing__footer p),
-.public-surface :deep(.public-landing__footer button) {
-  font-size: 0.8125rem;
-}
-
-.public-surface :deep(.public-landing__footer) {
+  display: grid;
   gap: 0.25rem;
+  justify-items: center;
   text-align: center;
 }
 
-.public-surface :deep(.public-landing__footer button) {
+.public-surface__footer :slotted(p) { font-size: 0.8125rem; margin: 0; }
+
+.public-surface__footer :slotted(button) {
   background: none;
   border: 0;
   color: var(--nq-light-blue);

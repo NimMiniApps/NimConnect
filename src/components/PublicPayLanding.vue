@@ -34,20 +34,16 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Payment request" footer-verb="Sent">
     <template #identity>
-      <div class="public-landing__identity identity">
-        <Identicon :address="payment.recipient" :size="64" />
-        <p><strong>{{ payment.label || shortAddress(payment.recipient) }}</strong> requests a payment</p>
-      </div>
+      <Identicon :address="payment.recipient" :size="64" />
+      <p class="identity__request"><strong>{{ payment.label || shortAddress(payment.recipient) }}</strong> requests a payment</p>
     </template>
 
     <template #panel>
-      <div class="public-landing__panel payment-panel">
-        <p v-if="amountText" class="payment-panel__amount">{{ amountText }}</p>
-        <p v-if="payment.message" class="payment-panel__message">{{ payment.message }}</p>
-        <QrCode :text="nimiqUri" :size="220" />
-        <span>Scan with any Nimiq wallet, or use a wallet app below</span>
-        <PublicAddressCopy :address="payment.recipient" />
-      </div>
+      <p v-if="amountText" class="payment-panel__amount">{{ amountText }}</p>
+      <p v-if="payment.message" class="payment-panel__message">{{ payment.message }}</p>
+      <QrCode :text="nimiqUri" :size="220" />
+      <span>Scan with any Nimiq wallet, or use a wallet app below</span>
+      <PublicAddressCopy :address="payment.recipient" />
     </template>
 
     <template #primary>
@@ -63,23 +59,19 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
     </template>
 
     <template #footer>
-      <div class="public-landing__footer">
-        <p>Sent with <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
-        <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
-          Open NimConnect in the browser
-        </button>
-      </div>
+      <p>Sent with <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+      <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
+        Open NimConnect in the browser
+      </button>
     </template>
   </PublicSurface>
 </template>
 
 <style scoped>
-.identity p,
-.payment-panel p { margin: 0; }
-.identity p,
-.payment-panel__message,
-.payment-panel > span { color: var(--text-2); }
-.identity strong { color: var(--text); }
+.identity__request,
+.payment-panel__message { color: var(--text-2); }
+.identity__request { margin: 0; }
+.identity__request strong { color: var(--text); }
 .payment-panel__amount { color: var(--text); font-size: 2.125rem; font-weight: 800; }
 .payment-panel__message { line-height: 1.45; }
 </style>

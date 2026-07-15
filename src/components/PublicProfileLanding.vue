@@ -27,28 +27,24 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Shared profile">
     <template #identity>
-      <div class="public-landing__identity identity">
-        <Identicon :address="profile.address" :size="80" />
-        <h1>{{ profile.name }}</h1>
-        <p v-if="profile.bio" class="identity__bio">{{ profile.bio }}</p>
-        <div v-if="profile.tags.length" class="identity__tags">
-          <span v-for="tag in profile.tags" :key="tag">{{ tag }}</span>
-        </div>
-        <div v-if="profile.website || profile.github || profile.x" class="identity__links">
-          <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener">Website</a>
-          <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener">GitHub</a>
-          <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener">𝕏 @{{ profile.x }}</a>
-        </div>
+      <Identicon :address="profile.address" :size="80" />
+      <h1 class="identity__title">{{ profile.name }}</h1>
+      <p v-if="profile.bio" class="identity__bio">{{ profile.bio }}</p>
+      <div v-if="profile.tags.length" class="identity__tags">
+        <span v-for="tag in profile.tags" :key="tag">{{ tag }}</span>
+      </div>
+      <div v-if="profile.website || profile.github || profile.x" class="identity__links">
+        <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener">Website</a>
+        <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener">GitHub</a>
+        <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener">𝕏 @{{ profile.x }}</a>
       </div>
     </template>
 
     <template #panel>
-      <div class="public-landing__panel payment-panel">
-        <p>Send NIM to {{ profile.name }}</p>
-        <QrCode :text="nimiqUri" :size="220" />
-        <span>Scan with any Nimiq wallet, or use a wallet app below</span>
-        <PublicAddressCopy :address="profile.address" />
-      </div>
+      <p class="payment-panel__label">Send NIM to {{ profile.name }}</p>
+      <QrCode :text="nimiqUri" :size="220" />
+      <span>Scan with any Nimiq wallet, or use a wallet app below</span>
+      <PublicAddressCopy :address="profile.address" />
     </template>
 
     <template #primary>
@@ -65,25 +61,21 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
     </template>
 
     <template #footer>
-      <div class="public-landing__footer">
-        <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
-        <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
-          Open NimConnect in the browser
-        </button>
-      </div>
+      <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+      <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
+        Open NimConnect in the browser
+      </button>
     </template>
   </PublicSurface>
 </template>
 
 <style scoped>
-.identity h1 { margin: 0; }
-.identity h1 { color: var(--text); font-size: 1.625rem; }
-.identity__bio,
-.payment-panel > span { color: var(--text-2); }
+.identity__title { color: var(--text); font-size: 1.625rem; margin: 0; }
+.identity__bio { color: var(--text-2); }
 .identity__bio { line-height: 1.45; max-width: 22.5rem; }
 .identity__tags,
 .identity__links { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
 .identity__tags span,
 .identity__links a { border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); color: var(--text-2); font-size: 0.8125rem; font-weight: 700; padding: 0.375rem 0.625rem; text-decoration: none; }
-.payment-panel p { color: var(--text-2); font-weight: 800; }
+.payment-panel__label { color: var(--text-2); font-weight: 800; }
 </style>
