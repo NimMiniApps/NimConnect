@@ -14,11 +14,20 @@ describe('PublicSurface', () => {
       },
     })
 
-    expect(wrapper.attributes('data-public-context')).toBe('Public profile')
+    expect(wrapper.get('.public-surface__context').attributes('data-public-context')).toBe('Public profile')
     expect(wrapper.get('[data-public-identity]').text()).toContain('Alice')
     expect(wrapper.get('[data-public-panel]').text()).toContain('Send NIM')
     expect(wrapper.get('[data-public-primary]').text()).toContain('Pay')
     expect(wrapper.get('[data-public-secondary]').text()).toContain('Add')
-    expect(wrapper.text()).toContain('Shared via NimConnect')
+    expect(wrapper.get('.public-surface__footer').text()).toBe('Shared via NimConnect')
+    expect(wrapper.get('.public-surface__footer strong').text()).toBe('NimConnect')
+  })
+
+  it('omits empty action regions', () => {
+    const wrapper = mount(PublicSurface, {
+      props: { context: 'NimConnect' },
+    })
+
+    expect(wrapper.find('.public-surface__actions').exists()).toBe(false)
   })
 })

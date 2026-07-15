@@ -1,18 +1,25 @@
 <script setup lang="ts">
+import { computed, useSlots } from 'vue'
+
 withDefaults(defineProps<{
   context: 'Public profile' | 'Shared profile' | 'Payment request' | 'NimConnect'
-  footerVerb?: string
+  footerVerb?: 'Shared' | 'Sent'
 }>(), {
   footerVerb: 'Shared',
 })
+
+const slots = useSlots()
+const hasPrimary = computed(() => Boolean(slots.primary))
+const hasSecondary = computed(() => Boolean(slots.secondary))
+const hasActions = computed(() => hasPrimary.value || hasSecondary.value)
 </script>
 
 <template>
-  <main class="public-surface" :data-public-context="context">
+  <main class="public-surface">
     <div class="public-surface__canvas">
       <header class="public-surface__masthead">
         <span class="public-surface__brand">NimConnect</span>
-        <span class="public-surface__context">{{ context }}</span>
+        <span class="public-surface__context" :data-public-context="context">{{ context }}</span>
       </header>
 
       <section class="public-surface__identity" data-public-identity>
@@ -23,16 +30,18 @@ withDefaults(defineProps<{
         <slot name="panel" />
       </section>
 
-      <div class="public-surface__actions">
-        <div class="public-surface__primary" data-public-primary>
+      <div v-if="hasActions" class="public-surface__actions">
+        <div v-if="hasPrimary" class="public-surface__primary" data-public-primary>
           <slot name="primary" />
         </div>
-        <div class="public-surface__secondary" data-public-secondary>
+        <div v-if="hasSecondary" class="public-surface__secondary" data-public-secondary>
           <slot name="secondary" />
         </div>
       </div>
 
-      <footer class="public-surface__footer">{{ footerVerb }} via NimConnect</footer>
+      <footer class="public-surface__footer">
+        <slot name="footer">{{ footerVerb }} via <strong>NimConnect</strong></slot>
+      </footer>
     </div>
   </main>
 </template>
@@ -103,6 +112,43 @@ withDefaults(defineProps<{
 .public-surface__secondary {
   display: grid;
   gap: 0.5rem;
+}
+
+.public-surface__primary :slotted(a),
+.public-surface__primary :slotted(button),
+.public-surface__secondary :slotted(a),
+.public-surface__secondary :slotted(button) {
+  align-items: center;
+  border-radius: 0.875rem;
+  box-sizing: border-box;
+  display: inline-flex;
+  font: inherit;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  text-decoration: none;
+}
+
+.public-surface__primary :slotted(a),
+.public-surface__primary :slotted(button) {
+  background: var(--public-gold);
+  border: 1px solid var(--public-gold);
+  color: var(--public-ink);
+}
+
+.public-surface__secondary :slotted(a),
+.public-surface__secondary :slotted(button) {
+  background: var(--public-blue);
+  border: 1px solid var(--public-blue);
+  color: #ffffff;
+}
+
+.public-surface__secondary :slotted(.public-action--outline),
+.public-surface__secondary :slotted([data-public-action='outline']) {
+  background: transparent;
+  border-color: #bdc9e5;
+  color: var(--public-ink);
 }
 
 .public-surface__footer {
