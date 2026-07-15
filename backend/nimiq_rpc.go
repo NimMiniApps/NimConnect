@@ -34,9 +34,10 @@ type rpcTx struct {
 	RecipientData    string `json:"recipientData"`
 	BlockNumber      uint64 `json:"blockNumber"`
 	TransactionIndex uint64 `json:"transactionIndex"`
-	// FromType 2 = HTLC contract (Nimiq Pay routes payments through swaps).
-	FromType int    `json:"fromType"`
-	Proof    string `json:"proof"`
+	// Account types: 0 basic, 1 vesting, 2 HTLC contract. Nimiq Pay routes
+	// payments through swap HTLCs, so claim txs arrive with FromType 2.
+	FromType int `json:"fromType"`
+	ToType   int `json:"toType"`
 }
 
 func (t rpcTx) sender() string {

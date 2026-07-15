@@ -21,8 +21,11 @@ type HandleClaim struct {
 type HandleRegistry struct {
 	path     string
 	reserved map[string]bool
-	mu       sync.RWMutex
-	handles  map[string]HandleClaim
+	// HTLCCreator resolves an HTLC contract address to the account that
+	// created it (set by the syncer; nil = attribute to the raw sender).
+	HTLCCreator func(address string) string
+	mu          sync.RWMutex
+	handles     map[string]HandleClaim
 }
 
 func NewHandleRegistry(path string, reserved map[string]bool) *HandleRegistry {
@@ -62,7 +65,7 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 		if _, taken := next[action.Handle]; !taken {
 			next[action.Handle] = HandleClaim{
 				Handle:      action.Handle,
-				Address:     normalizeAddress(claimantAddress(tx)),
+				Address:     normalizeAddress(claimantAddress(tx, r.HTLCCreator)),
 				TxHash:      tx.Hash,
 				BlockHeight: tx.BlockNumber,
 				TxIndex:     tx.TransactionIndex,

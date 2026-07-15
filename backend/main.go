@@ -47,9 +47,9 @@ func main() {
 	mux.HandleFunc("GET /api/inbox/{address}/messages", withWalletStat(stats, inboxListHandler(inboxStore)))
 	mux.HandleFunc("DELETE /api/inbox/{address}/messages/{id}", withWalletStat(stats, inboxDeleteHandler(inboxStore)))
 
-	// On-chain handle registry — disabled unless REGISTRY_ADDRESS is set.
-	registryAddress := os.Getenv("REGISTRY_ADDRESS")
-	if registryAddress != "" {
+	// On-chain handle registry — defaults to the shared NimFeed catalog address.
+	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
+	if registryAddress != "off" {
 		rpc := NewNimiqRPC(httpClient, getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com"))
 		reserved := loadReservedHandles(getEnv("RESERVED_HANDLES_FILE", "/data/reserved-handles.json"))
 		registry := NewHandleRegistry(getEnv("HANDLES_FILE", "/data/handles.json"), reserved)
