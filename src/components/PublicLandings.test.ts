@@ -32,6 +32,14 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('On desktop, NimConnect works best for')
   })
 
+  it('uses a supplied Nimiq Pay deep link for a browser handoff', () => {
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { openUrl: 'https://nimpay.app/miniapps/open/nimconnect.nimiqminiapps.com#/add?address=NQ26' },
+    })
+
+    expect(wrapper.get('[data-public-primary] a').attributes('href')).toContain('#/add?address=NQ26')
+  })
+
   it('places a shared profile in the common public surface without chain verification', async () => {
     const wrapper = mount(PublicProfileLanding, {
       props: {

@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PublicProfilePage from './PublicProfilePage.vue'
+import { makeNimiqPayAddLink, makeWalletRequestLink } from '../services/links'
 
 const mocks = vi.hoisted(() => ({
   resolveHandleEnriched: vi.fn(),
@@ -54,7 +55,10 @@ describe('PublicProfilePage', () => {
     })
     mocks.fetchPublicProfile.mockResolvedValue({
       updatedAt: 1,
-      profile: { display_name: 'Ada Lovelace', bio: 'Computing pioneer' },
+      profile: {
+        display_name: 'Ada Lovelace', bio: 'Computing pioneer',
+        website: 'https://ada.example', github: 'ada', x: 'ada_x', tags: ['Builder'],
+      },
     })
 
     const wrapper = await mountPage()
@@ -66,6 +70,11 @@ describe('PublicProfilePage', () => {
     expect(wrapper.get('[data-public-panel]').text()).toMatch(/Handle verified on the Nimiq chain/i)
     expect(wrapper.get('[data-public-panel] a').attributes('href')).toContain('claim-tx')
     expect(wrapper.get('[data-public-primary]').text()).toContain('Send in Nimiq Pay')
+    expect(wrapper.get('[data-public-identity]').text()).toContain('Website')
+    expect(wrapper.get('[data-public-identity]').text()).toContain('GitHub')
+    expect(wrapper.get('[data-public-identity]').text()).toContain('X')
+    expect(wrapper.get('[data-public-secondary] a').attributes('href')).toBe(makeWalletRequestLink(address))
+    expect(wrapper.get('[data-public-secondary] a.public-action--outline').attributes('href')).toBe(makeNimiqPayAddLink(address))
   })
 
   it('does not expose Refresh while the initial profile lookup is loading', () => {

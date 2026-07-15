@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import PublicStoreLinks from './PublicStoreLinks.vue'
 import PublicSurface from './PublicSurface.vue'
 import { NIMPAY_OPEN_URL } from '../config/host-app'
 
 const emit = defineEmits<{ continue: [] }>()
-withDefaults(defineProps<{ allowBrowserContinue?: boolean }>(), {
+const props = withDefaults(defineProps<{ allowBrowserContinue?: boolean; openUrl?: string }>(), {
   allowBrowserContinue: true,
 })
+
+const openUrl = computed(() => props.openUrl || NIMPAY_OPEN_URL)
 
 const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
 </script>
@@ -34,7 +37,7 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
     </template>
 
     <template #primary>
-      <a :href="NIMPAY_OPEN_URL">Open in Nimiq Pay</a>
+      <a :href="openUrl">Open in Nimiq Pay</a>
     </template>
 
     <template #tertiary>

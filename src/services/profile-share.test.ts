@@ -75,11 +75,8 @@ describe('profile-share', () => {
     expect(parseProfileShare(link)?.name).toBe('Alice')
   })
 
-  it('parses address-only public add links', () => {
-    const shared = parsePublicAddRoute({ address: A })
-    expect(shared?.address).toBe(A)
-    expect(shared?.name).toContain('…')
-    expect(shared?.tags).toEqual([])
+  it('keeps address-only add links out of the public-profile surface', () => {
+    expect(parsePublicAddRoute({ address: A })).toBeNull()
   })
 
   it('rejects tampered payloads', () => {

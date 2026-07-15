@@ -17,7 +17,8 @@ import {
 import {
   makeRequestLink,
   makeNimiqPayDeepLink,
-  makeAppAddLink,
+  makeNimiqPayAddLink,
+  makeWalletRequestLink,
   transactionExplorerUrl,
   addressExplorerUrl,
 } from '../services/links'
@@ -203,7 +204,8 @@ async function refresh() {
     </template>
 
     <template #secondary>
-      <a v-if="state === 'ready' && claim" :href="makeAppAddLink(payAddress)" class="public-action--outline">Add to NimConnect</a>
+      <a v-if="state === 'ready' && claim" :href="makeWalletRequestLink(payAddress)" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a v-if="state === 'ready' && claim" :href="makeNimiqPayAddLink(payAddress)" class="public-action--outline">Add to NimConnect</a>
     </template>
 
     <template #footer>

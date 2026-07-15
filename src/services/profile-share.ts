@@ -156,19 +156,12 @@ export function parseProfileShare(text: string): SharedProfile | null {
   return null
 }
 
-/** Shared profile from a public /add link (?p= payload or ?address= only). */
+/** Shared profile from a public /add link carrying a full `p` payload. */
 export function parsePublicAddRoute(query: Record<string, unknown>): SharedProfile | null {
   const p = query.p
   if (typeof p === 'string') {
     const shared = decodeSharedProfile(p)
     if (shared) return shared
-  }
-  const raw = query.address
-  if (typeof raw === 'string' && ValidationUtils.isValidAddress(raw)) {
-    const address = ValidationUtils.normalizeAddress(raw)
-    const parts = address.split(' ')
-    const short = parts.length >= 9 ? `${parts[0]} ${parts[1]}…${parts[8]}` : address
-    return { v: 1, address, name: short, type: 'person' as ProfileType, tags: [] }
   }
   return null
 }
