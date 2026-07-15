@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import QrCode from './QrCode.vue'
+import { computed } from 'vue'
 import Identicon from './Identicon.vue'
+import PublicAddressCopy from './PublicAddressCopy.vue'
+import PublicSurface from './PublicSurface.vue'
+import QrCode from './QrCode.vue'
 import {
   makeRequestLink,
   makeNimiqPayDeepLink,
@@ -17,212 +19,90 @@ const nimiqUri = computed(() => makeRequestLink(props.profile.address))
 const payDeepLink = computed(() => makeNimiqPayDeepLink(props.profile.address))
 const walletLink = computed(() => makeWalletRequestLink(props.profile.address))
 const addInPayLink = computed(() => makeNimiqPayProfileLink(props.profile))
-
-const copied = ref(false)
-async function copyAddress() {
-  try {
-    await navigator.clipboard.writeText(props.profile.address)
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 2000)
-  } catch {
-    // Clipboard unavailable — the address text is selectable.
-  }
-}
 </script>
 
 <template>
-  <div class="landing">
-    <header class="who">
-      <Identicon :address="profile.address" :size="80" />
-      <h1 class="name">{{ profile.name }}</h1>
-      <p v-if="profile.bio" class="bio">{{ profile.bio }}</p>
-      <div v-if="profile.tags.length" class="tag-row">
-        <span v-for="t in profile.tags" :key="t" class="tag">{{ t }}</span>
+  <PublicSurface context="Shared profile">
+    <template #identity>
+      <div class="identity">
+        <Identicon :address="profile.address" :size="80" />
+        <h1>{{ profile.name }}</h1>
+        <p v-if="profile.bio" class="identity__bio">{{ profile.bio }}</p>
+        <div v-if="profile.tags.length" class="identity__tags">
+          <span v-for="tag in profile.tags" :key="tag">{{ tag }}</span>
+        </div>
+        <div v-if="profile.website || profile.github || profile.x" class="identity__links">
+          <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener">Website</a>
+          <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener">GitHub</a>
+          <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener">𝕏 @{{ profile.x }}</a>
+        </div>
       </div>
-      <div v-if="profile.website || profile.github || profile.x" class="link-row">
-        <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener" class="link-chip">🌐 Website</a>
-        <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
-        <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
+    </template>
+
+    <template #panel>
+      <div class="payment-panel">
+        <p>Send NIM to {{ profile.name }}</p>
+        <QrCode :text="nimiqUri" :size="220" />
+        <span>Scan with any Nimiq wallet, or use a wallet app below</span>
+        <PublicAddressCopy :address="profile.address" />
       </div>
-    </header>
+    </template>
 
-    <main class="pay-card">
-      <p class="pay-label">Send NIM to {{ profile.name }}</p>
-      <QrCode :text="nimiqUri" :size="220" />
-      <p class="scan-hint">Scan with any Nimiq wallet, or use a wallet app below</p>
+    <template #primary>
+      <a :href="payDeepLink">Pay with Nimiq Pay</a>
+    </template>
 
-      <button type="button" class="address" @click="copyAddress">
-        <span class="address-text">{{ profile.address }}</span>
-        <span class="copy-label">{{ copied ? 'Copied ✓' : 'Copy address' }}</span>
-      </button>
-    </main>
-
-    <section class="actions" aria-label="Pay or save contact">
-      <a :href="walletLink" class="wallet-btn" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
-      <a :href="payDeepLink" class="pay-btn">Pay with Nimiq Pay</a>
-      <a :href="addInPayLink" class="add-btn">Add to NimConnect</a>
-      <p class="store-label">Don't have Nimiq Pay yet?</p>
-      <div class="stores">
-        <a :href="NIMPAY_PLAY_STORE_URL" class="store-btn" target="_blank" rel="noopener noreferrer">Google Play</a>
-        <a :href="NIMPAY_APP_STORE_URL" class="store-btn" target="_blank" rel="noopener noreferrer">App Store</a>
+    <template #secondary>
+      <a :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a :href="addInPayLink" class="public-action--outline">Add to NimConnect</a>
+      <div class="store-group">
+        <p>Don't have Nimiq Pay yet?</p>
+        <div>
+          <a :href="NIMPAY_PLAY_STORE_URL" target="_blank" rel="noopener noreferrer">Google Play</a>
+          <a :href="NIMPAY_APP_STORE_URL" target="_blank" rel="noopener noreferrer">App Store</a>
+        </div>
       </div>
-    </section>
+    </template>
 
-    <footer class="brand">
-      <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
-      <button
-        v-if="allowBrowserContinue !== false"
-        type="button"
-        class="browser-link"
-        @click="emit('continue')"
-      >
-        Open NimConnect in the browser
-      </button>
-    </footer>
-  </div>
+    <template #footer>
+      <div class="landing-footer">
+        <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+        <button v-if="allowBrowserContinue !== false" type="button" @click="emit('continue')">
+          Open NimConnect in the browser
+        </button>
+      </div>
+    </template>
+  </PublicSurface>
 </template>
 
 <style scoped>
-.landing {
-  max-width: 560px;
-  margin: 0 auto;
-  min-height: 100dvh;
-  padding: 32px 20px calc(24px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-.who {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  text-align: center;
-}
-.name { margin: 0; font-size: 26px; font-weight: 800; color: var(--text); }
-.bio { margin: 0; font-size: 15px; line-height: 1.45; color: var(--text-2); max-width: 360px; }
-.tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.tag {
-  padding: 4px 10px;
-  border-radius: var(--nimiq-radius-pill);
-  font-size: 12px;
-  font-weight: 700;
-  background: var(--card);
-  border: 1px solid var(--border);
-  color: var(--text-2);
-}
-.link-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
-.link-chip {
-  padding: 6px 12px;
-  border-radius: var(--nimiq-radius-small);
-  font-size: 13px;
-  font-weight: 700;
-  text-decoration: none;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--border);
-}
-.pay-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 16px;
-  border-radius: 16px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-}
-.pay-label { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-2); }
-.scan-hint { margin: 0; font-size: 13px; color: var(--text-2); }
-.address {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  width: 100%;
-  padding: 10px;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  background: none;
-  font: inherit;
-  cursor: pointer;
-  color: var(--text);
-}
-.address-text { font-size: 13px; font-family: monospace; word-break: break-all; user-select: all; }
-.copy-label { font-size: 12px; font-weight: 700; color: var(--nq-light-blue); }
-.actions { display: flex; flex-direction: column; gap: 12px; }
-.wallet-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 52px;
-  padding: 0 24px;
-  border-radius: var(--nimiq-radius-pill);
-  font-size: 17px;
-  font-weight: 800;
-  text-decoration: none;
-  color: var(--text);
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-}
-.pay-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 52px;
-  padding: 0 24px;
-  border-radius: var(--nimiq-radius-pill);
-  font-size: 17px;
-  font-weight: 800;
-  text-decoration: none;
-  color: var(--nimiq-white);
-  background: var(--nimiq-gold-bg);
-  box-shadow: var(--nimiq-shadow);
-}
-.add-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 48px;
-  padding: 0 24px;
-  border-radius: var(--nimiq-radius-pill);
-  font-size: 15px;
-  font-weight: 800;
-  text-decoration: none;
-  color: var(--nq-gold-dark);
-  background: var(--card);
-  border: 1px solid var(--border);
-}
-.store-label { margin: 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-2); }
-.stores { display: flex; gap: 10px; }
-.store-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  border-radius: var(--nimiq-radius-small);
-  border: 1px solid var(--border);
-  background: var(--card);
-  color: var(--text);
-  font-weight: 800;
-  text-decoration: none;
-}
-.brand { margin-top: auto; text-align: center; }
-.brand p { margin: 0 0 4px; font-size: 13px; color: var(--text-2); }
-.brand strong { color: var(--nq-gold-dark); }
-.browser-link {
-  padding: 8px;
-  border: none;
-  background: none;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--nq-light-blue);
-  cursor: pointer;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
+.identity,
+.payment-panel,
+.landing-footer,
+.store-group { display: grid; justify-items: center; }
+.identity { gap: 0.625rem; }
+.identity h1,
+.payment-panel p,
+.landing-footer p,
+.store-group p { margin: 0; }
+.identity h1 { color: var(--text); font-size: 1.625rem; }
+.identity__bio,
+.payment-panel > span,
+.landing-footer,
+.store-group p { color: var(--text-2); }
+.identity__bio { line-height: 1.45; max-width: 22.5rem; }
+.identity__tags,
+.identity__links,
+.store-group > div { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
+.identity__tags span,
+.identity__links a { border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); color: var(--text-2); font-size: 0.8125rem; font-weight: 700; padding: 0.375rem 0.625rem; text-decoration: none; }
+.payment-panel { gap: 0.75rem; text-align: center; }
+.payment-panel p { color: var(--text-2); font-weight: 800; }
+.payment-panel > span { font-size: 0.8125rem; }
+.store-group { gap: 0.5rem; margin-top: 0.5rem; }
+.store-group p { font-size: 0.8125rem; font-weight: 700; }
+.store-group a { border: 1px solid #bdc9e5; border-radius: 0.75rem; color: var(--text); font-size: 0.8125rem; font-weight: 800; padding: 0.625rem 0.75rem; text-decoration: none; }
+.landing-footer { gap: 0.25rem; text-align: center; }
+.landing-footer p { font-size: 0.8125rem; }
+.landing-footer button { background: none; border: 0; color: var(--nq-light-blue); cursor: pointer; font: inherit; font-size: 0.8125rem; font-weight: 700; padding: 0.5rem; text-decoration: underline; text-underline-offset: 0.1875rem; }
 </style>
