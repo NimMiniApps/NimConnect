@@ -21,6 +21,8 @@ describe('public landings', () => {
     expect(wrapper.get('[data-public-context]').text()).toBe('NimConnect')
     expect(wrapper.get('[data-public-primary] a').attributes('href')).toBe(NIMPAY_OPEN_URL)
     expect(wrapper.text()).toContain('Send NIM, manage contacts, split bills, and track payments.')
+    expect(wrapper.get(`[href="${NIMPAY_PLAY_STORE_URL}"]`).text()).toContain('Get it on Google Play')
+    expect(wrapper.get(`[href="${NIMPAY_APP_STORE_URL}"]`).text()).toContain('Download on the App Store')
 
     await wrapper.get('button').trigger('click')
     expect(wrapper.emitted('continue')).toHaveLength(1)

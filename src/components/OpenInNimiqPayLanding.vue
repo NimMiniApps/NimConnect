@@ -38,7 +38,7 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
     </template>
 
     <template #tertiary>
-      <PublicStoreLinks />
+      <PublicStoreLinks detailed />
     </template>
 
     <template #footer>
