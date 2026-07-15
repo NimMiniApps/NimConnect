@@ -2,8 +2,13 @@ import { ref } from 'vue'
 import { init, type NimiqProvider } from '@nimiq/mini-app-sdk'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { nimToLunas } from './links'
-import { discoverPairedAddresses, expandMyAddresses } from './history'
+import { expandMyAddresses } from './history'
 import { incomingAddress } from './prefs'
+
+const RPC_URL = 'https://rpc-mainnet.nimiqscan.com/'
+const LUNAS_PER_NIM = 100_000
+/** Reserve for network fee when filling "Max" — actual fee is usually lower. */
+export const SEND_FEE_RESERVE_NIM = 0.01
 
 const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
 
@@ -30,6 +35,15 @@ export const walletAddresses = ref<string[]>([])
 let enrichPromise: Promise<void> | null = null
 
 export function resetWalletConnection() {
+  // NimiqProvider memoizes listAccounts(). Reset its cache as well as ours so
+  // switching accounts in Nimiq Pay cannot keep the previous wallet's history.
+  const injectedProvider = typeof window !== 'undefined' ? window.nimiq : undefined
+  injectedProvider?.disconnect()
+  const previousProviderPromise = providerPromise
+  providerPromise = null
+  void previousProviderPromise?.then(provider => {
+    if (provider && provider !== injectedProvider) provider.disconnect()
+  })
   addressPromise = null
   enrichPromise = null
   walletAddresses.value = []
@@ -94,6 +108,25 @@ function parseAccounts(result: unknown): string[] {
   return []
 }
 
+/** Fresh listAccounts() — bypasses the per-session connectWallet cache. */
+export async function peekWalletAccounts(): Promise<string[]> {
+  const provider = await getProvider()
+  if (!provider) return []
+  try {
+    const result = await withTimeout(provider.listAccounts(), 30_000)
+    return parseAccounts(result)
+  } catch {
+    return []
+  }
+}
+
+/** True when Nimiq Pay's connected accounts include the stored self profile address. */
+export function walletOwnsSelf(selfAddress: string, accounts: string[]): boolean {
+  if (!accounts.length) return false
+  const mine = new Set(accounts.map(compact))
+  return mine.has(compact(selfAddress))
+}
+
 /**
  * Request the user's Nimiq address once per session.
  * Deduplicates concurrent calls so Nimiq Pay only shows one Connect dialog.
@@ -117,6 +150,10 @@ export function connectWallet(): Promise<string | null> {
       }
       walletStatus.value = 'ready'
       walletAddresses.value = accounts
+      // Nimiq Pay lists the account's top-up (receiving) address first.
+      // Prefer it for payment requests unless the user explicitly configured
+      // a different address in Settings.
+      if (!incomingAddress.value.trim()) incomingAddress.value = accounts[0]
       enrichPromise = enrichWalletAddresses(accounts[0])
       await enrichPromise
       return accounts[0]
@@ -150,6 +187,58 @@ export async function resolveMyAddresses(selfAddress?: string | null): Promise<s
   return expandMyAddresses(myAddresses(selfAddress))
 }
 
+/** Nimiq Pay sends from the outgoing account when paired with a separate incoming one. */
+export function spendAddress(selfAddress?: string | null): string | null {
+  const accounts = walletAddresses.value
+  if (accounts.length >= 2) return accounts[1]
+  return accounts[0] ?? selfAddress ?? null
+}
+
+export function lunasToNim(lunas: number): number {
+  return lunas / LUNAS_PER_NIM
+}
+
+export function formatNimAmount(nim: number): string {
+  return nim.toLocaleString(undefined, { maximumFractionDigits: 5 })
+}
+
+/** Largest send amount that leaves room for the network fee. */
+export function maxSendableNim(balanceNim: number): number {
+  const max = balanceNim - SEND_FEE_RESERVE_NIM
+  if (max <= 0) return 0
+  return Math.floor(max * LUNAS_PER_NIM) / LUNAS_PER_NIM
+}
+
+interface ChainAccountBalance {
+  balance?: number
+}
+
+async function fetchAccountBalanceLunas(address: string): Promise<number | null> {
+  const res = await fetch(RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getAccountByAddress',
+      params: [address],
+    }),
+  })
+  if (!res.ok) return null
+  const body = await res.json()
+  const acc = (body.result?.data ?? body.result) as ChainAccountBalance | null
+  if (!acc || typeof acc.balance !== 'number') return null
+  return acc.balance
+}
+
+/** On-chain balance of the Nimiq Pay spending account (NIM). */
+export async function getSpendableBalanceNim(selfAddress?: string | null): Promise<number | null> {
+  const addr = spendAddress(selfAddress)
+  if (!addr) return null
+  const lunas = await fetchAccountBalanceLunas(addr)
+  return lunas == null ? null : lunasToNim(lunas)
+}
+
 /** Address to show on payment request links — external funds land on the incoming account. */
 export function receiveAddress(selfAddress?: string | null): string | null {
   const manual = incomingAddress.value.trim()
@@ -166,19 +255,10 @@ export function receiveAddress(selfAddress?: string | null): string | null {
 }
 
 async function enrichWalletAddresses(primary: string) {
-  try {
-    const paired = await discoverPairedAddresses([primary, ...walletAddresses.value])
-    if (!paired.length) return
-    const set = new Set(walletAddresses.value)
-    for (const addr of paired) set.add(addr)
-    walletAddresses.value = [...set]
-    if (!incomingAddress.value.trim()) {
-      const incoming = paired.find(a => compact(a) !== compact(primary)) ?? paired[0]
-      incomingAddress.value = incoming
-    }
-  } catch {
-    // best-effort — manual incoming address in Settings still works
-  }
+  // The Mini App provider does not expose a top-up address. It cannot be
+  // inferred safely from public transfers, so Settings is the explicit source
+  // of truth when Nimiq Pay only exposes one wallet address.
+  void primary
 }
 
 /** Max payload of a basic transaction's data field. */
@@ -203,15 +283,34 @@ export async function signChallenge(message: string): Promise<{ publicKey: strin
 export async function sendNim(recipient: string, amountNim: number, message?: string): Promise<string> {
   const provider = await getProvider()
   if (!provider) throw new Error('Not running inside Nimiq Pay')
+  if (!ValidationUtils.isValidAddress(recipient)) {
+    throw new Error('Invalid recipient address')
+  }
+  const to = ValidationUtils.normalizeAddress(recipient)
   const value = nimToLunas(amountNim)
   const msg = message?.trim()
-  const result = msg
-    ? await provider.sendBasicTransactionWithData({
-        recipient,
-        value,
-        data: toHex(new TextEncoder().encode(msg)),
-      })
-    : await provider.sendBasicTransaction({ recipient, value })
-  if (isErrorResponse(result)) throw new Error(result.error.message)
+  if (msg && messageBytes(msg) > MESSAGE_MAX_BYTES) {
+    throw new Error(`Message too long (${messageBytes(msg)} / ${MESSAGE_MAX_BYTES} bytes)`)
+  }
+  const dataHex = msg ? toHex(new TextEncoder().encode(msg)) : undefined
+  const result = dataHex
+    ? await provider.sendBasicTransactionWithData({ recipient: to, value, data: dataHex })
+    : await provider.sendBasicTransaction({ recipient: to, value })
+  if (isErrorResponse(result)) {
+    // Surface the FULL SDK error plus the exact call we made — Pay's
+    // one-line messages hide the real rejection reason.
+    const debug = {
+      call: dataHex ? 'sendBasicTransactionWithData' : 'sendBasicTransaction',
+      recipient: to,
+      value,
+      dataHex,
+      dataBytes: dataHex ? dataHex.length / 2 : 0,
+      sdkError: result.error,
+    }
+    console.error('[nimconnect] sendNim rejected', debug)
+    const err = new Error(result.error.message) as Error & { debug?: unknown }
+    err.debug = debug
+    throw err
+  }
   return result
 }

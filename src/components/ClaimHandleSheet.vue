@@ -2,10 +2,14 @@
 import { ref, watch } from 'vue'
 import ActionSheet from './ActionSheet.vue'
 import { insideNimiqPay } from '../services/nimiq'
-import { isValidHandle, checkHandle, claimHandle } from '../services/handles'
+import { isValidHandle, checkHandle, claimHandle, type HandleClaim } from '../services/handles'
+import { myAddresses } from '../services/nimiq'
+import { useProfilesStore } from '../stores/profiles'
 
 defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; claimed: [handle: string] }>()
+const emit = defineEmits<{ close: []; claimed: [handle: string, txHash: string, claim?: HandleClaim] }>()
+
+const store = useProfilesStore()
 
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'reserved' | 'invalid' | 'unknown'
 
@@ -14,6 +18,19 @@ const availability = ref<Availability>('idle')
 const claiming = ref(false)
 const result = ref<'indexed' | 'pending' | null>(null)
 const error = ref<string | null>(null)
+const debugInfo = ref<string | null>(null)
+const debugCopied = ref(false)
+
+async function copyDebug() {
+  if (!debugInfo.value) return
+  try {
+    await navigator.clipboard.writeText(debugInfo.value)
+    debugCopied.value = true
+    setTimeout(() => { debugCopied.value = false }, 2000)
+  } catch {
+    // clipboard unavailable — the text is selectable
+  }
+}
 let debounce: ReturnType<typeof setTimeout> | undefined
 
 watch(handle, value => {
@@ -51,16 +68,28 @@ const HINTS: Record<Availability, string> = {
   unknown: 'Could not check availability — you can still try to claim',
 }
 
+function claimErrorHint(message: string): string {
+  const lower = message.toLowerCase()
+  if (lower.includes('invalidated')) {
+    return `${message} — check your Nimiq Pay spending balance (not just incoming): you need enough NIM for the dust amount plus the network fee. Try sending a small payment from Home first.`
+  }
+  return message
+}
+
 async function doClaim() {
   const h = handle.value.trim().toLowerCase()
   if (!isValidHandle(h) || claiming.value) return
   claiming.value = true
   error.value = null
   try {
-    result.value = await claimHandle(h)
-    emit('claimed', h)
+    const wallets = store.self ? myAddresses(store.self.address) : []
+    const { status, txHash, claim } = await claimHandle(h, wallets)
+    result.value = status
+    emit('claimed', h, txHash, claim)
   } catch (e) {
-    error.value = (e as Error).message
+    error.value = claimErrorHint((e as Error).message)
+    const dbg = (e as Error & { debug?: unknown }).debug
+    debugInfo.value = dbg ? JSON.stringify(dbg, null, 2) : `${(e as Error).name}: ${(e as Error).message}`
   } finally {
     claiming.value = false
   }
@@ -71,6 +100,7 @@ function close() {
   availability.value = 'idle'
   result.value = null
   error.value = null
+  debugInfo.value = null
   emit('close')
 }
 </script>
@@ -110,6 +140,13 @@ function close() {
           {{ HINTS[availability] }}
         </p>
         <p v-if="error" class="err">{{ error }}</p>
+        <details v-if="debugInfo" class="debug">
+          <summary>Debug info</summary>
+          <pre>{{ debugInfo }}</pre>
+          <button type="button" class="debug-copy" @click="copyDebug">
+            {{ debugCopied ? 'Copied ✓' : 'Copy debug info' }}
+          </button>
+        </details>
         <button
           class="primary"
           :disabled="claiming || availability === 'taken' || availability === 'reserved' || !isValidHandle(handle.trim().toLowerCase())"
@@ -139,6 +176,19 @@ function close() {
 .hint.bad { color: var(--nq-red); }
 .ok { color: var(--nq-green); font-weight: 700; line-height: 1.5; }
 .err { color: var(--nq-red); font-size: 14px; }
+.debug { margin-top: 8px; font-size: 12px; color: var(--text-2); }
+.debug summary { cursor: pointer; font-weight: 700; }
+.debug pre {
+  margin: 6px 0; padding: 8px; max-height: 180px; overflow: auto;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+  font-size: 11px; line-height: 1.4; white-space: pre-wrap; word-break: break-all;
+  user-select: all;
+}
+.debug-copy {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill);
+  background: var(--card); color: var(--text); font: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
 .primary {
   width: 100%; height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   font-weight: 700; font-size: 16px; color: var(--nimiq-white); margin-top: 12px;
