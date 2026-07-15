@@ -31,7 +31,7 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
         <slot name="panel" />
       </section>
 
-      <div v-if="hasActions" class="public-surface__actions">
+      <section v-if="hasActions" class="public-surface__actions" aria-label="Public actions">
         <div v-if="hasPrimary" class="public-surface__primary" data-public-primary>
           <slot name="primary" />
         </div>
@@ -41,7 +41,7 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
         <div v-if="hasTertiary" class="public-surface__tertiary" data-public-tertiary>
           <slot name="tertiary" />
         </div>
-      </div>
+      </section>
 
       <footer class="public-surface__footer">
         <slot name="footer">{{ footerVerb }} via <strong>NimConnect</strong></slot>
@@ -163,8 +163,7 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
 
 .public-surface :deep(.public-landing__identity),
 .public-surface :deep(.public-landing__panel),
-.public-surface :deep(.public-landing__footer),
-.public-surface :deep(.public-landing__stores) {
+.public-surface :deep(.public-landing__footer) {
   display: grid;
   justify-items: center;
 }
@@ -179,47 +178,19 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
 }
 
 .public-surface :deep(.public-landing__panel > p),
-.public-surface :deep(.public-landing__footer p),
-.public-surface :deep(.public-landing__stores p) {
+.public-surface :deep(.public-landing__footer p) {
   margin: 0;
 }
 
 .public-surface :deep(.public-landing__panel > span),
-.public-surface :deep(.public-landing__footer),
-.public-surface :deep(.public-landing__stores p) {
+.public-surface :deep(.public-landing__footer) {
   color: var(--text-2);
 }
 
 .public-surface :deep(.public-landing__panel > span),
-.public-surface :deep(.public-landing__stores p),
 .public-surface :deep(.public-landing__footer p),
 .public-surface :deep(.public-landing__footer button) {
   font-size: 0.8125rem;
-}
-
-.public-surface :deep(.public-landing__stores) {
-  gap: 0.5rem;
-}
-
-.public-surface :deep(.public-landing__stores p) {
-  font-weight: 700;
-}
-
-.public-surface :deep(.public-landing__stores > div) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.public-surface :deep(.public-landing__stores a) {
-  border: 1px solid #bdc9e5;
-  border-radius: 0.75rem;
-  color: var(--text);
-  font-size: 0.8125rem;
-  font-weight: 800;
-  padding: 0.625rem 0.75rem;
-  text-decoration: none;
 }
 
 .public-surface :deep(.public-landing__footer) {

@@ -18,6 +18,7 @@ describe('PublicSurface', () => {
     expect(wrapper.get('.public-surface__context').attributes('data-public-context')).toBe('Public profile')
     expect(wrapper.get('[data-public-identity]').text()).toContain('Alice')
     expect(wrapper.get('[data-public-panel]').text()).toContain('Send NIM')
+    expect(wrapper.get('section.public-surface__actions').attributes('aria-label')).toBe('Public actions')
     expect(wrapper.get('[data-public-primary]').text()).toContain('Pay')
     expect(wrapper.get('[data-public-secondary]').text()).toContain('Add')
     expect(wrapper.get('[data-public-tertiary]').text()).toContain('Stores')

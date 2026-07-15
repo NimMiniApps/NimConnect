@@ -2,6 +2,9 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import PublicPayLanding from './PublicPayLanding.vue'
 import PublicProfileLanding from './PublicProfileLanding.vue'
+import { NIMPAY_APP_STORE_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
+import { makeNimiqPayDeepLink, makeWalletRequestLink } from '../services/links'
+import { makeNimiqPayProfileLink } from '../services/profile-share'
 
 const address = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
 const stubs = {
@@ -10,7 +13,7 @@ const stubs = {
 }
 
 describe('public landings', () => {
-  it('places a shared profile in the common public surface without chain verification', () => {
+  it('places a shared profile in the common public surface without chain verification', async () => {
     const wrapper = mount(PublicProfileLanding, {
       props: {
         profile: {
@@ -32,6 +35,17 @@ describe('public landings', () => {
     expect(wrapper.text()).not.toMatch(/chain verification|on-chain verified/i)
     expect(wrapper.get('[data-public-tertiary]').text()).toContain('Google Play')
     expect(wrapper.get('[data-public-secondary]').text()).not.toContain('Google Play')
+    expect(wrapper.get('[data-public-primary] a').attributes('href')).toBe(makeNimiqPayDeepLink(address))
+    expect(wrapper.get('[data-public-secondary] a').attributes('href')).toBe(makeWalletRequestLink(address))
+    expect(wrapper.get('[data-public-secondary] a').attributes('target')).toBe('_blank')
+    expect(wrapper.get('[data-public-secondary] a').attributes('rel')).toBe('noopener noreferrer')
+    expect(wrapper.get('[data-public-secondary] a.public-action--outline').attributes('href')).toBe(makeNimiqPayProfileLink({
+      v: 1, address, name: 'Ada Lovelace', type: 'person', bio: 'Computing pioneer', tags: ['Friends'],
+    }))
+    expect(wrapper.get(`[data-public-tertiary] a[href="${NIMPAY_PLAY_STORE_URL}"]`).attributes('target')).toBe('_blank')
+    const continueButton = wrapper.get('.public-surface__footer button')
+    await continueButton!.trigger('click')
+    expect(wrapper.emitted('continue')).toHaveLength(1)
   })
 
   it('places a payment request in the common public surface with its payment actions', () => {
@@ -55,5 +69,21 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('Pay with Nimiq Wallet')
     expect(wrapper.get('[data-public-tertiary]').text()).toContain('App Store')
     expect(wrapper.get('[data-public-secondary]').text()).not.toContain('App Store')
+    expect(wrapper.get('[data-public-primary] a').attributes('href')).toBe(makeNimiqPayDeepLink(address, 12.5, 'Dinner split'))
+    expect(wrapper.get('[data-public-secondary] a').attributes('href')).toBe(makeWalletRequestLink(address, 12.5, 'Dinner split'))
+    expect(wrapper.get('[data-public-secondary] a').attributes('target')).toBe('_blank')
+    expect(wrapper.get(`[data-public-tertiary] a[href="${NIMPAY_APP_STORE_URL}"]`).attributes('rel')).toBe('noopener noreferrer')
+  })
+
+  it('hides the browser handoff when it is explicitly disabled', () => {
+    const wrapper = mount(PublicPayLanding, {
+      props: {
+        payment: { recipient: address },
+        allowBrowserContinue: false,
+      },
+      global: { stubs },
+    })
+
+    expect(wrapper.findAll('button').some(button => button.text() === 'Open NimConnect in the browser')).toBe(false)
   })
 })

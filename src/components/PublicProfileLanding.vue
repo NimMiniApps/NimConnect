@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import Identicon from './Identicon.vue'
 import PublicAddressCopy from './PublicAddressCopy.vue'
 import PublicSurface from './PublicSurface.vue'
+import PublicStoreLinks from './PublicStoreLinks.vue'
 import QrCode from './QrCode.vue'
 import {
   makeRequestLink,
@@ -10,15 +11,17 @@ import {
   makeWalletRequestLink,
 } from '../services/links'
 import { makeNimiqPayProfileLink, type SharedProfile } from '../services/profile-share'
-import { NIMPAY_APP_STORE_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
 
-const props = defineProps<{ profile: SharedProfile; allowBrowserContinue?: boolean }>()
+const props = withDefaults(defineProps<{ profile: SharedProfile; allowBrowserContinue?: boolean }>(), {
+  allowBrowserContinue: true,
+})
 const emit = defineEmits<{ continue: [] }>()
 
 const nimiqUri = computed(() => makeRequestLink(props.profile.address))
 const payDeepLink = computed(() => makeNimiqPayDeepLink(props.profile.address))
 const walletLink = computed(() => makeWalletRequestLink(props.profile.address))
 const addInPayLink = computed(() => makeNimiqPayProfileLink(props.profile))
+const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 </script>
 
 <template>
@@ -58,19 +61,13 @@ const addInPayLink = computed(() => makeNimiqPayProfileLink(props.profile))
     </template>
 
     <template #tertiary>
-      <div class="public-landing__stores">
-        <p>Don't have Nimiq Pay yet?</p>
-        <div>
-          <a :href="NIMPAY_PLAY_STORE_URL" target="_blank" rel="noopener noreferrer">Google Play</a>
-          <a :href="NIMPAY_APP_STORE_URL" target="_blank" rel="noopener noreferrer">App Store</a>
-        </div>
-      </div>
+      <PublicStoreLinks />
     </template>
 
     <template #footer>
       <div class="public-landing__footer">
         <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
-        <button v-if="allowBrowserContinue !== false" type="button" @click="emit('continue')">
+        <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
           Open NimConnect in the browser
         </button>
       </div>

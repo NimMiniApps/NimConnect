@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import Identicon from './Identicon.vue'
 import PublicAddressCopy from './PublicAddressCopy.vue'
 import PublicSurface from './PublicSurface.vue'
+import PublicStoreLinks from './PublicStoreLinks.vue'
 import QrCode from './QrCode.vue'
 import {
   makeRequestLink,
@@ -11,9 +12,10 @@ import {
   shortAddress,
   type ParsedPaymentRequest,
 } from '../services/links'
-import { NIMPAY_APP_STORE_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
 
-const props = defineProps<{ payment: ParsedPaymentRequest; allowBrowserContinue?: boolean }>()
+const props = withDefaults(defineProps<{ payment: ParsedPaymentRequest; allowBrowserContinue?: boolean }>(), {
+  allowBrowserContinue: true,
+})
 const emit = defineEmits<{ continue: [] }>()
 
 const nimiqUri = computed(() =>
@@ -26,6 +28,7 @@ const amountText = computed(() =>
   props.payment.amountNim != null
     ? `${props.payment.amountNim.toLocaleString(undefined, { maximumFractionDigits: 5 })} NIM`
     : null)
+const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 </script>
 
 <template>
@@ -56,19 +59,13 @@ const amountText = computed(() =>
     </template>
 
     <template #tertiary>
-      <div class="public-landing__stores">
-        <p>Don't have Nimiq Pay yet?</p>
-        <div>
-          <a :href="NIMPAY_PLAY_STORE_URL" target="_blank" rel="noopener noreferrer">Google Play</a>
-          <a :href="NIMPAY_APP_STORE_URL" target="_blank" rel="noopener noreferrer">App Store</a>
-        </div>
-      </div>
+      <PublicStoreLinks />
     </template>
 
     <template #footer>
       <div class="public-landing__footer">
         <p>Sent with <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
-        <button v-if="allowBrowserContinue !== false" type="button" @click="emit('continue')">
+        <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
           Open NimConnect in the browser
         </button>
       </div>
