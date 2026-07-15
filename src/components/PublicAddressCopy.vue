@@ -76,6 +76,7 @@ onBeforeUnmount(() => {
   font: inherit;
   font-size: 0.8125rem;
   font-weight: 800;
+  min-height: 2.75rem;
   padding: 0.5rem 0.625rem;
 }
 
@@ -84,6 +85,7 @@ onBeforeUnmount(() => {
 }
 
 .public-address-copy--compact .public-address-copy__button {
+  min-height: 2.75rem;
   padding: 0.375rem 0.5rem;
 }
 

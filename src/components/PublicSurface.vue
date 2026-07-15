@@ -59,6 +59,9 @@ const hasActions = computed(() =>
   --public-blue: #2252c7;
   --public-soft-blue: #eef4ff;
   --public-gold: #f4c547;
+  --text: #1f2348;
+  --text-2: #59627d;
+  --border: #dce7ff;
   align-items: stretch;
   background: var(--public-ink);
   color: var(--public-ink);
@@ -195,6 +198,7 @@ const hasActions = computed(() =>
   cursor: pointer;
   font: inherit;
   font-weight: 700;
+  min-height: 2.75rem;
   padding: 0.5rem;
   text-decoration: underline;
   text-underline-offset: 0.1875rem;

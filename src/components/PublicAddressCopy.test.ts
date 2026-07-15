@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import PublicAddressCopy from './PublicAddressCopy.vue'
+import publicAddressCopySource from './PublicAddressCopy.vue?raw'
 
 const address = 'NQ12 TEST 1234 TEST 5678 TEST 9012 TEST 3456'
 const clipboard = { writeText: vi.fn() }
@@ -68,5 +69,10 @@ describe('PublicAddressCopy', () => {
     await Promise.resolve()
 
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('keeps copy targets at least 44px tall in standard and compact variants', () => {
+    expect(publicAddressCopySource).toMatch(/\.public-address-copy__button\s*\{[\s\S]*?min-height:\s*2\.75rem;/)
+    expect(publicAddressCopySource).toMatch(/\.public-address-copy--compact \.public-address-copy__button\s*\{[\s\S]*?min-height:\s*2\.75rem;/)
   })
 })
