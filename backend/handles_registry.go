@@ -62,7 +62,7 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 		if _, taken := next[action.Handle]; !taken {
 			next[action.Handle] = HandleClaim{
 				Handle:      action.Handle,
-				Address:     normalizeAddress(tx.sender()),
+				Address:     normalizeAddress(claimantAddress(tx)),
 				TxHash:      tx.Hash,
 				BlockHeight: tx.BlockNumber,
 				TxIndex:     tx.TransactionIndex,

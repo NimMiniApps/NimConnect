@@ -45,6 +45,7 @@ func TestParseClaimData(t *testing.T) {
 		{"raw binary, username only", hexOf(nimfeedClaim("chuck", "")), "chuck"},
 		{"raw binary with display name", hexOf(nimfeedClaim("chuck", "Chuck V")), "chuck"},
 		{"NFH text envelope (Nimiq Pay)", hexOf([]byte("NFH:" + hexOf(nimfeedClaim("chuck", "")))), "chuck"},
+		{"Nimiq Pay on-chain double hex (androiddev claim)", "34653436343833613334363533343336333033313330333133363331333636353336333433373332333636363336333933363334333633343336333533373336", "androiddev"},
 		{"our own envelope round-trips", hexOf([]byte(makeClaimPayload("a_1"))), "a_1"},
 		{"0x prefix tolerated", "0x" + hexOf(nimfeedClaim("chuck", "")), "chuck"},
 	}
@@ -95,5 +96,41 @@ func TestLoadReservedHandles(t *testing.T) {
 	set = loadReservedHandles(path)
 	if !set["onlythis"] || set["nimiq"] {
 		t.Fatalf("file should replace builtins (lowercased): %v", set)
+	}
+}
+
+func TestClaimantAddressHTLC(t *testing.T) {
+	// Real mainnet claim tx 9fa2ecc0… — sent from an HTLC (Nimiq Pay swap).
+	// EarlyResolve proof: the FIRST signature proof is the HTLC recipient
+	// (the user); the second is the swap provider's refund key.
+	earlyResolveProof := "010091b21f4b100273bd7034f6369c29d1f7ba72dba7de6720ad3cd8b8191621891300e066464061ee77c5847bd4f77faaeedb861836a62674019da2ec1069fe9f054e8be5fd4a04109a33cbc5080e1bd8f3518c1ce0a7f9c14b9496e60c593e98be0300b50660d8a11c6143211ef7554d16bc8be45aa55553a0643f83d9a5c3815201e2005f69f34b0280be6f4144447350c3d295605ea452f74848b50b6b005ea13c44aaa0810096f56cf1387061d803395630058e268c220bc9baaa94a05ee12857cd06"
+
+	tx := rpcTx{Sender: "NQ03 064C F89U 6LT7 6PDT R1PJ XJ99 368N 1LKH", FromType: 2, Proof: earlyResolveProof}
+	if got := claimantAddress(tx); got != "NQ14 LU5R UH54 92SH GEN4 U63C SV4V 7N49 YYU4" {
+		t.Fatalf("EarlyResolve claimant: got %q", got)
+	}
+
+	// RegularTransfer: signature proof sits after type+algo+depth+root+preimage.
+	pubKey := earlyResolveProof[4 : 4+64] // reuse the user's pubkey hex from above
+	regular := "00" + "01" + "01" + strings.Repeat("00", 64) + "00" + pubKey
+	tx = rpcTx{Sender: "NQ03 HTLC", FromType: 2, Proof: regular}
+	if got := claimantAddress(tx); got != "NQ14 LU5R UH54 92SH GEN4 U63C SV4V 7N49 YYU4" {
+		t.Fatalf("RegularTransfer claimant: got %q", got)
+	}
+
+	// Non-HTLC senders pass through untouched.
+	tx = rpcTx{Sender: "NQ11 OWNER", FromType: 0, Proof: earlyResolveProof}
+	if got := claimantAddress(tx); got != "NQ11 OWNER" {
+		t.Fatalf("basic sender: got %q", got)
+	}
+
+	// Unparseable proof falls back to the raw sender.
+	tx = rpcTx{Sender: "NQ03 HTLC", FromType: 2, Proof: "zz"}
+	if got := claimantAddress(tx); got != "NQ03 HTLC" {
+		t.Fatalf("garbage proof fallback: got %q", got)
+	}
+	tx = rpcTx{Sender: "NQ03 HTLC", FromType: 2, Proof: "09" + pubKey}
+	if got := claimantAddress(tx); got != "NQ03 HTLC" {
+		t.Fatalf("unknown proof type fallback: got %q", got)
 	}
 }

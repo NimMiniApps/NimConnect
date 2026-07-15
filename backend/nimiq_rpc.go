@@ -34,6 +34,9 @@ type rpcTx struct {
 	RecipientData    string `json:"recipientData"`
 	BlockNumber      uint64 `json:"blockNumber"`
 	TransactionIndex uint64 `json:"transactionIndex"`
+	// FromType 2 = HTLC contract (Nimiq Pay routes payments through swaps).
+	FromType int    `json:"fromType"`
+	Proof    string `json:"proof"`
 }
 
 func (t rpcTx) sender() string {
@@ -82,10 +85,11 @@ func (c *NimiqRPC) call(method string, params []any, out any) error {
 	if envelope.Error != nil {
 		return fmt.Errorf("rpc %s: %s", method, envelope.Error.Message)
 	}
-	// PoS gateways wrap results as {"data": ...}; unwrap only when that's the sole key.
+	// PoS gateways wrap payloads as {"data": ..., "metadata": ...} — unwrap data
+	// whenever present (metadata is ignored).
 	var probe map[string]json.RawMessage
 	if json.Unmarshal(envelope.Result, &probe) == nil {
-		if data, ok := probe["data"]; ok && len(probe) == 1 {
+		if data, ok := probe["data"]; ok {
 			return json.Unmarshal(data, out)
 		}
 	}

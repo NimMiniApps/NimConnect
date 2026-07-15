@@ -9,6 +9,11 @@ import (
 	"strings"
 )
 
+// NimfeedCatalogAddress is the mainnet NimFeed catalog — the shared on-chain
+// username registry. Override with REGISTRY_ADDRESS; set REGISTRY_ADDRESS=off to
+// disable handle routes entirely.
+const NimfeedCatalogAddress = "NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y"
+
 // NimConnect shares the NimFeed on-chain username registry: a claim is a
 // PROFILE_CLAIM transaction to the NimFeed catalog address, so @chuck is one
 // identity across both apps. Payload encodings:
@@ -63,14 +68,8 @@ func parseClaimPayload(payload []byte) *claimAction {
 	return &claimAction{Handle: handle}
 }
 
-// parseClaimData decodes hex tx data into a claim, accepting both the raw
-// binary form (Hub) and the "NFH:" text envelope (Nimiq Pay). Returns nil for
-// anything else — posts, follows, and future NimFeed types don't break us.
-func parseClaimData(dataHex string) *claimAction {
-	raw, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(dataHex), "0x"))
-	if err != nil {
-		return nil
-	}
+// parseClaimDataFromRaw tries binary and NFH text-envelope forms on decoded bytes.
+func parseClaimDataFromRaw(raw []byte) *claimAction {
 	if text := string(raw); strings.HasPrefix(text, claimTextPrefix) {
 		inner, err := hex.DecodeString(strings.TrimSpace(strings.TrimPrefix(text, claimTextPrefix)))
 		if err != nil {
@@ -79,6 +78,98 @@ func parseClaimData(dataHex string) *claimAction {
 		return parseClaimPayload(inner)
 	}
 	return parseClaimPayload(raw)
+}
+
+func isHexDigits(s string) bool {
+	if len(s) == 0 || len(s)%2 != 0 {
+		return false
+	}
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// parseClaimData decodes hex tx data into a claim, accepting both the raw
+// binary form (Hub) and the "NFH:" text envelope (Nimiq Pay). Returns nil for
+// anything else — posts, follows, and future NimFeed types don't break us.
+func parseClaimData(dataHex string) *claimAction {
+	raw, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(dataHex), "0x"))
+	if err != nil {
+		return nil
+	}
+	if action := parseClaimDataFromRaw(raw); action != nil {
+		return action
+	}
+	// Nimiq Pay stores the provider data field as hex-encoded ASCII of the hex
+	// payload string (double hex) — seen on mainnet claim txs from the Mini App.
+	if ascii := string(raw); isHexDigits(ascii) {
+		if inner, err := hex.DecodeString(ascii); err == nil {
+			if action := parseClaimDataFromRaw(inner); action != nil {
+				return action
+			}
+		}
+	}
+	return nil
+}
+
+const (
+	htlcSenderType = 2 // rpcTx.FromType for HTLC contract senders
+
+	// Albatross HtlcProof variants.
+	htlcProofRegularTransfer = 0
+	htlcProofEarlyResolve    = 1
+	htlcProofTimeoutResolve  = 2
+
+	// SignatureProof: flags(1) + ed25519 public key(32) + merkle path + sig(64).
+	sigProofPubKeyLen = 32
+)
+
+// claimantAddress attributes a claim tx to its true owner. Nimiq Pay routes
+// payments through swap HTLCs, so tx.sender() is the contract address — the
+// user is the HTLC *recipient*, whose signature proof leads the tx proof
+// (EarlyResolve: recipient proof first; RegularTransfer: redeemer proof after
+// the hash fields). Falls back to the raw sender when the proof doesn't parse.
+func claimantAddress(tx rpcTx) string {
+	if tx.FromType != htlcSenderType {
+		return tx.sender()
+	}
+	if addr := htlcSignerAddress(tx.Proof); addr != "" {
+		return addr
+	}
+	return tx.sender()
+}
+
+// htlcSignerAddress extracts the redeeming signer's address from an HTLC
+// transaction proof. Returns "" for anything it can't parse confidently.
+func htlcSignerAddress(proofHex string) string {
+	proof, err := hex.DecodeString(strings.TrimPrefix(strings.TrimSpace(proofHex), "0x"))
+	if err != nil || len(proof) == 0 {
+		return ""
+	}
+	var sigProofOffset int
+	switch proof[0] {
+	case htlcProofEarlyResolve, htlcProofTimeoutResolve:
+		sigProofOffset = 1
+	case htlcProofRegularTransfer:
+		// type(1) + hash algorithm(1) + hash depth(1) + hash root(32) + pre-image(32)
+		sigProofOffset = 67
+	default:
+		return ""
+	}
+	// flags byte 0x00 = plain ed25519 (no webauthn); anything else is a key
+	// type we don't derive addresses for.
+	if len(proof) < sigProofOffset+1+sigProofPubKeyLen || proof[sigProofOffset] != 0x00 {
+		return ""
+	}
+	pubKey := proof[sigProofOffset+1 : sigProofOffset+1+sigProofPubKeyLen]
+	addr, err := addressFromPublicKey(pubKey)
+	if err != nil {
+		return ""
+	}
+	return addr
 }
 
 // builtinReserved blocks claiming through NimConnect's UI only. Resolution
