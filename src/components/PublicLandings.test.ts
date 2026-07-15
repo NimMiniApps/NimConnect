@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import OpenInNimiqPayLanding from './OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './PublicPayLanding.vue'
 import PublicProfileLanding from './PublicProfileLanding.vue'
-import { NIMPAY_APP_STORE_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
+import { NIMPAY_APP_STORE_URL, NIMPAY_OPEN_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
 import { makeNimiqPayDeepLink, makeWalletRequestLink } from '../services/links'
 import { makeNimiqPayProfileLink } from '../services/profile-share'
 
@@ -13,6 +14,22 @@ const stubs = {
 }
 
 describe('public landings', () => {
+  it('places the generic Nimiq Pay handoff in the common public surface', async () => {
+    const wrapper = mount(OpenInNimiqPayLanding)
+
+    expect(wrapper.find('.public-surface').exists()).toBe(true)
+    expect(wrapper.get('[data-public-context]').text()).toBe('NimConnect')
+    expect(wrapper.get('[data-public-primary] a').attributes('href')).toBe(NIMPAY_OPEN_URL)
+    expect(wrapper.text()).toContain('Send NIM, manage contacts, split bills, and track payments.')
+
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('continue')).toHaveLength(1)
+
+    await wrapper.setProps({ allowBrowserContinue: false })
+    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.text()).toContain('On desktop, NimConnect works best for')
+  })
+
   it('places a shared profile in the common public surface without chain verification', async () => {
     const wrapper = mount(PublicProfileLanding, {
       props: {
