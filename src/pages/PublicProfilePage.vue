@@ -117,7 +117,7 @@ async function refresh() {
 </script>
 
 <template>
-  <PublicSurface context="Public profile">
+  <PublicSurface context="Public profile" :actions-enabled="state !== 'loading'">
     <template v-if="state === 'ready' && claim" #identity>
       <header class="identity">
         <Identicon :address="payAddress" :size="80" />
@@ -197,16 +197,13 @@ async function refresh() {
       </template>
     </template>
 
-    <template v-if="state === 'ready' && claim" #primary>
-      <a :href="makeNimiqPayDeepLink(payAddress)">Send in Nimiq Pay</a>
+    <template #primary>
+      <a v-if="state === 'ready' && claim" :href="makeNimiqPayDeepLink(payAddress)">Send in Nimiq Pay</a>
+      <button v-else type="button" @click="refresh">Refresh</button>
     </template>
 
-    <template v-if="state !== 'ready' || !claim" #primary>
-      <button type="button" @click="refresh">Refresh</button>
-    </template>
-
-    <template v-if="state === 'ready' && claim" #secondary>
-      <a :href="makeAppAddLink(payAddress)" class="public-action--outline">Add to NimConnect</a>
+    <template #secondary>
+      <a v-if="state === 'ready' && claim" :href="makeAppAddLink(payAddress)" class="public-action--outline">Add to NimConnect</a>
     </template>
 
     <template #footer>

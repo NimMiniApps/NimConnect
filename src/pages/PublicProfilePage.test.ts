@@ -68,6 +68,16 @@ describe('PublicProfilePage', () => {
     expect(wrapper.get('[data-public-primary]').text()).toContain('Send in Nimiq Pay')
   })
 
+  it('does not expose Refresh while the initial profile lookup is loading', () => {
+    mocks.resolveHandleEnriched.mockReturnValue(new Promise(() => {}))
+
+    const wrapper = mount(PublicProfilePage, { global: { stubs } })
+
+    expect(wrapper.get('[data-public-panel]').text()).toContain('Loading @ada…')
+    expect(wrapper.find('[data-public-primary]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Refresh')
+  })
+
   it('keeps an unclaimed handle inside the shared surface with its claim path', async () => {
     mocks.resolveHandleEnriched.mockResolvedValue(null)
     mocks.checkHandle.mockResolvedValue({ available: true })

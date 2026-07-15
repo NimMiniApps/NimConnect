@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
 
-withDefaults(defineProps<{
+const props = withDefaults(defineProps<{
   context: 'Public profile' | 'Shared profile' | 'Payment request' | 'NimConnect'
   footerVerb?: 'Shared' | 'Sent'
+  actionsEnabled?: boolean
 }>(), {
   footerVerb: 'Shared',
+  actionsEnabled: true,
 })
 
 const slots = useSlots()
 const hasPrimary = computed(() => Boolean(slots.primary))
 const hasSecondary = computed(() => Boolean(slots.secondary))
 const hasTertiary = computed(() => Boolean(slots.tertiary))
-const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasTertiary.value)
+const hasActions = computed(() =>
+  props.actionsEnabled && (hasPrimary.value || hasSecondary.value || hasTertiary.value))
 </script>
 
 <template>
@@ -128,6 +131,10 @@ const hasActions = computed(() => hasPrimary.value || hasSecondary.value || hasT
   display: grid;
   gap: 0.5rem;
 }
+
+.public-surface__primary:empty,
+.public-surface__secondary:empty,
+.public-surface__tertiary:empty { display: none; }
 
 .public-surface__primary :slotted(a),
 .public-surface__primary :slotted(button),
