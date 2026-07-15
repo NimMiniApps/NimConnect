@@ -293,24 +293,55 @@ export async function sendNim(recipient: string, amountNim: number, message?: st
     throw new Error(`Message too long (${messageBytes(msg)} / ${MESSAGE_MAX_BYTES} bytes)`)
   }
   const dataHex = msg ? toHex(new TextEncoder().encode(msg)) : undefined
-  const result = dataHex
-    ? await provider.sendBasicTransactionWithData({ recipient: to, value, data: dataHex })
-    : await provider.sendBasicTransaction({ recipient: to, value })
-  if (isErrorResponse(result)) {
-    // Surface the FULL SDK error plus the exact call we made — Pay's
-    // one-line messages hide the real rejection reason.
+
+  // Surface the FULL SDK failure plus the exact call we made — Pay's
+  // one-line messages hide the real rejection reason. The provider can fail
+  // two ways: a returned { error } response, or a thrown (often non-Error)
+  // value from the bridge; capture both.
+  const call = dataHex ? 'sendBasicTransactionWithData' : 'sendBasicTransaction'
+  const fail = (sdkFailure: unknown, kind: 'returned' | 'thrown'): never => {
     const debug = {
-      call: dataHex ? 'sendBasicTransactionWithData' : 'sendBasicTransaction',
+      call,
+      kind,
       recipient: to,
       value,
       dataHex,
       dataBytes: dataHex ? dataHex.length / 2 : 0,
-      sdkError: result.error,
+      sdkFailure: serializeUnknown(sdkFailure),
     }
     console.error('[nimconnect] sendNim rejected', debug)
-    const err = new Error(result.error.message) as Error & { debug?: unknown }
+    const message = (sdkFailure as { message?: string })?.message
+      ?? (sdkFailure as { error?: { message?: string } })?.error?.message
+      ?? String(sdkFailure)
+    const err = new Error(message) as Error & { debug?: unknown }
     err.debug = debug
     throw err
   }
-  return result
+
+  let result: unknown
+  try {
+    result = dataHex
+      ? await provider.sendBasicTransactionWithData({ recipient: to, value, data: dataHex })
+      : await provider.sendBasicTransaction({ recipient: to, value })
+  } catch (e) {
+    fail(e, 'thrown')
+  }
+  if (isErrorResponse(result)) fail(result.error, 'returned')
+  return result as string
+}
+
+/** JSON-safe dump of an unknown failure value, keeping Error internals. */
+function serializeUnknown(value: unknown): unknown {
+  if (value instanceof Error) {
+    const out: Record<string, unknown> = { name: value.name, message: value.message }
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (key !== 'stack') out[key] = (value as unknown as Record<string, unknown>)[key]
+    }
+    return out
+  }
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch {
+    return String(value)
+  }
 }
