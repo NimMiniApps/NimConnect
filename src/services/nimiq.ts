@@ -280,7 +280,23 @@ export async function signChallenge(message: string): Promise<{ publicKey: strin
   return { publicKey: result.publicKey, signature: result.signature }
 }
 
-export async function sendNim(recipient: string, amountNim: number, message?: string): Promise<string> {
+/**
+ * Send NIM with an optional data payload.
+ *
+ * Nimiq Pay writes the ASCII bytes of the `data` string we pass straight onto
+ * the chain (it does NOT hex-decode it), so the effective on-chain size is
+ * the LENGTH OF THE STRING WE PASS, capped at 64 bytes. For user messages we
+ * keep the historical hex-encoding (existing history parsing expects it,
+ * halving the max message to 32 chars effectively); protocol payloads that
+ * are already wire-format text (e.g. NFH claim envelopes) pass
+ * `{ raw: true }` so they aren't hex-inflated past the 64-byte limit.
+ */
+export async function sendNim(
+  recipient: string,
+  amountNim: number,
+  message?: string,
+  opts?: { raw?: boolean },
+): Promise<string> {
   const provider = await getProvider()
   if (!provider) throw new Error('Not running inside Nimiq Pay')
   if (!ValidationUtils.isValidAddress(recipient)) {
@@ -289,10 +305,11 @@ export async function sendNim(recipient: string, amountNim: number, message?: st
   const to = ValidationUtils.normalizeAddress(recipient)
   const value = nimToLunas(amountNim)
   const msg = message?.trim()
-  if (msg && messageBytes(msg) > MESSAGE_MAX_BYTES) {
-    throw new Error(`Message too long (${messageBytes(msg)} / ${MESSAGE_MAX_BYTES} bytes)`)
+  const onChainBytes = msg ? (opts?.raw ? msg.length : messageBytes(msg) * 2) : 0
+  if (onChainBytes > MESSAGE_MAX_BYTES) {
+    throw new Error(`Message too long (${onChainBytes} / ${MESSAGE_MAX_BYTES} bytes on chain)`)
   }
-  const dataHex = msg ? toHex(new TextEncoder().encode(msg)) : undefined
+  const dataHex = msg ? (opts?.raw ? msg : toHex(new TextEncoder().encode(msg))) : undefined
 
   // Surface the FULL SDK failure plus the exact call we made — Pay's
   // one-line messages hide the real rejection reason. The provider can fail

@@ -408,7 +408,10 @@ export async function claimHandle(
 ): Promise<{ status: 'indexed' | 'pending'; txHash: string; claim?: HandleClaim }> {
   if (!claimableInPay(handle)) throw new Error('Invalid handle')
   if (!REGISTRY_ADDRESS) throw new Error('Handle registry not configured')
-  const txHash = await sendNim(REGISTRY_ADDRESS, CLAIM_AMOUNT_NIM, makeClaimPayload(handle))
+  // raw: the NFH envelope is already wire-format text; hex-encoding it again
+  // (the default for user messages) doubles it past the 64-byte tx data limit
+  // for usernames longer than 10 chars.
+  const txHash = await sendNim(REGISTRY_ADDRESS, CLAIM_AMOUNT_NIM, makeClaimPayload(handle), { raw: true })
   const res = await fetch(apiUrl('/api/handles/claims'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
