@@ -53,6 +53,14 @@ export function makeAppAddLink(address: string): string {
   return `${appOrigin()}#/add?address=${encodeURIComponent(normalized)}`
 }
 
+/** Opens NimConnect's add-contact form directly inside Nimiq Pay. */
+export function makeNimiqPayAddLink(address: string): string {
+  const normalized = ValidationUtils.isValidAddress(address)
+    ? ValidationUtils.normalizeAddress(address)
+    : address.trim()
+  return `${NIMPAY_OPEN_URL}#/add?address=${encodeURIComponent(normalized)}`
+}
+
 function parseAppAddLink(text: string): ParsedPaymentRequest | null {
   const hashMatch = text.match(/#\/?add(?:\?|.*?&)address=([^&#]+)/i)
   if (hashMatch) {

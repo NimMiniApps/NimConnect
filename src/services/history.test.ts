@@ -17,6 +17,7 @@ function tx(from: string, to: string, value: number, timestamp: number, hash = '
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  localStorage.clear()
   incomingAddress.value = ''
 })
 

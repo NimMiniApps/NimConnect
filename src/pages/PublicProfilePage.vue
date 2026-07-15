@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import Identicon from '../components/Identicon.vue'
+import PublicAddressCopy from '../components/PublicAddressCopy.vue'
+import PublicSurface from '../components/PublicSurface.vue'
 import QrCode from '../components/QrCode.vue'
 import {
   resolveHandleEnriched,
@@ -15,8 +17,8 @@ import {
 import {
   makeRequestLink,
   makeNimiqPayDeepLink,
-  makeAppAddLink,
-  shortAddress,
+  makeNimiqPayAddLink,
+  makeWalletRequestLink,
   transactionExplorerUrl,
   addressExplorerUrl,
 } from '../services/links'
@@ -116,57 +118,16 @@ async function refresh() {
 </script>
 
 <template>
-  <div class="public-profile">
-    <p v-if="state === 'loading'" class="status">Loading @{{ handle }}…</p>
-
-    <section v-else-if="state === 'notfound'" class="status-card">
-      <template v-if="notFoundKind === 'pending'">
-        <h1>Claim confirming</h1>
-        <p class="lead">
-          @{{ handle }} isn't indexed yet. If you just claimed, the profile usually
-          appears within a couple of minutes.
-        </p>
-        <a
-          v-if="pendingTxUrl"
-          class="explorer-link"
-          :href="pendingTxUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          View your claim transaction on NimiqScan →
-        </a>
-      </template>
-      <template v-else-if="notFoundKind === 'indexing'">
-        <h1>Indexing @{{ handle }}</h1>
-        <p class="lead">
-          This handle is claimed on chain but NimConnect hasn't indexed it yet — try again shortly.
-        </p>
-        <a class="explorer-link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
-          Browse claims on the NimFeed registry →
-        </a>
-      </template>
-      <template v-else>
-        <h1>@{{ handle }} is free</h1>
-        <p class="lead">Nobody has claimed this handle yet.</p>
-        <router-link class="claim-link" to="/">Claim it in NimConnect →</router-link>
-        <a class="explorer-link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
-          Browse claims on the NimFeed registry →
-        </a>
-      </template>
-      <button type="button" class="refresh-btn" @click="refresh">Refresh</button>
-    </section>
-
-    <p v-else-if="state === 'error'" class="status">Couldn't load this profile — try again in a moment.</p>
-
-    <template v-else-if="claim">
-      <header class="who">
+  <PublicSurface context="Public profile" :actions-enabled="state !== 'loading'">
+    <template v-if="state === 'ready' && claim" #identity>
+      <header class="identity">
         <Identicon :address="payAddress" :size="80" />
-        <h1>{{ headline }}</h1>
-        <p v-if="hasDistinctDisplayName" class="handle">{{ handleLabel }}</p>
-        <p v-if="profile?.bio" class="bio">{{ profile.bio }}</p>
-        <ul v-if="safeWebsite || profile?.github || profile?.x" class="socials">
+        <h1 class="identity__title">{{ headline }}</h1>
+        <p v-if="hasDistinctDisplayName" class="identity__handle">{{ handleLabel }}</p>
+        <p v-if="profile?.bio" class="identity__bio">{{ profile.bio }}</p>
+        <ul v-if="safeWebsite || profile?.github || profile?.x" class="identity__links">
           <li v-if="safeWebsite">
-            <a :href="safeWebsite" target="_blank" rel="noopener noreferrer nofollow">🌐 Website</a>
+            <a :href="safeWebsite" target="_blank" rel="noopener noreferrer nofollow">Website</a>
           </li>
           <li v-if="profile?.github">
             <a :href="`https://github.com/${profile.github}`" target="_blank" rel="noopener noreferrer">GitHub</a>
@@ -175,87 +136,92 @@ async function refresh() {
             <a :href="`https://x.com/${profile.x}`" target="_blank" rel="noopener noreferrer">X</a>
           </li>
         </ul>
-        <ul v-if="profile?.tags?.length" class="tags">
+        <ul v-if="profile?.tags?.length" class="identity__tags">
           <li v-for="tag in profile.tags" :key="tag">{{ tag }}</li>
         </ul>
       </header>
+    </template>
 
-      <section class="pay-card">
+    <template #panel>
+      <template v-if="state === 'loading'">
+        <p class="status">Loading @{{ handle }}…</p>
+      </template>
+
+      <template v-else-if="state === 'notfound'">
+        <template v-if="notFoundKind === 'pending'">
+          <h1 class="status__title">Claim confirming</h1>
+          <p class="status__lead">
+            @{{ handle }} isn't indexed yet. If you just claimed, the profile usually
+            appears within a couple of minutes.
+          </p>
+          <a
+            v-if="pendingTxUrl"
+            class="status__link"
+            :href="pendingTxUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            View your claim transaction on NimiqScan →
+          </a>
+        </template>
+        <template v-else-if="notFoundKind === 'indexing'">
+          <h1 class="status__title">Indexing @{{ handle }}</h1>
+          <p class="status__lead">
+            This handle is claimed on chain but NimConnect hasn't indexed it yet — try again shortly.
+          </p>
+          <a class="status__link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
+            Browse claims on the NimFeed registry →
+          </a>
+        </template>
+        <template v-else>
+          <h1 class="status__title">@{{ handle }} is free</h1>
+          <p class="status__lead">Nobody has claimed this handle yet.</p>
+          <router-link class="status__link" to="/">Claim it in NimConnect →</router-link>
+          <a class="status__link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
+            Browse claims on the NimFeed registry →
+          </a>
+        </template>
+      </template>
+
+      <template v-else-if="state === 'error'">
+        <p class="status">Couldn't load this profile — try again in a moment.</p>
+      </template>
+
+      <template v-else-if="claim">
         <h2>Send NIM</h2>
         <QrCode :text="payUri" :size="200" />
         <p class="scan-hint">Scan with any Nimiq wallet</p>
-        <p class="address" :title="payAddress">{{ shortAddress(payAddress) }}</p>
+        <PublicAddressCopy :address="payAddress" />
         <a class="verified" :href="transactionExplorerUrl(claim.tx_hash)" target="_blank" rel="noopener">
           ✓ Handle verified on the Nimiq chain
         </a>
-        <a :href="makeNimiqPayDeepLink(payAddress)" class="primary-btn">Send in Nimiq Pay</a>
-        <a :href="makeAppAddLink(payAddress)" class="secondary-btn">Add to NimConnect</a>
-      </section>
-
-      <footer class="brand">
-        <p><strong>NimConnect</strong> — a relationship manager for your wallet.</p>
-      </footer>
+      </template>
     </template>
-  </div>
+
+    <template #primary>
+      <a v-if="state === 'ready' && claim" :href="makeNimiqPayDeepLink(payAddress)">Send in Nimiq Pay</a>
+      <button v-else type="button" @click="refresh">Refresh</button>
+    </template>
+
+    <template #secondary>
+      <a v-if="state === 'ready' && claim" :href="makeWalletRequestLink(payAddress)" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a v-if="state === 'ready' && claim" :href="makeNimiqPayAddLink(payAddress)" class="public-action--outline">Add to NimConnect</a>
+    </template>
+
+    <template #footer>
+      <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+    </template>
+  </PublicSurface>
 </template>
 
 <style scoped>
-.public-profile {
-  max-width: 560px;
-  margin: 0 auto;
-  min-height: 100dvh;
-  padding: 32px 20px calc(24px + env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-.status { padding: 40px 0; text-align: center; color: var(--text-2); }
-.status-card {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 28px 16px; text-align: center;
-  border-radius: 16px; background: var(--card); border: 1px solid var(--border);
-}
-.status-card h1 { margin: 0; font-size: 22px; color: var(--text); }
-.lead { margin: 0; font-size: 15px; line-height: 1.5; color: var(--text-2); max-width: 380px; }
-.claim-link, .explorer-link {
-  font-size: 14px; font-weight: 700; color: var(--nq-light-blue); text-decoration: none;
-}
-.refresh-btn {
-  margin-top: 8px; padding: 10px 18px; border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill);
-  background: var(--bg); font: inherit; font-size: 14px; font-weight: 700; color: var(--text); cursor: pointer;
-}
-.who { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; }
-.who h1 { margin: 8px 0 0; font-size: 26px; line-height: 1.2; color: var(--text); }
-.handle { margin: 0; font-size: 15px; font-weight: 800; color: var(--nq-gold-dark); }
-.bio { margin: 6px 0 0; max-width: 380px; font-size: 15px; line-height: 1.5; color: var(--text-2); }
-.socials { display: flex; gap: 14px; margin: 8px 0 0; padding: 0; list-style: none; }
-.socials a { font-size: 14px; font-weight: 700; color: var(--nq-light-blue); text-decoration: none; }
-.tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 8px 0 0; padding: 0; list-style: none; }
-.tags li {
-  padding: 3px 10px; border-radius: var(--nimiq-radius-pill); font-size: 12px; font-weight: 700;
-  background: var(--bg); border: 1px solid var(--border); color: var(--text-2);
-}
-.pay-card {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 20px 16px; border-radius: 16px;
-  background: var(--card); border: 1px solid var(--border); box-shadow: var(--shadow);
-}
-.pay-card h2 { margin: 0; font-size: 17px; color: var(--text); }
-.scan-hint { margin: 0; font-size: 13px; color: var(--text-2); }
-.address { margin: 0; font-size: 13px; font-family: monospace; color: var(--text); }
-.verified { font-size: 12px; font-weight: 700; color: var(--nq-green); text-decoration: none; }
-.primary-btn {
-  display: flex; align-items: center; justify-content: center; width: 100%;
-  min-height: 50px; border-radius: var(--nimiq-radius-pill); text-decoration: none;
-  font-size: 16px; font-weight: 800; color: var(--nimiq-white);
-  background: var(--nimiq-gold-bg); box-shadow: var(--nimiq-shadow);
-}
-.secondary-btn {
-  display: flex; align-items: center; justify-content: center; width: 100%;
-  min-height: 44px; border-radius: var(--nimiq-radius-pill); text-decoration: none;
-  font-size: 14px; font-weight: 700; color: var(--text);
-  border: 1px solid var(--border); background: var(--card);
-}
-.brand { margin-top: auto; text-align: center; font-size: 13px; color: var(--text-2); }
-.brand strong { color: var(--nq-gold-dark); }
+.identity { display: grid; gap: 0.5rem; justify-items: center; }
+.identity__title, .status__title { color: var(--text); font-size: 1.625rem; margin: 0; }
+.identity__handle { color: var(--nq-gold-dark); font-weight: 800; margin: 0; }
+.identity__bio, .status, .status__lead { color: var(--text-2); line-height: 1.5; margin: 0; max-width: 23.75rem; }
+.identity__links, .identity__tags { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; list-style: none; margin: 0; padding: 0; }
+.identity__links a, .identity__tags li { border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); color: var(--text-2); font-size: 0.8125rem; font-weight: 700; padding: 0.375rem 0.625rem; text-decoration: none; }
+.status__link { color: var(--nq-light-blue); font-size: 0.875rem; font-weight: 700; text-decoration: none; }
+.scan-hint { color: var(--text-2); font-size: 0.8125rem; }
+.verified { color: var(--nq-green); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
 </style>

@@ -5,6 +5,7 @@ import {
   makeNimiqPayDeepLink,
   makeWalletRequestLink,
   makeAppAddLink,
+  makeNimiqPayAddLink,
   makePublicHandleLink,
   parsePaymentRequest,
   parsePaymentShareLink,
@@ -109,6 +110,13 @@ describe('links', () => {
     expect(link).toContain('#/add?address=')
     expect(parsePaymentRequest(link)?.recipient).toBe(A)
     expect(classifyScan(link)?.requestType).toBe('profile')
+  })
+
+  it('creates Nimiq Pay add-contact links for public profile actions', () => {
+    const link = makeNimiqPayAddLink(A)
+    expect(link).toMatch(/^https:\/\/nimpay\.app\/miniapps\/open\//)
+    expect(link).toContain('#/add?address=')
+    expect(parsePaymentRequest(link)?.recipient).toBe(A)
   })
 
   it('classifies full profile share links', () => {

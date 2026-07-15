@@ -6,7 +6,7 @@ import { bootstrapWallet, reconcileWalletSession } from './services/wallet-boots
 import { useProfilesStore } from './stores/profiles'
 import { useInboxStore } from './stores/inbox'
 import { useVisiblePolling } from './composables/useVisiblePolling'
-import { parsePaymentRequest, type ParsedPaymentRequest } from './services/links'
+import { makeNimiqPayAddLink, parsePaymentRequest, type ParsedPaymentRequest } from './services/links'
 import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './components/PublicPayLanding.vue'
@@ -48,6 +48,15 @@ const publicSharedProfile = computed(() => {
   if (router.currentRoute.value.path !== '/add') return null
   return parsePublicAddRoute(router.currentRoute.value.query as Record<string, unknown>)
 })
+// Address-only add links are import intents, not a second public profile page.
+const publicAddAddress = computed(() => {
+  if (router.currentRoute.value.path !== '/add') return null
+  const raw = router.currentRoute.value.query.address
+  return typeof raw === 'string' ? parsePaymentRequest(decodeURIComponent(raw))?.recipient ?? null : null
+})
+const handoffOpenUrl = computed(() =>
+  publicAddAddress.value ? makeNimiqPayAddLink(publicAddAddress.value) : NIMPAY_OPEN_URL,
+)
 // Public profile pages render for everyone — no install wall.
 const publicProfileRoute = computed(() => router.currentRoute.value.path.startsWith('/u/'))
 const inboxStore = useInboxStore()
@@ -238,6 +247,7 @@ async function handleIncomingPaymentLink() {
   <OpenInNimiqPayLanding
     v-else-if="!insideNimiqPay && !browserMode"
     :allow-browser-continue="allowBrowserContinue"
+    :open-url="handoffOpenUrl"
     @continue="onContinueInBrowser"
   />
 
