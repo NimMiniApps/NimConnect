@@ -6,6 +6,7 @@ import {
 } from '../config/host-app'
 
 const emit = defineEmits<{ continue: [] }>()
+defineProps<{ allowBrowserContinue?: boolean }>()
 
 const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
 </script>
@@ -17,8 +18,15 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
       <h1>NimConnect</h1>
       <p class="tagline">A relationship manager for your wallet.</p>
       <p class="body">
-        Send NIM, manage contacts, split bills, and track payments.
-        NimConnect is built to run inside <strong>Nimiq Pay</strong> on your phone.
+        <template v-if="allowBrowserContinue !== false">
+          Send NIM, manage contacts, split bills, and track payments.
+          NimConnect is built to run inside <strong>Nimiq Pay</strong> on your phone.
+        </template>
+        <template v-else>
+          On desktop, NimConnect works best for <strong>payment request</strong> and
+          <strong>profile share</strong> links — open one of those to pay or view a contact.
+          For everything else, use <strong>Nimiq Pay</strong> on your phone.
+        </template>
       </p>
     </main>
 
@@ -54,7 +62,12 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
       </div>
     </section>
 
-    <button type="button" class="browser-link" @click="emit('continue')">
+    <button
+      v-if="allowBrowserContinue !== false"
+      type="button"
+      class="browser-link"
+      @click="emit('continue')"
+    >
       Continue in browser (contacts &amp; backups only)
     </button>
   </div>

@@ -1,5 +1,6 @@
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import type { Profile, ProfileType } from '../types/profile'
+import { NIMPAY_OPEN_URL } from '../config/host-app'
 import { appOrigin } from './links'
 
 const PROFILE_TYPES: ProfileType[] = ['person', 'business', 'merchant', 'other']
@@ -123,6 +124,11 @@ export function makeProfileShareLink(profile: Profile): string {
   return `${appOrigin()}#/add?p=${encodeURIComponent(encodeSharedProfile(payload))}`
 }
 
+/** Deep link that opens a shared profile inside Nimiq Pay (public profile page). */
+export function makeNimiqPayProfileLink(profile: SharedProfile): string {
+  return `${NIMPAY_OPEN_URL}#/add?p=${encodeURIComponent(encodeSharedProfile(profile))}`
+}
+
 function extractShareParam(text: string): string | null {
   const trimmed = text.trim()
   const direct = trimmed.match(/[?&]p=([^&#]+)/i)
@@ -146,6 +152,23 @@ export function parseProfileShare(text: string): SharedProfile | null {
   // Allow pasting the raw base64 payload in the scan sheet.
   if (/^[A-Za-z0-9_-]+$/.test(text.trim()) && text.trim().length > 20) {
     return decodeSharedProfile(text.trim())
+  }
+  return null
+}
+
+/** Shared profile from a public /add link (?p= payload or ?address= only). */
+export function parsePublicAddRoute(query: Record<string, unknown>): SharedProfile | null {
+  const p = query.p
+  if (typeof p === 'string') {
+    const shared = decodeSharedProfile(p)
+    if (shared) return shared
+  }
+  const raw = query.address
+  if (typeof raw === 'string' && ValidationUtils.isValidAddress(raw)) {
+    const address = ValidationUtils.normalizeAddress(raw)
+    const parts = address.split(' ')
+    const short = parts.length >= 9 ? `${parts[0]} ${parts[1]}…${parts[8]}` : address
+    return { v: 1, address, name: short, type: 'person' as ProfileType, tags: [] }
   }
   return null
 }

@@ -21,6 +21,18 @@ export interface Profile {
   github?: string
   /** X / Twitter handle without @ */
   x?: string
+  /** Per-field visibility on /@handle — only used on the self profile. */
+  publicShare?: PublicShareSelection
+}
+
+/** Fields that can appear on the public profile page (mirrors handles.ShareSelection). */
+export interface PublicShareSelection {
+  name: boolean
+  bio: boolean
+  website: boolean
+  github: boolean
+  x: boolean
+  tags: boolean
 }
 
 export type InvoiceStatus = 'pending' | 'paid'

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useProfilesStore } from '../stores/profiles'
-import { insideNimiqPay, MESSAGE_MAX_BYTES, messageBytes, sendNim } from '../services/nimiq'
+import { insideNimiqPay, MESSAGE_MAX_BYTES, messageBytes, sendNim, formatNimAmount } from '../services/nimiq'
 import { shortAddress, type ParsedPaymentRequest } from '../services/links'
 import ActionSheet from './ActionSheet.vue'
 import CurrencyAmountInput from './CurrencyAmountInput.vue'
+import SpendableBalance from './SpendableBalance.vue'
 import Identicon from './Identicon.vue'
 
 const props = defineProps<{
@@ -22,6 +23,7 @@ const amountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
 const message = ref('')
 const sending = ref(false)
 const sendResult = ref<'ok' | string | null>(null)
+const spendBalance = ref<number | null>(null)
 
 onMounted(async () => {
   await store.load()
@@ -81,9 +83,19 @@ async function applyPaymentRequest(parsed: ParsedPaymentRequest) {
   }
 }
 
+function setMaxSend(nim: number) {
+  amount.value = nim > 0 ? nim : null
+  if (nim > 0) amountInput.value?.setNim(nim)
+  else amountInput.value?.reset()
+}
+
 async function doSend() {
   const address = recipientAddress.value
   if (!address || !amount.value || messageTooLong.value) return
+  if (spendBalance.value != null && amount.value > spendBalance.value) {
+    sendResult.value = `You have ${formatNimAmount(spendBalance.value)} NIM available for sending. Use Max or send a smaller amount.`
+    return
+  }
   sending.value = true
   sendResult.value = null
   try {
@@ -142,6 +154,8 @@ function close() {
             <small>Tap to change</small>
           </span>
         </button>
+
+        <SpendableBalance :when="open && showSendForm" @balance="spendBalance = $event" @max="setMaxSend" />
 
         <label class="field">
           Amount

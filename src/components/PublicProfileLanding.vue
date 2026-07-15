@@ -6,33 +6,26 @@ import {
   makeRequestLink,
   makeNimiqPayDeepLink,
   makeWalletRequestLink,
-  shortAddress,
-  type ParsedPaymentRequest,
 } from '../services/links'
+import { makeNimiqPayProfileLink, type SharedProfile } from '../services/profile-share'
 import { NIMPAY_APP_STORE_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
 
-const props = defineProps<{ payment: ParsedPaymentRequest; allowBrowserContinue?: boolean }>()
+const props = defineProps<{ profile: SharedProfile; allowBrowserContinue?: boolean }>()
 const emit = defineEmits<{ continue: [] }>()
 
-const nimiqUri = computed(() =>
-  makeRequestLink(props.payment.recipient, props.payment.amountNim, props.payment.message))
-const payDeepLink = computed(() =>
-  makeNimiqPayDeepLink(props.payment.recipient, props.payment.amountNim, props.payment.message))
-const walletLink = computed(() =>
-  makeWalletRequestLink(props.payment.recipient, props.payment.amountNim, props.payment.message))
-const amountText = computed(() =>
-  props.payment.amountNim != null
-    ? `${props.payment.amountNim.toLocaleString(undefined, { maximumFractionDigits: 5 })} NIM`
-    : null)
+const nimiqUri = computed(() => makeRequestLink(props.profile.address))
+const payDeepLink = computed(() => makeNimiqPayDeepLink(props.profile.address))
+const walletLink = computed(() => makeWalletRequestLink(props.profile.address))
+const addInPayLink = computed(() => makeNimiqPayProfileLink(props.profile))
 
 const copied = ref(false)
 async function copyAddress() {
   try {
-    await navigator.clipboard.writeText(props.payment.recipient)
+    await navigator.clipboard.writeText(props.profile.address)
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   } catch {
-    // Clipboard unavailable (http / permissions) — the address text is selectable.
+    // Clipboard unavailable — the address text is selectable.
   }
 }
 </script>
@@ -40,29 +33,34 @@ async function copyAddress() {
 <template>
   <div class="landing">
     <header class="who">
-      <Identicon :address="payment.recipient" :size="64" />
-      <p class="asking">
-        <strong>{{ payment.label || shortAddress(payment.recipient) }}</strong>
-        requests a payment
-      </p>
+      <Identicon :address="profile.address" :size="80" />
+      <h1 class="name">{{ profile.name }}</h1>
+      <p v-if="profile.bio" class="bio">{{ profile.bio }}</p>
+      <div v-if="profile.tags.length" class="tag-row">
+        <span v-for="t in profile.tags" :key="t" class="tag">{{ t }}</span>
+      </div>
+      <div v-if="profile.website || profile.github || profile.x" class="link-row">
+        <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener" class="link-chip">🌐 Website</a>
+        <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
+        <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
+      </div>
     </header>
 
-    <main class="request">
-      <p v-if="amountText" class="amount">{{ amountText }}</p>
-      <p v-if="payment.message" class="message">{{ payment.message }}</p>
-
+    <main class="pay-card">
+      <p class="pay-label">Send NIM to {{ profile.name }}</p>
       <QrCode :text="nimiqUri" :size="220" />
       <p class="scan-hint">Scan with any Nimiq wallet, or use a wallet app below</p>
 
       <button type="button" class="address" @click="copyAddress">
-        <span class="address-text">{{ payment.recipient }}</span>
+        <span class="address-text">{{ profile.address }}</span>
         <span class="copy-label">{{ copied ? 'Copied ✓' : 'Copy address' }}</span>
       </button>
     </main>
 
-    <section class="actions" aria-label="Pay with a wallet">
+    <section class="actions" aria-label="Pay or save contact">
       <a :href="walletLink" class="wallet-btn" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
       <a :href="payDeepLink" class="pay-btn">Pay with Nimiq Pay</a>
+      <a :href="addInPayLink" class="add-btn">Add to NimConnect</a>
       <p class="store-label">Don't have Nimiq Pay yet?</p>
       <div class="stores">
         <a :href="NIMPAY_PLAY_STORE_URL" class="store-btn" target="_blank" rel="noopener noreferrer">Google Play</a>
@@ -71,7 +69,7 @@ async function copyAddress() {
     </section>
 
     <footer class="brand">
-      <p>Sent with <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+      <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
       <button
         v-if="allowBrowserContinue !== false"
         type="button"
@@ -101,9 +99,30 @@ async function copyAddress() {
   gap: 10px;
   text-align: center;
 }
-.asking { margin: 0; font-size: 16px; color: var(--text-2); }
-.asking strong { color: var(--text); font-weight: 800; }
-.request {
+.name { margin: 0; font-size: 26px; font-weight: 800; color: var(--text); }
+.bio { margin: 0; font-size: 15px; line-height: 1.45; color: var(--text-2); max-width: 360px; }
+.tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.tag {
+  padding: 4px 10px;
+  border-radius: var(--nimiq-radius-pill);
+  font-size: 12px;
+  font-weight: 700;
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+}
+.link-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.link-chip {
+  padding: 6px 12px;
+  border-radius: var(--nimiq-radius-small);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  color: var(--text);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.pay-card {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -114,8 +133,7 @@ async function copyAddress() {
   border: 1px solid var(--border);
   box-shadow: var(--shadow);
 }
-.amount { margin: 0; font-size: 34px; font-weight: 800; color: var(--text); }
-.message { margin: 0; font-size: 15px; color: var(--text-2); text-align: center; }
+.pay-label { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-2); }
 .scan-hint { margin: 0; font-size: 13px; color: var(--text-2); }
 .address {
   display: flex;
@@ -162,6 +180,20 @@ async function copyAddress() {
   color: var(--nimiq-white);
   background: var(--nimiq-gold-bg);
   box-shadow: var(--nimiq-shadow);
+}
+.add-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 24px;
+  border-radius: var(--nimiq-radius-pill);
+  font-size: 15px;
+  font-weight: 800;
+  text-decoration: none;
+  color: var(--nq-gold-dark);
+  background: var(--card);
+  border: 1px solid var(--border);
 }
 .store-label { margin: 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--text-2); }
 .stores { display: flex; gap: 10px; }

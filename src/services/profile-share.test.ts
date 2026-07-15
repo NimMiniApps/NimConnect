@@ -3,8 +3,10 @@ import type { Profile } from '../types/profile'
 import {
   decodeSharedProfile,
   encodeSharedProfile,
+  makeNimiqPayProfileLink,
   makeProfileShareLink,
   parseProfileShare,
+  parsePublicAddRoute,
   profileToSharePayload,
   sharedProfileToNewProfile,
 } from './profile-share'
@@ -63,6 +65,21 @@ describe('profile-share', () => {
     expect(shared?.name).toBe('Alice')
     expect(shared?.address).toBe(A)
     expect(shared?.tags).toEqual(['coffee', 'meetup'])
+  })
+
+  it('creates Nimiq Pay deep links for the public profile page', () => {
+    const payload = profileToSharePayload(sampleProfile)
+    const link = makeNimiqPayProfileLink(payload)
+    expect(link).toMatch(/^https:\/\/nimpay\.app\/miniapps\/open\//)
+    expect(link).toContain('#/add?p=')
+    expect(parseProfileShare(link)?.name).toBe('Alice')
+  })
+
+  it('parses address-only public add links', () => {
+    const shared = parsePublicAddRoute({ address: A })
+    expect(shared?.address).toBe(A)
+    expect(shared?.name).toContain('…')
+    expect(shared?.tags).toEqual([])
   })
 
   it('rejects tampered payloads', () => {

@@ -6,6 +6,13 @@ import {
   buildProfileDeleteMessage,
   profilePayloadHash,
   profileToPublicPayload,
+  shareFromPublished,
+  shareSelectionForProfile,
+  publicProfileNeedsSync,
+  claimOwnerAddress,
+  hasAnyPublicShare,
+  defaultShareSelection,
+  type HandleClaim,
 } from './handles'
 import type { Profile } from '../types/profile'
 
@@ -15,6 +22,20 @@ const profile: Profile = {
   tags: ['friend', 'dev'], favorite: false, createdAt: 1, updatedAt: 1,
   bio: 'Nimiq builder', website: 'https://chuck.example', github: 'chuck', x: 'chuck_x',
 }
+
+describe('claimOwnerAddress', () => {
+  it('uses the owner wallet when the claim sender is an HTLC contract', () => {
+    const claim: HandleClaim = {
+      handle: 'androiddev',
+      address: 'NQ03 064C F89U 6LT7 6PDT R1PJ XJ99 368N 1LKH',
+      owner_address: 'NQ23 AS8D J6RE V397 3QXH 2UEG T6V1 L11M 2579',
+      tx_hash: 'abc',
+      block_height: 1,
+      tx_index: 0,
+    }
+    expect(claimOwnerAddress(claim)).toBe('NQ23 AS8D J6RE V397 3QXH 2UEG T6V1 L11M 2579')
+  })
+})
 
 describe('handles', () => {
   it('validates handles like the backend', () => {
@@ -47,9 +68,38 @@ describe('handles', () => {
   })
 
   it('hashes payloads as sha256 hex (matches Go sha256Hex)', () => {
-    // echo -n 'hello' | sha256sum
     expect(profilePayloadHash('hello'))
       .toBe('2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824')
+  })
+
+  it('derives share toggles from a published profile', () => {
+    expect(shareFromPublished(null)).toEqual(defaultShareSelection())
+    expect(shareFromPublished({ display_name: 'Chuck', bio: 'hi' })).toMatchObject({
+      name: true, bio: true, website: false,
+    })
+  })
+
+  it('opts in filled profile fields by default', () => {
+    expect(shareSelectionForProfile(profile)).toEqual({
+      name: true, bio: true, website: true, github: true, x: true, tags: true,
+    })
+  })
+
+  it('detects when the server copy is stale', () => {
+    const share = shareSelectionForProfile(profile)
+    expect(publicProfileNeedsSync(profile, share, null)).toBe(true)
+    expect(publicProfileNeedsSync(profile, share, { display_name: 'Chuck' })).toBe(true)
+    expect(publicProfileNeedsSync(profile, share, {
+      display_name: 'Chuck', bio: 'Nimiq builder', website: 'https://chuck.example',
+      github: 'chuck', x: 'chuck_x', tags: ['friend', 'dev'],
+    })).toBe(false)
+  })
+
+  it('detects when nothing is public', () => {
+    expect(hasAnyPublicShare(defaultShareSelection())).toBe(true)
+    expect(hasAnyPublicShare({
+      name: false, bio: false, website: false, github: false, x: false, tags: false,
+    })).toBe(false)
   })
 
   it('only includes opted-in fields — never notes', () => {

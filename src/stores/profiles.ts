@@ -139,6 +139,23 @@ export const useProfilesStore = defineStore('profiles', () => {
     return ensureSelfLock
   }
 
+  /** Point the self profile at a new Nimiq Pay account (after account switch or app reset). */
+  async function switchSelf(address: string): Promise<Profile> {
+    const normalized = normalize(address)
+    const current = profiles.value.find(p => p.isSelf)
+    if (current?.address === normalized) return current
+
+    if (current) {
+      await update(current.id, { isSelf: false })
+    }
+    const match = profiles.value.find(p => p.address === normalized)
+    if (match) {
+      await update(match.id, { isSelf: true })
+      return getById(match.id)!
+    }
+    return ensureSelfOnce(normalized)
+  }
+
   async function ensureSelfOnce(address: string): Promise<Profile> {
     const existing = profiles.value.find(p => p.isSelf)
     if (existing) return existing
@@ -326,7 +343,7 @@ export const useProfilesStore = defineStore('profiles', () => {
   return {
     profiles, loaded, self, contacts,
     sortedContacts, favorites, recent, allTags, search,
-    load, reload, getById, getByAddress, add, update, remove, toggleFavorite, touchInteraction, ensureSelf,
+    load, reload, getById, getByAddress, add, update, remove, toggleFavorite, touchInteraction, ensureSelf, switchSelf,
     exportDocument, importDocument, resetAll,
   }
 })

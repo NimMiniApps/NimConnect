@@ -5,6 +5,17 @@ import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { parsePaymentRequest } from '../services/links'
 import { decodeSharedProfile, parseProfileShare, type SharedProfile } from '../services/profile-share'
 import { useProfilesStore } from '../stores/profiles'
+import {
+  handlesEnabled,
+  findMyHandle,
+  fetchPublicProfile,
+  syncPublicProfile,
+  defaultShareSelection,
+  shareFromPublished,
+  shareSelectionForProfile,
+  type ShareSelection,
+} from '../services/handles'
+import { myAddresses, insideNimiqPay } from '../services/nimiq'
 import Identicon from '../components/Identicon.vue'
 import QrScanner from '../components/QrScanner.vue'
 import TagChips from '../components/TagChips.vue'
@@ -16,6 +27,7 @@ const store = useProfilesStore()
 
 const editId = route.params.id as string | undefined
 const isSelf = ref(false)
+const hasHandle = ref(false)
 const name = ref('')
 const address = ref('')
 const notes = ref('')
@@ -26,8 +38,13 @@ const x = ref('')
 const tags = ref<string[]>([])
 const favorite = ref(false)
 const type = ref<ProfileType>('person')
+const publicShare = ref<ShareSelection>(defaultShareSelection())
 const scanning = ref(false)
 const error = ref('')
+const publishNote = ref<string | null>(null)
+
+const showPublicToggles = computed(() => isSelf.value && handlesEnabled() && hasHandle.value)
+const canPublish = computed(() => insideNimiqPay.value)
 
 function applySharedProfile(shared: SharedProfile) {
   address.value = shared.address
@@ -59,6 +76,23 @@ function applyShareFromQuery() {
   applyAddressFromQuery()
 }
 
+async function loadPublicSharePrefs(profileId: string) {
+  if (!handlesEnabled()) return
+  const p = store.getById(profileId)
+  if (!p?.isSelf) return
+  const wallets = myAddresses(p.address)
+  hasHandle.value = !!(await findMyHandle(wallets))
+  if (!hasHandle.value) return
+  if (p.publicShare) {
+    publicShare.value = { ...p.publicShare }
+    return
+  }
+  const remote = await fetchPublicProfile(p.address)
+  publicShare.value = remote?.profile
+    ? shareFromPublished(remote.profile)
+    : shareSelectionForProfile(p)
+}
+
 onMounted(async () => {
   await store.load()
   if (editId) {
@@ -75,6 +109,7 @@ onMounted(async () => {
     favorite.value = p.favorite
     type.value = p.type
     isSelf.value = p.isSelf
+    if (p.isSelf) await loadPublicSharePrefs(editId)
   } else {
     applyShareFromQuery()
   }
@@ -106,6 +141,7 @@ function onScanError(message: string) {
 
 async function save() {
   error.value = ''
+  publishNote.value = null
   try {
     const identity = {
       bio: bio.value.trim() || undefined,
@@ -113,12 +149,27 @@ async function save() {
       github: github.value.trim() || undefined,
       x: x.value.trim().replace(/^@/, '') || undefined,
     }
+    const sharePatch = showPublicToggles.value ? { publicShare: { ...publicShare.value } } : {}
     if (editId) {
       await store.update(editId, {
         name: name.value.trim(), address: address.value, notes: notes.value,
         tags: tags.value, favorite: favorite.value, type: type.value,
         ...identity,
+        ...sharePatch,
       })
+      if (showPublicToggles.value && canPublish.value) {
+        const updated = store.getById(editId)!
+        try {
+          const result = await syncPublicProfile(updated, publicShare.value, myAddresses(updated.address))
+          if (result === 'published') publishNote.value = 'Public page updated'
+          if (result === 'unpublished') publishNote.value = 'Public page cleared'
+        } catch (e) {
+          error.value = `Saved locally, but public page sync failed: ${(e as Error).message}`
+          return
+        }
+      } else if (showPublicToggles.value && !canPublish.value) {
+        publishNote.value = 'Saved — open in Nimiq Pay to update your public page'
+      }
       router.back()
     } else {
       const p = await store.add({
@@ -148,10 +199,18 @@ async function save() {
         <Identicon :address="addressValid ? address : ''" :size="72" />
       </div>
 
-      <label class="field">
-        <span>Name</span>
+      <p v-if="showPublicToggles" class="public-intro">
+        Checked fields appear on your <strong>@handle</strong> public page. Notes always stay private.
+      </p>
+
+      <div class="field">
+        <span class="field-label">Name</span>
         <input v-model="name" required placeholder="Alice" />
-      </label>
+        <label v-if="showPublicToggles" class="public-toggle">
+          <input v-model="publicShare.name" type="checkbox" />
+          <span>Show on public page</span>
+        </label>
+      </div>
 
       <label class="field">
         <span>Nimiq address</span>
@@ -177,32 +236,53 @@ async function save() {
       <label class="field">
         <span>Notes</span>
         <textarea v-model="notes" rows="3" placeholder="Met at Nimiq meetup…" />
+        <span v-if="isSelf" class="locked-hint">Private — never shown on your public page.</span>
       </label>
 
-      <label class="field">
-        <span>Bio</span>
+      <div class="field">
+        <span class="field-label">Bio</span>
         <textarea v-model="bio" rows="2" :placeholder="isSelf ? 'A line about you…' : 'A line about them…'" />
-      </label>
+        <label v-if="showPublicToggles" class="public-toggle">
+          <input v-model="publicShare.bio" type="checkbox" :disabled="!bio.trim()" />
+          <span>Show on public page</span>
+        </label>
+      </div>
 
-      <label class="field">
-        <span>Website</span>
+      <div class="field">
+        <span class="field-label">Website</span>
         <input v-model="website" type="url" inputmode="url" placeholder="https://…" />
-      </label>
+        <label v-if="showPublicToggles" class="public-toggle">
+          <input v-model="publicShare.website" type="checkbox" :disabled="!website.trim()" />
+          <span>Show on public page</span>
+        </label>
+      </div>
 
       <div class="field-pair">
-        <label class="field">
-          <span>GitHub</span>
+        <div class="field">
+          <span class="field-label">GitHub</span>
           <input v-model="github" placeholder="username" autocapitalize="none" />
-        </label>
-        <label class="field">
-          <span>X</span>
+          <label v-if="showPublicToggles" class="public-toggle">
+            <input v-model="publicShare.github" type="checkbox" :disabled="!github.trim()" />
+            <span>Show on public page</span>
+          </label>
+        </div>
+        <div class="field">
+          <span class="field-label">X</span>
           <input v-model="x" placeholder="handle" autocapitalize="none" />
-        </label>
+          <label v-if="showPublicToggles" class="public-toggle">
+            <input v-model="publicShare.x" type="checkbox" :disabled="!x.trim()" />
+            <span>Show on public page</span>
+          </label>
+        </div>
       </div>
 
       <div class="field">
         <span>Tags</span>
         <TagChips v-model="tags" :suggestions="store.allTags" />
+        <label v-if="showPublicToggles" class="public-toggle">
+          <input v-model="publicShare.tags" type="checkbox" :disabled="!tags.length" />
+          <span>Show on public page</span>
+        </label>
       </div>
 
       <label class="favorite-row">
@@ -211,6 +291,7 @@ async function save() {
       </label>
 
       <p v-if="error" class="error">{{ error }}</p>
+      <p v-if="publishNote" class="note">{{ publishNote }}</p>
 
       <button type="submit" class="primary" :disabled="!name.trim() || !addressValid">
         {{ editId ? 'Save changes' : 'Add contact' }}
@@ -226,13 +307,23 @@ async function save() {
 .back { background: none; border: none; color: var(--nq-light-blue); font-size: 16px; padding: 8px; cursor: pointer; }
 .form { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
 .avatar-preview { display: flex; justify-content: center; }
+.public-intro {
+  margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.45;
+  color: var(--text-2); background: var(--bg); border: 1px solid var(--border);
+}
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field > span { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.field > span, .field-label { font-size: 13px; font-weight: 700; color: var(--text-2); }
 .field input, .field select, .field textarea {
   font: inherit; padding: 10px 12px; min-height: 44px;
   border: 1px solid var(--border); border-radius: var(--nimiq-radius-input);
   background: var(--bg); color: var(--text);
 }
+.public-toggle {
+  display: flex; align-items: center; gap: 8px; min-height: 32px;
+  font-size: 13px; font-weight: 600; color: var(--text-2); cursor: pointer;
+}
+.public-toggle input { width: 18px; height: 18px; accent-color: var(--nq-gold); margin: 0; min-height: 0; }
+.public-toggle input:disabled { opacity: 0.4; }
 .address-row { display: flex; gap: 8px; }
 .locked-hint { font-size: 12px; font-weight: 400; color: var(--text-2); }
 .field-pair { display: flex; gap: 12px; }
@@ -245,6 +336,7 @@ async function save() {
 }
 .favorite-row { display: flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; }
 .error { color: var(--nq-red); font-size: 14px; margin: 0; }
+.note { color: var(--nq-green); font-size: 13px; font-weight: 600; margin: 0; }
 .primary {
   height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   font-weight: 700; font-size: 16px; color: var(--nimiq-white);

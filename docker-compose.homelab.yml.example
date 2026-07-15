@@ -32,8 +32,8 @@ services:
       # stats.json lives on the backups volume so it survives redeploys
       - STATS_FILE=/data/backups/stats.json
       - ADMIN_TOKEN=<pick-a-long-random-token>  # enables GET /api/stats
-      # On-chain @handle registry (optional — unset disables the feature)
-      # - REGISTRY_ADDRESS=NQxx your registry address
+      # On-chain @handle registry (defaults to NimFeed catalog; set off to disable)
+      # - REGISTRY_ADDRESS=off
       # - PUBLIC_APP_ORIGIN=https://nimconnect.nimiqminiapps.com
     volumes:
       - nimconnect_backups:/data/backups

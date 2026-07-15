@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { fetchHistory, fetchIncomingPayments, discoverPairedAddresses, normalizeSwapAmounts, clearHistoryCache, type IncomingPayment } from './history'
+import { incomingAddress } from './prefs'
 
 const ME = 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000'
 const OTHER = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
 const THIRD = 'NQ57 M1KM 4PMM 0SL5 T2TF 2A1Q 3P8E EU4Y JMSN'
+const INCOMING = 'NQ23 AS8D J6RE V397 3QXH 2UEG T6V1 L11M 2579'
 
 function rpcResult(txs: unknown[]) {
   return { ok: true, json: async () => ({ jsonrpc: '2.0', id: 1, result: { data: txs } }) }
@@ -13,7 +15,10 @@ function tx(from: string, to: string, value: number, timestamp: number, hash = '
   return { hash, from, to, value, timestamp, ...(blockNumber ? { blockNumber } : {}) }
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  incomingAddress.value = ''
+})
 
 describe('fetchHistory', () => {
   it('filters to txs between the two addresses and maps direction', async () => {
@@ -126,18 +131,18 @@ describe('fetchHistory', () => {
     ])
   })
 
-  it('auto-discovers the incoming account when only the outgoing address is known', async () => {
+  it('includes the manually confirmed incoming address', async () => {
     const pages: Record<string, unknown[]> = {
       [ME.replace(/\s+/g, '')]: [
-        tx(ME, THIRD, 1000, 1000, 'sweep'),
+        tx(ME, INCOMING, 1000, 1000, 'sweep'),
         tx(ME, OTHER, 100000, 2000, 'from-my-outgoing'),
       ],
-      [THIRD.replace(/\s+/g, '')]: [
-        tx(ME, THIRD, 1000, 1000, 'sweep'),
-        tx(OTHER, THIRD, 50000, 3000, 'to-my-incoming'),
+      [INCOMING.replace(/\s+/g, '')]: [
+        tx(ME, INCOMING, 1000, 1000, 'sweep'),
+        tx(OTHER, INCOMING, 50000, 3000, 'to-my-incoming'),
       ],
       [OTHER.replace(/\s+/g, '')]: [
-        tx(OTHER, THIRD, 50000, 3000, 'to-my-incoming'),
+        tx(OTHER, INCOMING, 50000, 3000, 'to-my-incoming'),
         tx(ME, OTHER, 100000, 2000, 'from-my-outgoing'),
       ],
     }
@@ -146,6 +151,7 @@ describe('fetchHistory', () => {
       const addr = String(body.params[0]).replace(/\s+/g, '').toUpperCase()
       return Promise.resolve(rpcResult(pages[addr] ?? []))
     }))
+    incomingAddress.value = INCOMING
 
     const items = await fetchHistory(ME, OTHER)
 

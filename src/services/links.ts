@@ -5,7 +5,7 @@ import {
   NimiqRequestLinkType,
   parseRequestLink,
 } from '@nimiq/utils/request-link-encoding'
-import { NIMPAY_OPEN_URL } from '../config/host-app'
+import { NIMPAY_OPEN_URL, NIMIQ_WALLET_URL } from '../config/host-app'
 import { parseProfileShare, type SharedProfile } from './profile-share'
 
 export interface ParsedPaymentRequest {
@@ -24,6 +24,25 @@ export function appOrigin(): string {
   }
   const domain = import.meta.env.VITE_NIMPAY_MINIAPP_DOMAIN ?? 'nimconnect.nimiqminiapps.com'
   return `https://${domain}`
+}
+
+/**
+ * Public @handle page anyone can open (pay QR, optional published bio).
+ * Production uses the pretty `/@handle` URL; dev uses `/#/u/handle` (Vite reserves `/@`).
+ */
+export function makePublicHandleLink(handle: string, claimTx?: string): string {
+  const h = handle.trim().toLowerCase()
+  let url: string
+  if (import.meta.env.DEV) {
+    url = `${appOrigin()}/#/u/${encodeURIComponent(h)}`
+  } else {
+    const domain = import.meta.env.VITE_NIMPAY_MINIAPP_DOMAIN ?? 'nimconnect.nimiqminiapps.com'
+    url = `https://${domain}/@${encodeURIComponent(h)}`
+  }
+  const tx = claimTx?.trim()
+  if (!tx) return url
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}tx=${encodeURIComponent(tx)}`
 }
 
 /** HTTPS deep link that opens NimConnect on the add-contact form. */
@@ -185,6 +204,16 @@ export function makeNimiqPayDeepLink(address: string, amountNim?: number, messag
   return `${NIMPAY_OPEN_URL}#/pay?r=${encodeURIComponent(nimiq)}`
 }
 
+/** HTTPS safe link for wallet.nimiq.com — desktop and browser wallet users. */
+export function makeWalletRequestLink(address: string, amountNim?: number, message?: string): string {
+  return createNimiqRequestLink(address, {
+    type: NimiqRequestLinkType.SAFE,
+    basePath: NIMIQ_WALLET_URL,
+    ...(amountNim ? { amount: nimToLunas(amountNim) } : {}),
+    ...(message?.trim() ? { message: message.trim() } : {}),
+  })
+}
+
 export function shortAddress(address: string): string {
   const parts = address.split(' ')
   if (parts.length < 9) return address
@@ -193,4 +222,8 @@ export function shortAddress(address: string): string {
 
 export function transactionExplorerUrl(hash: string): string {
   return `https://nimiqscan.com/transaction/${encodeURIComponent(hash)}`
+}
+
+export function addressExplorerUrl(address: string): string {
+  return `https://nimiqscan.com/account/${encodeURIComponent(address.trim())}`
 }

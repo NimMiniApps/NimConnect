@@ -76,4 +76,15 @@ describe('profiles store', () => {
     expect(self1.isSelf).toBe(true)
     expect(store.profiles.filter(p => p.isSelf)).toHaveLength(1)
   })
+
+  it('switchSelf moves the self flag to a new wallet address', async () => {
+    const store = useProfilesStore()
+    await store.load()
+    const oldSelf = await store.ensureSelf(ADDR_A)
+    const newSelf = await store.switchSelf(ADDR_B)
+    expect(newSelf.address).toBe(ADDR_B)
+    expect(newSelf.isSelf).toBe(true)
+    expect(store.getById(oldSelf.id)!.isSelf).toBe(false)
+    expect(store.profiles.filter(p => p.isSelf)).toHaveLength(1)
+  })
 })

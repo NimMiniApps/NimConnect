@@ -25,12 +25,12 @@ func fakeRPC(t *testing.T, results map[string]string) *httptest.Server {
 }
 
 func TestGetTransactionsByAddressUnwrapsDataEnvelope(t *testing.T) {
-	// PoS RPC wraps results as {"data": ...}; field names vary by node version.
+	// PoS RPC wraps results as {"data": ..., "metadata": ...}; field names vary.
 	srv := fakeRPC(t, map[string]string{
 		"getTransactionsByAddress": `{"data":[
 			{"hash":"aa","from":"NQ11","to":"NQ22","recipientData":"0102","blockNumber":7,"transactionIndex":1},
 			{"hash":"bb","sender":"NQ33","recipient":"NQ44","data":"0304","blockNumber":8,"transactionIndex":0}
-		]}`,
+		],"metadata":{"blockNumber":8}}`,
 	})
 	defer srv.Close()
 
@@ -52,7 +52,7 @@ func TestGetTransactionsByAddressUnwrapsDataEnvelope(t *testing.T) {
 
 func TestGetTransactionByHash(t *testing.T) {
 	srv := fakeRPC(t, map[string]string{
-		"getTransactionByHash": `{"hash":"cc","sender":"NQ55","recipient":"NQ66","data":"","blockNumber":9,"transactionIndex":2}`,
+		"getTransactionByHash": `{"data":{"hash":"cc","sender":"NQ55","recipient":"NQ66","data":"","blockNumber":9,"transactionIndex":2},"metadata":null}`,
 	})
 	defer srv.Close()
 

@@ -142,17 +142,12 @@ export async function fetchTransactionsByAddress(address: string, max = 200): Pr
   return body.result?.data ?? body.result ?? []
 }
 
-/** Include manual incoming + auto-discovered Nimiq Pay paired account when only one address is known. */
+/** Include the manually confirmed Nimiq Pay top-up address when configured. */
 export async function expandMyAddresses(addresses: string[]): Promise<string[]> {
   const set = new Set(addresses.filter(Boolean))
   const manual = incomingAddress.value.trim()
   if (manual && ValidationUtils.isValidAddress(manual)) {
     set.add(ValidationUtils.normalizeAddress(manual))
-  }
-  if (set.size < 2) {
-    try {
-      for (const addr of await discoverPairedAddresses([...set])) set.add(addr)
-    } catch { /* discovery is best-effort */ }
   }
   return [...set]
 }

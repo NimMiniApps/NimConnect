@@ -3,13 +3,16 @@ import {
   makeRequestLink,
   makePaymentShareLink,
   makeNimiqPayDeepLink,
+  makeWalletRequestLink,
   makeAppAddLink,
+  makePublicHandleLink,
   parsePaymentRequest,
   parsePaymentShareLink,
   classifyScan,
   shortAddress,
   nimToLunas,
   transactionExplorerUrl,
+  addressExplorerUrl,
 } from './links'
 import { makeProfileShareLink } from './profile-share'
 import type { Profile } from '../types/profile'
@@ -26,12 +29,33 @@ describe('links', () => {
     expect(parsed?.message).toBe('Split: dinner')
   })
 
+  it('creates public @handle profile URLs', () => {
+    const link = makePublicHandleLink('chuck')
+    expect(link).toMatch(/\/@chuck$|#\/u\/chuck$/)
+    expect(makePublicHandleLink('chuck', 'abc123')).toContain('tx=abc123')
+  })
+
+  it('creates NimiqScan explorer URLs', () => {
+    expect(transactionExplorerUrl('7d0928')).toBe('https://nimiqscan.com/transaction/7d0928')
+    expect(addressExplorerUrl('NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y'))
+      .toBe('https://nimiqscan.com/account/NQ19%20LLHP%20G0ML%2037RM%205JJD%20RME1%20GLFY%2075PQ%20402Y')
+  })
+
   it('creates Nimiq Pay deep links for the public pay page', () => {
     const link = makeNimiqPayDeepLink(A, 5, 'Split: dinner')
     expect(link).toMatch(/^https:\/\/nimpay\.app\/miniapps\/open\//)
     const parsed = parsePaymentRequest(link)
     expect(parsed?.recipient).toBe(A)
     expect(parsed?.amountNim).toBe(5)
+  })
+
+  it('creates wallet.nimiq.com safe links for desktop wallet users', () => {
+    const link = makeWalletRequestLink(A, 5, 'Split: dinner')
+    expect(link).toMatch(/^https:\/\/wallet\.nimiq\.com\/#_request\//)
+    const parsed = parsePaymentRequest(link)
+    expect(parsed?.recipient).toBe(A)
+    expect(parsed?.amountNim).toBe(5)
+    expect(parsed?.message).toBe('Split: dinner')
   })
 
   it('parses payment share links from pasted URLs', () => {

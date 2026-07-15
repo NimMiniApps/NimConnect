@@ -9,6 +9,9 @@ export const NIMPAY_PLAY_STORE_URL =
 export const NIMPAY_APP_STORE_URL =
   'https://apps.apple.com/app/nimiq-pay/id6471844738'
 
+/** Browser / desktop Nimiq Wallet (safe payment-request links). */
+export const NIMIQ_WALLET_URL = 'https://wallet.nimiq.com'
+
 export const BROWSER_MODE_KEY = 'nimconnect:browser-mode'
 
 export function hasBrowserModeOptIn(): boolean {

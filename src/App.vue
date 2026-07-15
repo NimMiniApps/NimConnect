@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { insideNimiqPay, walletStatus, detectHostApp } from './services/nimiq'
-import { bootstrapWallet } from './services/wallet-bootstrap'
+import { bootstrapWallet, reconcileWalletSession } from './services/wallet-bootstrap'
 import { useProfilesStore } from './stores/profiles'
 import { useInboxStore } from './stores/inbox'
 import { useVisiblePolling } from './composables/useVisiblePolling'
@@ -130,8 +130,23 @@ async function onRestoreComplete() {
   }
 }
 
+async function onWalletAccountChange() {
+  const switched = await reconcileWalletSession()
+  if (!switched) return
+  await profilesStore.load()
+  if (profilesStore.self) inboxStore.selfAddress = profilesStore.self.address
+  await inboxStore.refresh(profilesStore.self?.address)
+  dataVersion.value++
+}
+
+function onWalletVisibility() {
+  if (document.visibilityState !== 'visible' || !insideNimiqPay.value) return
+  void onWalletAccountChange()
+}
+
 onMounted(async () => {
   desktopBrowser.value = isDesktopBrowser()
+  document.addEventListener('visibilitychange', onWalletVisibility)
   const inside = await detectHostApp()
   if (inside) {
     browserMode.value = true
@@ -140,6 +155,10 @@ onMounted(async () => {
     browserMode.value = true
     await initApp()
   }
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onWalletVisibility)
 })
 
 watch(browserMode, enabled => {
