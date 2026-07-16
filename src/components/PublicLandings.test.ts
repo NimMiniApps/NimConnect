@@ -1,4 +1,5 @@
 import { flushPromises, mount } from '@vue/test-utils'
+import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OpenInNimiqPayLanding from './OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './PublicPayLanding.vue'
@@ -102,8 +103,20 @@ describe('public landings', () => {
     await wrapper.get('[data-public-lookup] input').setValue(address)
     await wrapper.get('[data-public-lookup]').trigger('submit')
     await flushPromises()
-    expect(mocks.handleForAddress).toHaveBeenCalled()
+    expect(mocks.handleForAddress).toHaveBeenCalledWith(ValidationUtils.normalizeAddress(address))
     expect(mocks.push).toHaveBeenCalledWith('/u/ada')
+  })
+
+  it('shows an empty-state message when no public handle exists for an address', async () => {
+    mocks.handleForAddress.mockResolvedValue(null)
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    await wrapper.get('[data-public-lookup] input').setValue(address)
+    await wrapper.get('[data-public-lookup]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('No public @handle found')
+    expect(mocks.push).not.toHaveBeenCalled()
   })
 
   it('shows an empty-state message when no public handle exists', async () => {
@@ -128,6 +141,18 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('Enter an @handle or Nimiq address')
     expect(mocks.resolveHandle).not.toHaveBeenCalled()
     expect(mocks.handleForAddress).not.toHaveBeenCalled()
+  })
+
+  it('shows a failure message when lookup throws', async () => {
+    mocks.resolveHandle.mockRejectedValue(new Error('network'))
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    await wrapper.get('[data-public-lookup] input').setValue('@ada')
+    await wrapper.get('[data-public-lookup]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Lookup failed — try again')
+    expect(mocks.push).not.toHaveBeenCalled()
   })
 
   it('uses a supplied Nimiq Pay deep link for a browser handoff', () => {
