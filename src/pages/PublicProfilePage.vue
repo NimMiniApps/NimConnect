@@ -121,7 +121,9 @@ async function refresh() {
   <PublicSurface context="Public profile" :actions-enabled="state !== 'loading'">
     <template v-if="state === 'ready' && claim" #identity>
       <header class="identity">
-        <Identicon :address="payAddress" :size="80" />
+        <div class="identity__avatar">
+          <Identicon :address="payAddress" :size="96" />
+        </div>
         <h1 class="identity__title">{{ headline }}</h1>
         <p v-if="hasDistinctDisplayName" class="identity__handle">{{ handleLabel }}</p>
         <p v-if="profile?.bio" class="identity__bio">{{ profile.bio }}</p>
@@ -189,7 +191,7 @@ async function refresh() {
 
       <template v-else-if="claim">
         <h2>Send NIM</h2>
-        <QrCode :text="payUri" :size="200" />
+        <QrCode :text="payUri" :size="260" />
         <p class="scan-hint">Scan with any Nimiq wallet</p>
         <PublicAddressCopy :address="payAddress" />
         <a class="verified" :href="transactionExplorerUrl(claim.tx_hash)" target="_blank" rel="noopener">
@@ -199,12 +201,12 @@ async function refresh() {
     </template>
 
     <template #primary>
-      <a v-if="state === 'ready' && claim" :href="makeNimiqPayDeepLink(payAddress)">Send in Nimiq Pay</a>
-      <button v-else type="button" @click="refresh">Refresh</button>
+      <a v-if="state === 'ready' && claim" class="nq-button" :href="makeNimiqPayDeepLink(payAddress)">Send in Nimiq Pay</a>
+      <button v-else type="button" class="nq-button" @click="refresh">Refresh</button>
     </template>
 
     <template #secondary>
-      <a v-if="state === 'ready' && claim" :href="makeWalletRequestLink(payAddress)" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a v-if="state === 'ready' && claim" class="nq-button light-blue" :href="makeWalletRequestLink(payAddress)" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
       <a v-if="state === 'ready' && claim" :href="makeNimiqPayAddLink(payAddress)" class="public-action--outline">Add to NimConnect</a>
     </template>
 
@@ -216,12 +218,38 @@ async function refresh() {
 
 <style scoped>
 .identity { display: grid; gap: 0.5rem; justify-items: center; }
-.identity__title, .status__title { color: var(--text); font-size: 1.625rem; margin: 0; }
+.identity__avatar { display: grid; place-items: center; position: relative; }
+.identity__avatar::before {
+  background: var(--nimiq-gold-bg);
+  border-radius: 50%;
+  content: '';
+  filter: blur(1.5rem);
+  height: 7rem;
+  inset: 50% auto auto 50%;
+  opacity: 0.35;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 7rem;
+  z-index: -1;
+}
+.identity__title, .status__title { color: var(--text); font-size: 1.875rem; margin: 0; }
 .identity__handle { color: var(--nq-gold-dark); font-weight: 800; margin: 0; }
 .identity__bio, .status, .status__lead { color: var(--text-2); line-height: 1.5; margin: 0; max-width: 23.75rem; }
 .identity__links, .identity__tags { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; list-style: none; margin: 0; padding: 0; }
 .identity__links a, .identity__tags li { border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); color: var(--text-2); font-size: 0.8125rem; font-weight: 700; padding: 0.375rem 0.625rem; text-decoration: none; }
 .status__link { color: var(--nq-light-blue); font-size: 0.875rem; font-weight: 700; text-decoration: none; }
 .scan-hint { color: var(--text-2); font-size: 0.8125rem; }
-.verified { color: var(--nq-green); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
+.verified {
+  align-items: center;
+  background: color-mix(in srgb, var(--nimiq-green) 16%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--text);
+  display: inline-flex;
+  font-size: 0.75rem;
+  font-weight: 700;
+  gap: 0.25rem;
+  padding: 0.375rem 0.75rem;
+  text-decoration: none;
+}
 </style>
