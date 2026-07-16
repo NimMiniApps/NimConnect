@@ -122,10 +122,11 @@ async function refresh() {
     <template v-if="state === 'ready' && claim" #identity>
       <header class="identity">
         <div class="identity__avatar">
-          <Identicon :address="payAddress" :size="96" />
+          <Identicon :address="payAddress" :size="80" />
         </div>
-        <h1 class="identity__title">{{ headline }}</h1>
+        <h1 class="identity__title" :class="{ 'identity__title--handle': !hasDistinctDisplayName }">{{ headline }}</h1>
         <p v-if="hasDistinctDisplayName" class="identity__handle">{{ handleLabel }}</p>
+        <p class="identity__purpose">Receive NIM payments using your permanent {{ handleLabel }}.</p>
         <p v-if="profile?.bio" class="identity__bio">{{ profile.bio }}</p>
         <ul v-if="safeWebsite || profile?.github || profile?.x" class="identity__links">
           <li v-if="safeWebsite">
@@ -190,8 +191,8 @@ async function refresh() {
       </template>
 
       <template v-else-if="claim">
-        <h2>Send NIM</h2>
-        <QrCode :text="payUri" :size="260" />
+        <h2 class="panel__label">Pay {{ handleLabel }}</h2>
+        <QrCode :text="payUri" :size="180" />
         <p class="scan-hint">Scan with any Nimiq wallet</p>
         <PublicAddressCopy :address="payAddress" />
         <a class="verified" :href="transactionExplorerUrl(claim.tx_hash)" target="_blank" rel="noopener">
@@ -211,35 +212,73 @@ async function refresh() {
     </template>
 
     <template #footer>
-      <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+      <p>Build your own public profile with <strong>NimConnect</strong></p>
     </template>
   </PublicSurface>
 </template>
 
 <style scoped>
-.identity { display: grid; gap: 0.5rem; justify-items: center; }
+.identity { display: grid; gap: 0.625rem; justify-items: center; }
 .identity__avatar { display: grid; place-items: center; position: relative; }
 .identity__avatar::before {
   background: var(--nimiq-gold-bg);
   border-radius: 50%;
   content: '';
-  filter: blur(1.5rem);
-  height: 7rem;
+  filter: blur(1.25rem);
+  height: 5.5rem;
   inset: 50% auto auto 50%;
   opacity: 0.35;
   pointer-events: none;
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 7rem;
+  width: 5.5rem;
   z-index: -1;
 }
-.identity__title, .status__title { color: var(--text); font-size: 1.875rem; margin: 0; }
-.identity__handle { color: var(--nq-gold-dark); font-weight: 800; margin: 0; }
+.identity__title, .status__title { color: var(--text); font-size: 1.5rem; margin: 0; }
+.identity__title--handle,
+.identity__handle {
+  color: var(--nq-gold);
+  font-size: 1.125rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+.identity__title--handle { font-size: 1.625rem; }
+.identity__purpose {
+  color: var(--text-2);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  margin: 0;
+  max-width: 20rem;
+}
 .identity__bio, .status, .status__lead { color: var(--text-2); line-height: 1.5; margin: 0; max-width: 23.75rem; }
 .identity__links, .identity__tags { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; list-style: none; margin: 0; padding: 0; }
-.identity__links a, .identity__tags li { border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); color: var(--text-2); font-size: 0.8125rem; font-weight: 700; padding: 0.375rem 0.625rem; text-decoration: none; }
+.identity__links a {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--nq-light-blue) 45%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--nq-light-blue);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 0.375rem 0.75rem;
+  text-decoration: none;
+}
+.identity__tags li {
+  background: color-mix(in srgb, var(--nimiq-gold) 24%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.3125rem 0.75rem;
+}
 .status__link { color: var(--nq-light-blue); font-size: 0.875rem; font-weight: 700; text-decoration: none; }
-.scan-hint { color: var(--text-2); font-size: 0.8125rem; }
+.panel__label {
+  color: var(--text);
+  font-size: 0.9375rem;
+  font-weight: 800;
+  margin: 0;
+}
+.scan-hint { color: var(--text-2); font-size: 0.75rem; margin: 0; }
 .verified {
   align-items: center;
   background: color-mix(in srgb, var(--nimiq-green) 16%, transparent);
@@ -249,7 +288,7 @@ async function refresh() {
   font-size: 0.75rem;
   font-weight: 700;
   gap: 0.25rem;
-  padding: 0.375rem 0.75rem;
+  padding: 0.3125rem 0.625rem;
   text-decoration: none;
 }
 </style>

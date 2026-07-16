@@ -18,6 +18,6 @@ describe('.nq-button contrast fix', () => {
   })
 
   it('gives .nq-button a hover state', () => {
-    expect(mainCssSource).toMatch(/\.nq-button:hover\s*\{[\s\S]*?background:\s*var\(--nimiq-gold-bg-darkened\);/)
+    expect(mainCssSource).toMatch(/\.nq-button:hover:not\(:disabled\)\s*\{[\s\S]*?background:\s*var\(--nimiq-gold-bg-darkened\);/)
   })
 })

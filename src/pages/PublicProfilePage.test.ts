@@ -103,9 +103,9 @@ describe('PublicProfilePage', () => {
 })
 
 describe('PublicProfilePage visual sizing and hero polish', () => {
-  it('uses the larger 96px avatar and 260px QR code sizes', () => {
-    expect(publicProfilePageSource).toMatch(/<Identicon :address="payAddress" :size="96"/)
-    expect(publicProfilePageSource).toMatch(/<QrCode :text="payUri" :size="260"/)
+  it('uses the 80px avatar and 180px QR code sizes', () => {
+    expect(publicProfilePageSource).toMatch(/<Identicon :address="payAddress" :size="80"/)
+    expect(publicProfilePageSource).toMatch(/<QrCode :text="payUri" :size="180"/)
   })
 
   it('wraps the avatar in a glow container that never blocks interaction and never animates', () => {

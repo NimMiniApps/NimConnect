@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useVisiblePolling } from '../composables/useVisiblePolling'
 import { useAfterRestoreRefresh } from '../composables/useAfterRestoreRefresh'
 import { useProfilesStore } from '../stores/profiles'
@@ -85,7 +85,7 @@ const pendingTotal = computed(() =>
 )
 const incomingNewest = computed(() => newestFirst(incoming.value))
 
-/** Quick-send row: favorites first, then recent, deduped, capped. */
+/** People row: favorites first, then recent, deduped, capped. */
 const quickContacts = computed(() => {
   const merged = [...profilesStore.favorites, ...profilesStore.recent]
   return [...new Map(merged.map(p => [p.id, p])).values()].slice(0, 8)
@@ -136,12 +136,31 @@ const bannerSummary = computed(() => {
   return parts.length ? parts.join(' · ') : null
 })
 
+const BANNER_AUTO_DISMISS_MS = 4500
+let bannerDismissTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearBannerTimer() {
+  if (bannerDismissTimer != null) {
+    clearTimeout(bannerDismissTimer)
+    bannerDismissTimer = null
+  }
+}
+
 function dismissBanner() {
+  clearBannerTimer()
   const now = Date.now()
   setLastSeen(myAddresses.value, now)
   lastSeenAt.value = now
   dueDismissed.value = true // due invoices are not timestamp-gated; hide for this session
 }
+
+watch(bannerSummary, (summary) => {
+  clearBannerTimer()
+  if (!summary) return
+  bannerDismissTimer = setTimeout(() => dismissBanner(), BANNER_AUTO_DISMISS_MS)
+})
+
+onUnmounted(clearBannerTimer)
 
 /** One-line summary under the page title — names what actually needs action. */
 const attentionSubtitle = computed(() => {
@@ -301,49 +320,42 @@ async function loadSenderAliases() {
       <router-link to="/me" class="empty-action">Share profile</router-link>
     </EmptyState>
 
-    <section v-if="bannerSummary && activity" class="card activity-banner" role="status">
-      <div class="banner-head">
-        <span class="banner-summary">🔔 {{ bannerSummary }}</span>
-        <button type="button" class="banner-dismiss" aria-label="Dismiss" @click="dismissBanner">✕</button>
+    <section v-if="quickContacts.length && !freshUser" class="home-panel people-panel">
+      <div class="section-head">
+        <h2>People</h2>
       </div>
-      <div class="banner-items">
+      <div class="people-row">
         <router-link
-          v-for="p in activity.payments.slice(0, 3)"
-          :key="p.hash"
-          :to="profileFor(p.sender) ? `/profile/${profileFor(p.sender)!.id}` : { path: '/add', query: { address: p.sender } }"
-          class="banner-item"
+          v-for="p in quickContacts"
+          :key="p.id"
+          :to="`/profile/${p.id}`"
+          class="people-contact"
         >
-          +{{ p.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM from {{ contactName(p.sender) }}
-        </router-link>
-        <template v-for="item in activity.requests.slice(0, 3)" :key="item.id">
-          <router-link
-            v-if="profileFor(item.sender)"
-            :to="`/profile/${profileFor(item.sender)!.id}`"
-            class="banner-item"
-          >
-            Request from {{ contactName(item.sender) }}
-          </router-link>
-        </template>
-        <template v-for="inv in activity.dueInvoices.slice(0, 3)" :key="inv.id">
-          <router-link
-            v-if="profileFor(inv.address)"
-            :to="{ path: `/profile/${profileFor(inv.address)!.id}`, query: { sheet: 'invoice' } }"
-            class="banner-item due"
-          >
-            {{ isOverdue(inv) ? 'Overdue' : 'Due soon' }}: {{ inv.description || 'Invoice' }} — {{ contactName(inv.address) }}
-          </router-link>
-          <span v-else class="banner-item due">
-            {{ isOverdue(inv) ? 'Overdue' : 'Due soon' }}: {{ inv.description || 'Invoice' }} — {{ contactName(inv.address) }}
+          <span class="people-avatar">
+            <Identicon :address="p.address" :size="66" />
+            <span v-if="hasRequestFrom(p)" class="people-badge" aria-label="Payment request waiting">!</span>
           </span>
-        </template>
+          <span class="people-name">{{ p.name }}</span>
+        </router-link>
       </div>
     </section>
 
-    <section v-if="inboxStore.actionable.length" class="activity-section attention-section">
+    <section v-if="bannerSummary && activity" class="activity-banner" role="status">
+      <span class="banner-summary">{{ bannerSummary }}</span>
+      <button type="button" class="banner-dismiss" aria-label="Dismiss" @click="dismissBanner">✕</button>
+    </section>
+
+    <section v-if="inboxStore.actionable.length" class="home-panel">
       <div class="section-head">
-        <h2>Needs your attention</h2>
-        <button type="button" class="refresh" :disabled="inboxStore.refreshing" @click="inboxStore.refresh()">
-          {{ inboxStore.refreshing ? 'Checking…' : 'Refresh' }}
+        <h2>Requests waiting</h2>
+        <button
+          type="button"
+          class="section-action icon-action"
+          :disabled="inboxStore.refreshing"
+          aria-label="Refresh"
+          @click="inboxStore.refresh()"
+        >
+          {{ inboxStore.refreshing ? '…' : '↻' }}
         </button>
       </div>
 
@@ -361,7 +373,7 @@ async function loadSenderAliases() {
 
       <template v-if="unknownRequests.length">
         <div class="section-head unknown-head">
-          <h2>Requests from unknown senders ({{ unknownRequests.length }})</h2>
+          <h3>Unknown senders ({{ unknownRequests.length }})</h3>
         </div>
         <div class="invoice-list">
           <InboxRequestCard
@@ -375,11 +387,78 @@ async function loadSenderAliases() {
         </div>
         <button
           v-if="unknownRequests.length > 2 && !unknownExpanded"
-          type="button" class="refresh show-more" @click="unknownExpanded = true"
+          type="button" class="section-action show-more" @click="unknownExpanded = true"
         >
           Show all {{ unknownRequests.length }}
         </button>
       </template>
+    </section>
+
+    <section v-if="!freshUser" class="home-panel">
+      <div class="section-head">
+        <h2>Recent payments</h2>
+        <button
+          v-if="profilesStore.self"
+          type="button"
+          class="section-action icon-action"
+          :disabled="incomingLoading"
+          aria-label="Refresh"
+          @click="loadIncoming"
+        >
+          {{ incomingLoading ? '…' : '↻' }}
+        </button>
+      </div>
+
+      <p v-if="!profilesStore.self" class="notice inset">
+        Connect inside Nimiq Pay to see payments sent to your wallet, including unknown senders.
+      </p>
+      <p v-else-if="incomingError" class="notice inset">Recent payments are unavailable right now.</p>
+      <p v-else-if="incomingLoading && incoming.length === 0" class="subtle">Checking your wallet…</p>
+      <div v-else-if="incomingNewest.length" class="incoming-list">
+        <article v-for="payment in incomingNewest.slice(0, 8)" :key="payment.hash" class="panel-item incoming-card">
+          <div class="invoice-head">
+            <Identicon :address="payment.sender" :size="44" />
+            <div class="invoice-title">
+              <router-link
+                v-if="profileFor(payment.sender)"
+                :to="`/profile/${profileFor(payment.sender)!.id}`"
+                class="contact-link"
+              >
+                {{ contactName(payment.sender) }}
+              </router-link>
+              <span v-else-if="payment.viaSwap" class="contact-link swap">Wallet top-up</span>
+              <span v-else class="contact-link missing">Unknown sender</span>
+              <span class="invoice-date">
+                {{ shortAddress(payment.sender) }} · {{ new Date(payment.timestamp * (payment.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}
+                <span v-if="payment.viaSwap" class="swap-badge">via swap</span>
+              </span>
+            </div>
+            <div class="invoice-amount positive">
+              +{{ payment.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+              <span v-if="fiatApprox(payment.valueNim)" class="fiat">{{ fiatApprox(payment.valueNim) }}</span>
+            </div>
+          </div>
+          <p v-if="payment.message" class="description">“{{ payment.message }}”</p>
+          <div class="actions tx-actions">
+            <a
+              class="action external-action"
+              :href="transactionExplorerUrl(payment.hash)"
+              target="_blank"
+              rel="noopener"
+            >
+              View ↗
+            </a>
+            <router-link
+              v-if="!profileFor(payment.sender) && !payment.viaSwap"
+              :to="{ path: '/add', query: { address: payment.sender } }"
+              class="action primary"
+            >
+              Add contact
+            </router-link>
+          </div>
+        </article>
+      </div>
+      <p v-else class="subtle">No recent payments found yet.</p>
     </section>
 
     <section v-if="invoicesStore.pending.length" class="summary">
@@ -398,94 +477,76 @@ async function loadSenderAliases() {
       Connect inside Nimiq Pay to copy payment links to your wallet address.
     </p>
 
-    <section v-if="quickContacts.length && !freshUser" class="quick-send-section">
-      <h2 class="quick-send-label">Quick send</h2>
-      <div class="quick-send">
-        <router-link
-          v-for="p in quickContacts"
-          :key="p.id"
-          :to="`/profile/${p.id}`"
-          class="quick-contact"
-        >
-          <span class="quick-avatar">
-            <Identicon :address="p.address" :size="52" />
-            <span v-if="hasRequestFrom(p)" class="quick-badge" aria-label="Payment request waiting">!</span>
-          </span>
-          <span class="quick-name">{{ p.name }}</span>
-        </router-link>
-      </div>
-    </section>
-
-    <section v-if="!freshUser" class="activity-section invoice-section">
+    <section v-if="!freshUser" class="home-panel secondary-panel">
       <div class="section-head">
         <h2>Open invoices</h2>
       </div>
 
-    <template v-if="invoicesStore.pending.length">
-      <div class="invoice-list">
-        <article v-for="invoice in invoicesStore.pending" :key="invoice.id" class="card invoice-card">
-          <div class="invoice-head">
-            <Identicon :address="invoice.address" :size="44" />
-            <div class="invoice-title">
-              <router-link
-                v-if="profileFor(invoice.address)"
-                :to="`/profile/${profileFor(invoice.address)!.id}`"
-                class="contact-link"
+      <template v-if="invoicesStore.pending.length">
+        <div class="invoice-list">
+          <article v-for="invoice in invoicesStore.pending" :key="invoice.id" class="panel-item invoice-card">
+            <div class="invoice-head">
+              <Identicon :address="invoice.address" :size="44" />
+              <div class="invoice-title">
+                <router-link
+                  v-if="profileFor(invoice.address)"
+                  :to="`/profile/${profileFor(invoice.address)!.id}`"
+                  class="contact-link"
+                >
+                  {{ contactName(invoice.address) }}
+                </router-link>
+                <span v-else class="contact-link missing">{{ contactName(invoice.address) }}</span>
+                <span class="invoice-date">
+                  Created {{ new Date(invoice.createdAt).toLocaleDateString() }}
+                  <template v-if="invoice.dueAt">
+                    · <span :class="{ overdue: isOverdue(invoice) }">{{ isOverdue(invoice) ? 'Overdue since' : 'Due' }} {{ new Date(invoice.dueAt).toLocaleDateString() }}</span>
+                  </template>
+                </span>
+              </div>
+              <div class="invoice-amount">
+                {{ invoice.amountNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+                <span v-if="invoice.fiatAmount" class="fiat">{{ invoice.fiatAmount }} {{ invoice.fiatCurrency }}</span>
+                <span v-else-if="fiatApprox(invoice.amountNim)" class="fiat">{{ fiatApprox(invoice.amountNim) }}</span>
+              </div>
+            </div>
+
+            <p class="description">{{ invoice.description || 'Invoice' }}</p>
+
+            <p v-if="detectedPaid.has(invoice.id)" class="detected">
+              ✓ Payment detected — {{ detectedPaid.get(invoice.id)!.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+              received {{ new Date(detectedPaid.get(invoice.id)!.timestamp * (detectedPaid.get(invoice.id)!.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}.
+              <button type="button" class="detected-confirm" @click="invoicesStore.markPaid(invoice.id)">Mark paid</button>
+            </p>
+
+            <div class="actions">
+              <button
+                type="button"
+                class="action primary"
+                :disabled="!profilesStore.self"
+                @click="copyLink(invoice.id, invoice.amountNim, invoice.description)"
               >
-                {{ contactName(invoice.address) }}
-              </router-link>
-              <span v-else class="contact-link missing">{{ contactName(invoice.address) }}</span>
-              <span class="invoice-date">
-                Created {{ new Date(invoice.createdAt).toLocaleDateString() }}
-                <template v-if="invoice.dueAt">
-                  · <span :class="{ overdue: isOverdue(invoice) }">{{ isOverdue(invoice) ? 'Overdue since' : 'Due' }} {{ new Date(invoice.dueAt).toLocaleDateString() }}</span>
-                </template>
-              </span>
+                {{ copiedId === invoice.id ? 'Copied' : canShare() ? 'Share link' : 'Copy link' }}
+              </button>
+              <button
+                v-if="inboxAvailable() && profilesStore.self && profileFor(invoice.address)"
+                type="button"
+                class="action"
+                :disabled="remindingId === invoice.id"
+                @click="remind(invoice)"
+              >
+                {{ remindedId === invoice.id ? 'Reminded ✓' : remindingId === invoice.id ? 'Sending…' : 'Remind' }}
+              </button>
+              <button type="button" class="action" @click="invoicesStore.markPaid(invoice.id)">
+                Mark paid
+              </button>
+              <button type="button" class="action danger" @click="invoicesStore.remove(invoice.id)">
+                Delete
+              </button>
             </div>
-            <div class="invoice-amount">
-              {{ invoice.amountNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
-              <span v-if="invoice.fiatAmount" class="fiat">{{ invoice.fiatAmount }} {{ invoice.fiatCurrency }}</span>
-              <span v-else-if="fiatApprox(invoice.amountNim)" class="fiat">{{ fiatApprox(invoice.amountNim) }}</span>
-            </div>
-          </div>
-
-          <p class="description">{{ invoice.description || 'Invoice' }}</p>
-
-          <p v-if="detectedPaid.has(invoice.id)" class="detected">
-            ✓ Payment detected — {{ detectedPaid.get(invoice.id)!.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
-            received {{ new Date(detectedPaid.get(invoice.id)!.timestamp * (detectedPaid.get(invoice.id)!.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}.
-            <button type="button" class="detected-confirm" @click="invoicesStore.markPaid(invoice.id)">Mark paid</button>
-          </p>
-
-          <div class="actions">
-            <button
-              type="button"
-              class="action primary"
-              :disabled="!profilesStore.self"
-              @click="copyLink(invoice.id, invoice.amountNim, invoice.description)"
-            >
-              {{ copiedId === invoice.id ? 'Copied' : canShare() ? 'Share link' : 'Copy link' }}
-            </button>
-            <button
-              v-if="inboxAvailable() && profilesStore.self && profileFor(invoice.address)"
-              type="button"
-              class="action"
-              :disabled="remindingId === invoice.id"
-              @click="remind(invoice)"
-            >
-              {{ remindedId === invoice.id ? 'Reminded ✓' : remindingId === invoice.id ? 'Sending…' : 'Remind' }}
-            </button>
-            <button type="button" class="action" @click="invoicesStore.markPaid(invoice.id)">
-              Mark paid
-            </button>
-            <button type="button" class="action danger" @click="invoicesStore.remove(invoice.id)">
-              Delete
-            </button>
-          </div>
-        </article>
-      </div>
-      <p v-if="remindError" class="notice">{{ remindError }}</p>
-    </template>
+          </article>
+        </div>
+        <p v-if="remindError" class="notice inset">{{ remindError }}</p>
+      </template>
 
       <EmptyState
         v-else
@@ -498,20 +559,20 @@ async function loadSenderAliases() {
       </EmptyState>
     </section>
 
-    <section v-if="!freshUser || bucketsStore.buckets.length" class="activity-section">
+    <section v-if="!freshUser || bucketsStore.buckets.length" class="home-panel secondary-panel">
       <div class="section-head">
-        <h2>Trip buckets</h2>
-        <button type="button" class="refresh" @click="openBucket(null)">＋ New</button>
+        <h2>Shared trips</h2>
+        <button type="button" class="section-action" @click="openBucket(null)">＋ New</button>
       </div>
-      <p v-if="!bucketsStore.buckets.length" class="subtle">
-        Save up together — create a bucket and share the link with friends.
+      <p v-if="!bucketsStore.buckets.length" class="subtle left">
+        Save up together — create a trip and share the link with friends.
       </p>
       <div v-else class="invoice-list">
         <button
           v-for="b in [...bucketsStore.active, ...bucketsStore.completed]"
           :key="b.id"
           type="button"
-          class="card bucket-card"
+          class="panel-item bucket-card"
           :class="{ 'bucket-done': b.status === 'completed' }"
           @click="openBucket(b.id)"
         >
@@ -530,15 +591,15 @@ async function loadSenderAliases() {
       </div>
     </section>
 
-    <section v-if="invoicesStore.paid.length" class="activity-section">
+    <section v-if="invoicesStore.paid.length" class="home-panel secondary-panel">
       <div class="section-head">
         <h2>Recently paid</h2>
-        <button type="button" class="refresh" @click="paidExpanded = !paidExpanded">
+        <button type="button" class="section-action" @click="paidExpanded = !paidExpanded">
           {{ paidExpanded ? 'Hide' : `Show (${invoicesStore.paid.length})` }}
         </button>
       </div>
       <div v-if="paidExpanded" class="invoice-list">
-        <article v-for="invoice in invoicesStore.paid.slice(0, 10)" :key="invoice.id" class="card invoice-card paid-card">
+        <article v-for="invoice in invoicesStore.paid.slice(0, 10)" :key="invoice.id" class="panel-item invoice-card paid-card">
           <div class="invoice-head">
             <Identicon :address="invoice.address" :size="44" />
             <div class="invoice-title">
@@ -572,66 +633,6 @@ async function loadSenderAliases() {
       </div>
     </section>
 
-    <section class="activity-section incoming-section">
-      <div class="section-head">
-        <h2>Incoming payments</h2>
-        <button v-if="profilesStore.self" type="button" class="refresh" :disabled="incomingLoading" @click="loadIncoming">
-          {{ incomingLoading ? 'Checking…' : 'Refresh' }}
-        </button>
-      </div>
-
-      <p v-if="!profilesStore.self" class="notice">
-        Connect inside Nimiq Pay to see payments sent to your wallet, including unknown senders.
-      </p>
-      <p v-else-if="incomingError" class="notice">Incoming payments are unavailable right now.</p>
-      <p v-else-if="incomingLoading && incoming.length === 0" class="subtle">Checking your wallet…</p>
-      <div v-else-if="incomingNewest.length" class="incoming-list">
-        <article v-for="payment in incomingNewest.slice(0, 8)" :key="payment.hash" class="card incoming-card">
-          <div class="invoice-head">
-            <Identicon :address="payment.sender" :size="44" />
-            <div class="invoice-title">
-              <router-link
-                v-if="profileFor(payment.sender)"
-                :to="`/profile/${profileFor(payment.sender)!.id}`"
-                class="contact-link"
-              >
-                {{ contactName(payment.sender) }}
-              </router-link>
-              <span v-else-if="payment.viaSwap" class="contact-link swap">Wallet top-up</span>
-              <span v-else class="contact-link missing">Unknown sender</span>
-              <span class="invoice-date">
-                {{ shortAddress(payment.sender) }} · {{ new Date(payment.timestamp * (payment.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}
-                <span v-if="payment.viaSwap" class="swap-badge">via swap</span>
-              </span>
-            </div>
-            <div class="invoice-amount positive">
-              +{{ payment.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
-              <span v-if="fiatApprox(payment.valueNim)" class="fiat">{{ fiatApprox(payment.valueNim) }}</span>
-            </div>
-          </div>
-          <p v-if="payment.message" class="description">“{{ payment.message }}”</p>
-          <div class="actions tx-actions">
-            <a
-              class="action"
-              :href="transactionExplorerUrl(payment.hash)"
-              target="_blank"
-              rel="noopener"
-            >
-              Explorer
-            </a>
-            <router-link
-              v-if="!profileFor(payment.sender) && !payment.viaSwap"
-              :to="{ path: '/add', query: { address: payment.sender } }"
-              class="action primary"
-            >
-              Add contact
-            </router-link>
-          </div>
-        </article>
-      </div>
-      <p v-else class="subtle">No incoming payments found yet.</p>
-    </section>
-
     <BucketSheet
       :open="bucketSheetOpen"
       :bucket="selectedBucket"
@@ -647,6 +648,7 @@ async function loadSenderAliases() {
   padding: 16px 16px 88px;
   display: flex;
   flex-direction: column;
+  gap: 0;
   max-width: 100%;
   overflow-x: hidden;
 }
@@ -655,10 +657,21 @@ async function loadSenderAliases() {
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
-.header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 4px; }
-.header p { margin: 0; color: var(--text-2); font-size: 14px; line-height: 1.4; }
+.header h1 {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.15;
+  margin: 4px 0 6px;
+  letter-spacing: -0.02em;
+}
+.header p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 15px;
+  line-height: 1.4;
+}
 .add-link {
   width: 44px;
   height: 44px;
@@ -673,33 +686,83 @@ async function loadSenderAliases() {
   font-size: 26px;
   background: var(--nimiq-gold-bg);
 }
-.quick-send-section { margin-bottom: 16px; }
-.quick-send-label {
-  margin: 0 0 8px;
-  font-size: 13px;
+.home-panel {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border);
+}
+.people-panel {
+  padding: 18px 14px 16px;
+  margin-bottom: 12px;
+}
+.secondary-panel {
+  opacity: 1;
+}
+.section-head {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.section-head h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.section-head h3 {
+  margin: 0;
+  font-size: 15px;
   font-weight: 700;
   color: var(--text-2);
-  text-transform: uppercase;
 }
-.quick-send {
+.section-action {
+  min-height: 32px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--nq-light-blue);
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+}
+.section-action:disabled { opacity: 0.55; cursor: default; }
+.section-action.icon-action {
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  color: var(--text-2);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+}
+.people-row {
   display: flex;
-  gap: 14px;
+  gap: 10px;
   overflow-x: auto;
-  padding: 4px 2px;
+  padding: 2px 0 4px;
   scrollbar-width: none;
 }
-.quick-send::-webkit-scrollbar { display: none; }
-.quick-contact {
+.people-row::-webkit-scrollbar { display: none; }
+.people-contact {
   flex: 0 0 auto;
-  width: 60px;
+  width: 66px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   text-decoration: none;
 }
-.quick-avatar { position: relative; display: inline-flex; }
-.quick-badge {
+.people-avatar { position: relative; display: inline-flex; }
+.people-badge {
   position: absolute;
   top: -2px;
   right: -2px;
@@ -713,22 +776,22 @@ async function loadSenderAliases() {
   color: var(--nimiq-white);
   font-size: 11px;
   font-weight: 800;
-  border: 2px solid var(--bg);
+  border: 2px solid var(--card);
 }
-.quick-name {
+.people-name {
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-2);
-  font-size: 11px;
-  font-weight: 600;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
 }
 .summary {
   display: grid;
   grid-template-columns: 1.4fr 1fr;
   gap: 10px;
-  margin-bottom: 14px;
+  margin: 8px 0 16px;
 }
 .summary-main,
 .summary-side {
@@ -766,50 +829,26 @@ async function loadSenderAliases() {
   color: rgba(255, 255, 255, 0.85);
 }
 .notice {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   padding: 10px 12px;
   border-radius: var(--radius);
   background: var(--text-6);
   color: var(--text);
   font-size: 13px;
 }
-.activity-section { margin-top: 18px; }
-.attention-section { margin-top: 0; }
-.section-head {
-  min-height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.section-head h2 {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--text-2);
-  text-transform: uppercase;
-}
-.refresh {
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 17px;
-  background: var(--card);
-  color: var(--nq-light-blue);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-}
-.refresh:disabled { opacity: 0.55; cursor: default; }
-.unknown-head { margin-top: 14px; }
-.show-more { margin-top: 8px; align-self: center; }
-.invoice-list { display: flex; flex-direction: column; gap: 12px; }
+.notice.inset { margin: 0; }
+.unknown-head { margin-top: 16px; margin-bottom: 10px; }
+.show-more { margin-top: 10px; align-self: flex-start; }
+.invoice-list { display: flex; flex-direction: column; gap: 10px; }
 .incoming-list { display: flex; flex-direction: column; gap: 10px; }
-.invoice-card { padding: 14px; }
+.panel-item {
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
 .paid-card { opacity: 0.75; }
-.incoming-card { padding: 14px; overflow: hidden; }
+.incoming-card { overflow: hidden; }
 .invoice-head {
   display: flex;
   align-items: center;
@@ -822,13 +861,14 @@ async function loadSenderAliases() {
   color: var(--text);
   text-decoration: none;
   font-weight: 700;
+  font-size: 15px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .contact-link.missing { color: var(--text-2); }
 .contact-link.swap { color: var(--nq-light-blue); }
-.invoice-date { display: block; margin-top: 2px; color: var(--text-2); font-size: 12px; }
+.invoice-date { display: block; margin-top: 2px; color: var(--text-2); font-size: 13px; }
 .invoice-date .overdue { color: var(--nq-red); font-weight: 700; }
 .swap-badge {
   display: inline-block;
@@ -871,13 +911,15 @@ async function loadSenderAliases() {
   color: var(--nq-gold-dark);
   flex: 0 0 auto;
   max-width: 38%;
+  font-size: 15px;
 }
 .invoice-amount.positive { color: var(--nq-green); }
 .fiat { display: block; margin-top: 2px; color: var(--text-2); font-size: 12px; font-weight: 600; }
 .description {
   margin: 12px 0 0;
   color: var(--text);
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 15px;
   line-height: 1.35;
   max-width: 100%;
   overflow-wrap: anywhere;
@@ -899,7 +941,7 @@ async function loadSenderAliases() {
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 21px;
-  background: var(--bg);
+  background: var(--card);
   color: var(--nq-light-blue);
   cursor: pointer;
   font: inherit;
@@ -912,8 +954,12 @@ async function loadSenderAliases() {
 }
 .action.primary {
   border: none;
-  color: var(--nimiq-white);
+  color: var(--nimiq-blue);
   background: var(--nimiq-gold-bg);
+}
+.action.external-action {
+  font-weight: 700;
+  color: var(--text-2);
 }
 .action.danger { color: var(--nq-red); }
 .action:disabled {
@@ -923,9 +969,10 @@ async function loadSenderAliases() {
 .subtle {
   margin: 0;
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 15px;
   text-align: center;
 }
+.subtle.left { text-align: left; }
 .empty-action {
   min-height: 40px;
   padding: 0 14px;
@@ -935,20 +982,25 @@ async function loadSenderAliases() {
   align-items: center;
   justify-content: center;
   color: var(--nq-light-blue);
-  background: var(--card);
+  background: var(--bg);
   text-decoration: none;
   font-weight: 800;
   font-size: 13px;
 }
 .primary-action {
   border: none;
-  color: var(--nimiq-white);
+  color: var(--nimiq-blue);
   background: var(--nimiq-gold-bg);
 }
 .bucket-card {
-  width: 100%; padding: 14px; cursor: pointer; text-align: left;
-  border: 1px solid var(--border); font: inherit; color: var(--text);
-  display: flex; flex-direction: column; gap: 10px;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .bucket-done { opacity: 0.7; }
 .bucket-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
@@ -956,14 +1008,36 @@ async function loadSenderAliases() {
 .bucket-amount { flex: 0 0 auto; font-weight: 700; font-size: 13px; color: var(--nq-gold-dark); }
 .bucket-bar { height: 8px; border-radius: 4px; background: var(--text-6); overflow: hidden; }
 .bucket-fill { height: 100%; border-radius: 4px; background: var(--nimiq-gold-bg); transition: width 0.3s ease; }
-.activity-banner { padding: 12px 14px; margin-bottom: 14px; border-left: 4px solid var(--nq-gold); }
-.banner-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.banner-summary { font-size: 13px; font-weight: 800; }
-.banner-dismiss {
-  min-width: 32px; min-height: 32px; border: none; background: none; cursor: pointer;
-  color: var(--text-2); font-size: 14px;
+.activity-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 40px;
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--nq-gold) 28%, var(--border));
+  background: color-mix(in srgb, var(--nq-gold) 10%, var(--card));
+  box-shadow: none;
 }
-.banner-items { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.banner-item { font-size: 13px; color: var(--nq-light-blue); text-decoration: none; font-weight: 600; }
-.banner-item.due { color: var(--nq-gold-dark); }
+.banner-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  line-height: 1.3;
+}
+.banner-dismiss {
+  flex: 0 0 auto;
+  min-width: 28px;
+  min-height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+  opacity: 0.7;
+}
 </style>

@@ -16,6 +16,8 @@ export interface Profile {
   /** Set by Send/Request/History; powers the Recent section */
   lastInteractionAt?: number
   // Identity fields — optional, unindexed, so no Dexie migration needed
+  /** Claimed NimConnect / NimFeed @handle without @ — preferred over address in lists */
+  handle?: string
   bio?: string
   website?: string
   github?: string

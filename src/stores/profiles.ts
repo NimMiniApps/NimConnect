@@ -15,6 +15,7 @@ export interface NewProfile {
   tags?: string[]
   favorite?: boolean
   type?: ProfileType
+  handle?: string
   bio?: string
   website?: string
   github?: string
@@ -57,10 +58,16 @@ export const useProfilesStore = defineStore('profiles', () => {
 
   const GITHUB_HANDLE = /^[A-Za-z0-9-]{1,39}$/
   const X_HANDLE = /^[A-Za-z0-9_]{1,15}$/
+  const NIM_HANDLE = /^[a-z0-9_]{3,31}$/
 
   function safeHandle(handle: string | undefined, pattern: RegExp): string | undefined {
     const h = handle?.trim().replace(/^@/, '')
     return h && pattern.test(h) ? h : undefined
+  }
+
+  function safeNimHandle(handle: string | undefined): string | undefined {
+    const h = handle?.trim().replace(/^@/, '').toLowerCase()
+    return h && NIM_HANDLE.test(h) ? h : undefined
   }
 
   function normalize(address: string): string {
@@ -83,6 +90,7 @@ export const useProfilesStore = defineStore('profiles', () => {
       favorite: input.favorite ?? false,
       createdAt: now,
       updatedAt: now,
+      ...(safeNimHandle(input.handle) ? { handle: safeNimHandle(input.handle) } : {}),
       ...(input.bio ? { bio: input.bio } : {}),
       ...(safeUrl(input.website) ? { website: safeUrl(input.website) } : {}),
       ...(safeHandle(input.github, GITHUB_HANDLE) ? { github: safeHandle(input.github, GITHUB_HANDLE) } : {}),
@@ -106,6 +114,7 @@ export const useProfilesStore = defineStore('profiles', () => {
       if (profiles.value.some(p => p.address === address && p.id !== id)) throw new Error('duplicate-address')
       patch = { ...patch, address }
     }
+    if ('handle' in patch) patch = { ...patch, handle: safeNimHandle(patch.handle) }
     if ('website' in patch) patch = { ...patch, website: safeUrl(patch.website) }
     if ('github' in patch) patch = { ...patch, github: safeHandle(patch.github, GITHUB_HANDLE) }
     if ('x' in patch) patch = { ...patch, x: safeHandle(patch.x, X_HANDLE) }
@@ -215,11 +224,13 @@ export const useProfilesStore = defineStore('profiles', () => {
     const q = query.trim().toLowerCase()
     if (!q) return sortedContacts.value
     const qCompact = q.replace(/\s+/g, '')
+    const qHandle = q.replace(/^@/, '')
     return sortedContacts.value.filter(p =>
       p.name.toLowerCase().includes(q)
       || p.address.toLowerCase().replace(/\s+/g, '').includes(qCompact)
       || p.notes.toLowerCase().includes(q)
-      || p.tags.some(t => t.toLowerCase().includes(q)),
+      || p.tags.some(t => t.toLowerCase().includes(q))
+      || (!!p.handle && p.handle.toLowerCase().includes(qHandle)),
     )
   }
 

@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import type { Profile } from '../types/profile'
+import type { Profile, ProfileType } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { insideNimiqPay, sendNim, messageBytes, MESSAGE_MAX_BYTES, resolveMyAddresses, receiveAddress, walletStatus, formatNimAmount } from '../services/nimiq'
-import { makeRequestLink, makePaymentShareLink, transactionExplorerUrl } from '../services/links'
+import { makeRequestLink, makePaymentShareLink, shortAddress, transactionExplorerUrl } from '../services/links'
+import { makeProfileShareLink } from '../services/profile-share'
 import { sendPaymentRequest, shouldAutoDeliverInbox, newNonce } from '../services/inbox'
 import { shareOrCopy, canShare, copyText } from '../services/share'
 import { fetchHistory, timestampMs, type HistoryItem } from '../services/history'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { preferredCurrency } from '../services/prefs'
+import { handleForAddress, handlesEnabled } from '../services/handles'
 import Identicon from './Identicon.vue'
 import QrCode from './QrCode.vue'
 import ActionSheet from './ActionSheet.vue'
@@ -18,6 +20,9 @@ import SpendableBalance from './SpendableBalance.vue'
 import TipSheet from './TipSheet.vue'
 import SplitBillSheet from './SplitBillSheet.vue'
 import InvoiceSheet from './InvoiceSheet.vue'
+import EmptyState from './EmptyState.vue'
+
+type PaymentKind = 'paid' | 'received' | 'invoice' | 'split' | 'bucket'
 
 const props = defineProps<{
   profile: Profile
@@ -39,6 +44,10 @@ const sendResult = ref<'ok' | string | null>(null)
 const history = ref<HistoryItem[] | null>(null)
 const historyError = ref(false)
 const copied = ref(false)
+const manageOpen = ref(false)
+const shareFeedback = ref<string | null>(null)
+const contactHandle = ref<string | null>(null)
+const expandedTxHash = ref<string | null>(null)
 
 // Requests are always paid to *my* address — own profile or asking a contact.
 const requestLink = computed(() => {
@@ -52,18 +61,154 @@ const requestShareLink = computed(() => {
   return makePaymentShareLink(receiveAddress(self) ?? self, amount.value ?? undefined)
 })
 const dateAdded = computed(() => new Date(props.profile.createdAt).toLocaleDateString())
-const lastSeen = computed(() =>
-  props.profile.lastInteractionAt ? new Date(props.profile.lastInteractionAt).toLocaleDateString() : null,
-)
+const abbreviatedAddress = computed(() => shortAddress(props.profile.address))
 
 const rates = ref<NimRates | null>(null)
+
+function formatRelative(ms: number): string {
+  const diff = Date.now() - ms
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  if (diff < 60_000) return 'just now'
+  const mins = Math.floor(diff / 60_000)
+  if (mins < 60) return `${mins} min ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days} day${days === 1 ? '' : 's'} ago`
+  return new Date(ms).toLocaleDateString()
+}
+
+function typeLabel(type: ProfileType): string | null {
+  if (type === 'merchant') return 'Merchant'
+  if (type === 'business') return 'Business'
+  return null
+}
+
+function historyWhen(h: HistoryItem): string {
+  return new Date(timestampMs(h.timestamp)).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function historyDateTime(h: HistoryItem): string {
+  const d = new Date(timestampMs(h.timestamp))
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  return `${date} • ${time}`
+}
+
+function paymentKind(h: HistoryItem): PaymentKind {
+  const msg = h.message?.trim() ?? ''
+  if (msg.startsWith('🪣')) return 'bucket'
+  if (/^split/i.test(msg)) return 'split'
+  if (/invoice/i.test(msg)) return 'invoice'
+  return h.incoming ? 'received' : 'paid'
+}
+
+function paymentIcon(kind: PaymentKind): string {
+  if (kind === 'invoice') return '🧾'
+  if (kind === 'split') return '👥'
+  if (kind === 'bucket') return '🏖'
+  return kind === 'received' ? '⬇' : '⬆'
+}
+
+function paymentVerb(h: HistoryItem): string {
+  const kind = paymentKind(h)
+  if (kind === 'invoice') return h.incoming ? 'Invoice paid' : 'Invoice paid'
+  if (kind === 'split') return h.incoming ? 'Split bill' : 'Split bill'
+  if (kind === 'bucket') return 'Bucket contribution'
+  return h.incoming ? 'You received' : 'You paid'
+}
+
+/** Hide protocol noise; translate known payment tags into human labels. */
+function displayMessage(h: HistoryItem): string | null {
+  const msg = h.message?.trim()
+  if (!msg) return null
+  if (msg.startsWith('NFH:') || /^NB[0-9A-Z]*:/u.test(msg)) return null
+  const compact = msg.replace(/\s+/g, '')
+  if (/^[0-9a-fA-F]{12,}$/.test(compact)) return null
+  const hexChars = (msg.match(/[0-9a-fA-F]/g) ?? []).length
+  if (msg.length > 20 && hexChars / msg.length > 0.75) return null
+
+  if (msg.startsWith('🪣')) {
+    const body = msg.replace(/^🪣\s*/, '').replace(/\s*#[0-9a-fA-F]{4,}\s*$/i, '').trim()
+    return body ? `🏖 ${body} contribution` : '🏖 Trip contribution'
+  }
+  if (/^split\s*:/i.test(msg)) {
+    const body = msg.replace(/^split\s*:\s*/i, '').trim()
+    return body ? `👥 ${body}` : null
+  }
+  if (/invoice/i.test(msg)) {
+    const cleaned = msg.replace(/\binvoice\b/gi, '').replace(/\s{2,}/g, ' ').trim()
+    return cleaned || null
+  }
+  return msg
+}
+
+function shortHash(hash: string): string {
+  if (hash.length <= 12) return hash
+  return `${hash.slice(0, 6)}…${hash.slice(-4)}`
+}
+
+function dayStartMs(ms: number): number {
+  const d = new Date(ms)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+function historyGroupLabel(ms: number): string {
+  const now = Date.now()
+  const today = dayStartMs(now)
+  const yesterday = today - 86_400_000
+  const t = dayStartMs(ms)
+  if (t === today) return 'Today'
+  if (t === yesterday) return 'Yesterday'
+  const date = new Date(ms)
+  const current = new Date(now)
+  if (date.getFullYear() === current.getFullYear() && date.getMonth() === current.getMonth()) {
+    return 'This month'
+  }
+  if (date.getFullYear() === current.getFullYear()) {
+    return date.toLocaleDateString(undefined, { month: 'long' })
+  }
+  if (date.getFullYear() === current.getFullYear() - 1) {
+    return date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  }
+  return 'Older'
+}
+
+function toggleTxDetails(hash: string) {
+  expandedTxHash.value = expandedTxHash.value === hash ? null : hash
+}
+
+async function loadContactHandle() {
+  if (props.own || !handlesEnabled()) {
+    contactHandle.value = props.profile.handle ?? null
+    return
+  }
+  try {
+    const claim = await handleForAddress(props.profile.address)
+    contactHandle.value = claim?.handle ?? props.profile.handle ?? null
+    if (claim?.handle && claim.handle !== props.profile.handle) {
+      await store.update(props.profile.id, { handle: claim.handle })
+    }
+  } catch {
+    contactHandle.value = props.profile.handle ?? null
+  }
+}
 
 onMounted(() => {
   const q = route.query.sheet
   if (q === 'invoice' || q === 'request') openSheet(q)
   if (props.own) return
   getRates().then(r => (rates.value = r))
+  void loadContactHandle()
   if (store.self) loadHistory()
+})
+
+watch(() => props.profile.address, () => {
+  if (!props.own) void loadContactHandle()
 })
 
 watch(() => walletStatus.value, (status, prev) => {
@@ -102,6 +247,65 @@ const netBalanceFiat = computed(() => {
   return `≈ ${amount.toLocaleString(undefined, { style: 'currency', currency: preferredCurrency.value })}`
 })
 
+const paymentCounts = computed(() => {
+  if (!history.value?.length) return null
+  let sent = 0
+  let received = 0
+  for (const h of history.value) {
+    if (h.incoming) received += 1
+    else sent += 1
+  }
+  return { sent, received }
+})
+
+const lastPayment = computed(() => history.value?.[0] ?? null)
+
+const relationshipHeadline = computed(() => {
+  if (lastPayment.value) {
+    const when = formatRelative(timestampMs(lastPayment.value.timestamp))
+    return lastPayment.value.incoming ? `They paid you ${when}` : `You paid them ${when}`
+  }
+  if (props.profile.lastInteractionAt) {
+    return `Last activity ${formatRelative(props.profile.lastInteractionAt)}`
+  }
+  return null
+})
+
+const lastTouchLabel = computed(() => {
+  if (lastPayment.value) return lastPayment.value.incoming ? 'They paid you last' : 'You paid them last'
+  if (props.profile.lastInteractionAt) return 'Last activity'
+  return null
+})
+
+const lastTouchWhen = computed(() => {
+  if (lastPayment.value) return formatRelative(timestampMs(lastPayment.value.timestamp))
+  if (props.profile.lastInteractionAt) return formatRelative(props.profile.lastInteractionAt)
+  return null
+})
+
+const recentActivity = computed(() => (history.value ?? []).slice(0, 2))
+
+const historyGroups = computed(() => {
+  if (!history.value?.length) return [] as { label: string; items: HistoryItem[] }[]
+  const buckets = new Map<string, HistoryItem[]>()
+  const labels: string[] = []
+  for (const item of history.value) {
+    const label = historyGroupLabel(timestampMs(item.timestamp))
+    const list = buckets.get(label)
+    if (list) list.push(item)
+    else {
+      buckets.set(label, [item])
+      labels.push(label)
+    }
+  }
+  // History is newest-first, so first-seen label order is Today → … → Older.
+  return labels.map(label => ({ label, items: buckets.get(label)! }))
+})
+
+const contactTypeLabel = computed(() => typeLabel(props.profile.type))
+
+const historySheetTitle = computed(() => `History with ${props.profile.name}`)
+
 /** "≈ 1.23 €" at today's rate, or null when NIM-only / rates missing. */
 function fiatApprox(nim: number): string | null {
   if (preferredCurrency.value === 'NIM' || !rates.value) return null
@@ -114,6 +318,12 @@ async function copyAddress() {
   await copyText(props.profile.address)
   copied.value = true
   setTimeout(() => (copied.value = false), 1500)
+}
+
+async function shareContact() {
+  const result = await shareOrCopy(makeProfileShareLink(props.profile), props.profile.name)
+  shareFeedback.value = result === 'shared' ? 'Shared ✓' : 'Link copied ✓'
+  setTimeout(() => (shareFeedback.value = null), 2000)
 }
 
 const sendAmountInput = ref<InstanceType<typeof CurrencyAmountInput>>()
@@ -132,6 +342,7 @@ function openSheet(which: 'send' | 'request' | 'history' | 'tip' | 'split' | 'in
   requestAmountInput.value?.reset()
   message.value = ''
   sendResult.value = null
+  expandedTxHash.value = null
   sheet.value = which
   if (which === 'history') {
     loadHistory()
@@ -227,57 +438,173 @@ async function loadHistory() {
   <div class="profile">
     <div class="card head">
       <Identicon :address="profile.address" :size="96" />
-      <h1 class="name">
-        {{ profile.name }}
-        <button v-if="!own" class="star" :class="{ on: profile.favorite }" @click="store.toggleFavorite(profile.id)">
-          {{ profile.favorite ? '★' : '☆' }}
+
+      <div class="name-row">
+        <h1 class="name">{{ profile.name }}</h1>
+        <button
+          v-if="!own"
+          type="button"
+          class="favorite-btn"
+          :class="{ on: profile.favorite }"
+          :aria-label="profile.favorite ? 'Remove from favorites' : 'Add to favorites'"
+          :aria-pressed="profile.favorite"
+          @click="store.toggleFavorite(profile.id)"
+        >
+          <span class="favorite-star" aria-hidden="true">★</span>
         </button>
-      </h1>
-      <p v-if="own && ownerHandle" class="owner-handle">
-        @{{ ownerHandle }}
-        <span v-if="ownerHandleConfirming" class="handle-status">Confirming…</span>
-      </p>
+      </div>
+
+      <div v-if="own && ownerHandle" class="owner-identity">
+        <p class="owner-handle">
+          @{{ ownerHandle }}
+          <span v-if="ownerHandleConfirming" class="handle-status">Confirming…</span>
+        </p>
+        <div v-if="!ownerHandleConfirming" class="owner-status-row" aria-label="Identity status">
+          <span class="owner-status-chip chip-verified">✓ Verified</span>
+          <span class="owner-status-chip chip-live">🌍 Public profile live</span>
+        </div>
+      </div>
+      <div v-else-if="!own && contactHandle" class="contact-identity">
+        <router-link :to="`/u/${contactHandle}`" class="contact-handle">@{{ contactHandle }}</router-link>
+        <span class="verified-chip">Verified public profile</span>
+      </div>
+
+      <div v-if="!own && (profile.favorite || contactTypeLabel || profile.tags.length)" class="identity-row">
+        <span v-if="profile.favorite" class="identity-chip favorite-chip">★ Favorite</span>
+        <span v-if="contactTypeLabel" class="identity-chip">{{ contactTypeLabel }}</span>
+        <span v-for="t in profile.tags" :key="t" class="identity-chip">{{ t }}</span>
+      </div>
+      <div v-else-if="own && profile.tags.length" class="identity-row">
+        <span v-for="t in profile.tags" :key="t" class="identity-chip">{{ t }}</span>
+      </div>
+
+      <p v-if="!own && relationshipHeadline" class="relationship-line">{{ relationshipHeadline }}</p>
       <p v-if="profile.bio" class="bio">{{ profile.bio }}</p>
-      <button class="address" @click="copyAddress">
-        {{ profile.address }}
+
+      <button type="button" class="address" @click="copyAddress">
+        <span class="address-value">{{ abbreviatedAddress }}</span>
         <span class="copy-hint">{{ copied ? 'Copied!' : 'Tap to copy' }}</span>
       </button>
-      <div v-if="profile.tags.length" class="tag-row">
-        <span v-for="t in profile.tags" :key="t" class="tag">{{ t }}</span>
-      </div>
+
       <div v-if="profile.website || profile.github || profile.x" class="link-row">
         <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener" class="link-chip">🌐 Website</a>
         <a v-if="profile.github" :href="`https://github.com/${encodeURIComponent(profile.github)}`" target="_blank" rel="noopener" class="link-chip">GitHub</a>
         <a v-if="profile.x" :href="`https://x.com/${encodeURIComponent(profile.x)}`" target="_blank" rel="noopener" class="link-chip">𝕏 @{{ profile.x }}</a>
       </div>
-      <div v-if="!own && netBalance != null && netBalance !== 0" class="balance" :class="netBalance > 0 ? 'pos' : 'neg'">
-        {{ netBalance > 0 ? '+' : '−' }}{{ Math.abs(netBalance).toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
-        <span v-if="netBalanceFiat" class="balance-fiat">{{ netBalanceFiat }}</span>
-        <span class="balance-hint">{{ netBalance > 0 ? 'net received from them' : 'net sent to them' }}</span>
+    </div>
+
+    <div v-if="!own" class="card relationship">
+      <div v-if="netBalance != null && netBalance !== 0" class="rel-block">
+        <span class="rel-label">Net</span>
+        <span class="rel-value" :class="netBalance > 0 ? 'pos' : 'neg'">
+          {{ netBalance > 0 ? '+' : '−' }}{{ Math.abs(netBalance).toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+        </span>
+        <span v-if="netBalanceFiat" class="rel-sub">{{ netBalanceFiat }}</span>
+        <span class="rel-sub">{{
+          netBalance > 0
+            ? "You've received more than you've sent."
+            : "You've sent more than you've received."
+        }}</span>
       </div>
-      <div v-if="!own && monthStats" class="month-stats">
-        This month: <span class="out">↑ {{ monthStats.sent }} NIM sent</span> · <span class="in">↓ {{ monthStats.received }} NIM received</span>
+
+      <div v-if="lastTouchLabel && lastTouchWhen" class="rel-block">
+        <span class="rel-label">{{ lastTouchLabel }}</span>
+        <span class="rel-value quiet">{{ lastTouchWhen }}</span>
       </div>
-      <div v-if="!own" class="meta">
-        <span>Added {{ dateAdded }}</span>
-        <span v-if="lastSeen"> · Last activity {{ lastSeen }}</span>
+
+      <div v-if="paymentCounts" class="rel-block">
+        <span class="rel-label">Payments</span>
+        <span class="rel-value quiet">
+          You've sent {{ paymentCounts.sent }} · Received {{ paymentCounts.received }}
+        </span>
+      </div>
+
+      <div v-if="monthStats" class="rel-block">
+        <span class="rel-label">This month</span>
+        <span class="rel-value quiet month-line">
+          <span class="out">↑ {{ monthStats.sent }} NIM sent</span>
+          <span class="in">↓ {{ monthStats.received }} NIM received</span>
+        </span>
+      </div>
+
+      <div class="rel-block">
+        <span class="rel-label">Added</span>
+        <span class="rel-value quiet">{{ dateAdded }}</span>
       </div>
     </div>
 
-    <div v-if="!own" class="actions">
-      <button class="action live" @click="openSheet('send')">💸<span>Send</span></button>
-      <button class="action live" @click="openSheet('request')">📥<span>Request</span></button>
-      <button class="action live" @click="openSheet('tip')">💛<span>Tip</span></button>
+    <div v-if="!own" class="primary-actions">
+      <button type="button" class="primary-action send" @click="openSheet('send')">
+        Send
+      </button>
+      <button type="button" class="primary-action request" @click="openSheet('request')">
+        Request
+      </button>
     </div>
-    <div v-if="!own" class="actions">
-      <button v-if="!own && profile.type === 'person'" class="action live" @click="openSheet('split')">🍕<span>Split Bill</span></button>
-      <button class="action live" @click="openSheet('invoice')">🧾<span>Invoice</span></button>
-      <button class="action live" @click="openSheet('history')">🕘<span>History</span></button>
+
+    <div v-if="!own" class="secondary-actions">
+      <button type="button" class="secondary-action" @click="openSheet('tip')">
+        <span aria-hidden="true">💛</span>
+        Tip
+      </button>
+      <button
+        v-if="profile.type === 'person'"
+        type="button"
+        class="secondary-action"
+        @click="openSheet('split')"
+      >
+        <span aria-hidden="true">🍕</span>
+        Split bill
+      </button>
+      <button type="button" class="secondary-action" @click="openSheet('invoice')">
+        <span aria-hidden="true">🧾</span>
+        Invoice
+      </button>
+      <button type="button" class="secondary-action" @click="openSheet('history')">
+        <span aria-hidden="true">🕘</span>
+        History
+      </button>
     </div>
+
+    <div v-if="!own && store.self" class="card activity">
+      <div class="activity-head">
+        <h2>Recent activity</h2>
+        <button
+          v-if="recentActivity.length"
+          type="button"
+          class="view-all"
+          @click="openSheet('history')"
+        >
+          View all →
+        </button>
+      </div>
+      <p v-if="history === null && !historyError" class="activity-empty">Loading…</p>
+      <p v-else-if="historyError" class="activity-empty">
+        Activity is unavailable right now.
+        <button type="button" class="view-all inline" @click="openSheet('history')">Try History</button>
+      </p>
+      <p v-else-if="!recentActivity.length" class="activity-empty">
+        No payments yet — send or request to start this relationship.
+      </p>
+      <ul v-else class="activity-list">
+        <li v-for="h in recentActivity" :key="h.hash">
+          <span class="activity-check" aria-hidden="true">✓</span>
+          <div class="activity-main">
+            <span class="activity-verb">{{ h.incoming ? 'They paid you' : 'You paid' }}</span>
+            <span class="activity-amount">
+              {{ h.valueNim.toLocaleString(undefined, { maximumFractionDigits: 2 }) }} NIM
+            </span>
+            <span v-if="h.message" class="activity-msg">“{{ h.message }}”</span>
+          </div>
+          <span class="activity-when">{{ historyWhen(h) }}</span>
+        </li>
+      </ul>
+    </div>
+
     <div v-if="own" class="own-actions">
       <button type="button" class="edit-profile" @click="$emit('edit')">
         <span aria-hidden="true">✎</span>
-        Edit profile
+        Edit public profile
       </button>
       <button
         v-if="showClaimHandle"
@@ -294,9 +621,23 @@ async function loadHistory() {
       <p>{{ profile.notes }}</p>
     </div>
 
-    <div v-if="!own" class="manage">
-      <button type="button" class="secondary" @click="$emit('edit')">Edit</button>
-      <button type="button" class="secondary danger" @click="$emit('remove')">Delete</button>
+    <div v-if="!own" class="manage-card">
+      <button
+        type="button"
+        class="manage-toggle"
+        :aria-expanded="manageOpen"
+        @click="manageOpen = !manageOpen"
+      >
+        <span>Manage contact</span>
+        <span class="manage-chevron" aria-hidden="true">{{ manageOpen ? '▴' : '▾' }}</span>
+      </button>
+      <div v-if="manageOpen" class="manage-menu">
+        <button type="button" class="manage-item" @click="$emit('edit')">Edit</button>
+        <button type="button" class="manage-item" @click="shareContact">
+          {{ shareFeedback ?? (canShare() ? 'Share' : 'Export link') }}
+        </button>
+        <button type="button" class="manage-item danger" @click="$emit('remove')">Delete</button>
+      </div>
     </div>
 
     <ActionSheet :open="sheet === 'send'" title="Send NIM" @close="sheet = null">
@@ -360,74 +701,301 @@ async function loadHistory() {
     <SplitBillSheet v-if="!own" :profile="profile" :open="sheet === 'split'" @close="sheet = null" />
     <InvoiceSheet v-if="!own" :profile="profile" :open="sheet === 'invoice'" @close="sheet = null" />
 
-    <ActionSheet :open="sheet === 'history'" title="Payment history" @close="sheet = null">
+    <ActionSheet :open="sheet === 'history'" :title="historySheetTitle" @close="sheet = null">
       <p v-if="historyError" class="hint">History is unavailable right now{{ store.self ? '' : ' — connect inside Nimiq Pay first' }}.</p>
       <p v-else-if="history === null" class="hint">Loading…</p>
-      <p v-else-if="history.length === 0" class="hint">No payments between you and {{ profile.name }} yet.</p>
-      <ul v-else class="history">
-        <li v-for="h in history" :key="h.hash">
-          <span class="dir" :class="h.incoming ? 'in' : 'out'">{{ h.incoming ? '←' : '→' }}</span>
-          <span class="value">
-            {{ h.incoming ? '+' : '−' }}{{ h.valueNim }} NIM
-            <span v-if="fiatApprox(h.valueNim)" class="tx-fiat">{{ fiatApprox(h.valueNim) }}</span>
-            <span v-if="h.message" class="tx-message">“{{ h.message }}”</span>
-          </span>
-          <span class="when">{{ new Date(h.timestamp * (h.timestamp < 1e12 ? 1000 : 1)).toLocaleDateString() }}</span>
-          <a class="tx-link" :href="transactionExplorerUrl(h.hash)" target="_blank" rel="noopener">Explorer</a>
-        </li>
-      </ul>
+      <EmptyState
+        v-else-if="history.length === 0"
+        icon="🕘"
+        title="No payments yet"
+        :hint="`Your payment history with ${profile.name} will appear here.`"
+      />
+      <div v-else class="history-feed">
+        <section v-for="group in historyGroups" :key="group.label" class="history-group">
+          <h3 class="history-group-label">{{ group.label }}</h3>
+          <article
+            v-for="h in group.items"
+            :key="h.hash"
+            class="history-card"
+            :class="h.incoming ? 'in' : 'out'"
+          >
+            <div class="history-card-top">
+              <span class="history-icon" aria-hidden="true">{{ paymentIcon(paymentKind(h)) }}</span>
+              <span class="history-verb">{{ paymentVerb(h) }}</span>
+            </div>
+            <p class="history-amount">
+              {{ h.valueNim.toLocaleString(undefined, { maximumFractionDigits: 5 }) }} NIM
+            </p>
+            <p v-if="fiatApprox(h.valueNim)" class="history-fiat">{{ fiatApprox(h.valueNim) }}</p>
+            <p class="history-when">{{ historyDateTime(h) }}</p>
+            <p v-if="displayMessage(h)" class="history-message">
+              <span class="history-message-label">Message</span>
+              {{ displayMessage(h) }}
+            </p>
+            <div class="history-details">
+              <button
+                type="button"
+                class="history-details-toggle"
+                :aria-expanded="expandedTxHash === h.hash"
+                @click="toggleTxDetails(h.hash)"
+              >
+                <span aria-hidden="true">{{ expandedTxHash === h.hash ? '▾' : '▸' }}</span>
+                Details
+              </button>
+              <div v-if="expandedTxHash === h.hash" class="history-tech">
+                <div class="history-tech-row">
+                  <span class="history-tech-label">Transaction hash</span>
+                  <span class="history-tech-value mono">{{ shortHash(h.hash) }}</span>
+                </div>
+                <div v-if="h.blockNumber" class="history-tech-row">
+                  <span class="history-tech-label">Block height</span>
+                  <span class="history-tech-value">{{ h.blockNumber.toLocaleString() }}</span>
+                </div>
+                <div v-if="h.message" class="history-tech-row">
+                  <span class="history-tech-label">Raw memo</span>
+                  <span class="history-tech-value mono">{{ h.message }}</span>
+                </div>
+                <a
+                  class="history-explorer"
+                  :href="transactionExplorerUrl(h.hash)"
+                  target="_blank"
+                  rel="noopener"
+                >
+                  Explorer ↗
+                </a>
+              </div>
+            </div>
+          </article>
+        </section>
+      </div>
     </ActionSheet>
   </div>
 </template>
 
 <style scoped>
 .profile { display: flex; flex-direction: column; gap: 16px; }
-.head { padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
-.name { font-size: 24px; line-height: 1.2; margin: 4px 0 0; display: flex; align-items: center; gap: 8px; }
+.head {
+  padding: 28px 24px 24px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  text-align: center;
+}
+.name-row {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  margin-top: 4px; max-width: 100%;
+}
+.name {
+  font-size: 28px; line-height: 1.15; margin: 0; font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.favorite-btn {
+  flex-shrink: 0;
+  min-width: 44px; min-height: 44px; padding: 0;
+  display: inline-grid; place-items: center;
+  border: 1.5px solid var(--border); border-radius: 50%;
+  background: var(--card); color: var(--text-40, var(--text-2));
+  cursor: pointer;
+  transition:
+    background var(--attr-duration) var(--nimiq-ease),
+    color var(--attr-duration) var(--nimiq-ease),
+    border-color var(--attr-duration) var(--nimiq-ease),
+    box-shadow var(--attr-duration) var(--nimiq-ease);
+}
+.favorite-btn.on {
+  background: var(--nimiq-gold-bg);
+  border-color: transparent;
+  color: var(--nimiq-blue);
+  box-shadow: 0 2px 8px rgba(233, 178, 19, 0.35);
+}
+.favorite-star { font-size: 22px; line-height: 1; }
+.favorite-btn.on .favorite-star { font-size: 24px; }
+.owner-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
 .owner-handle {
   margin: 0; font-size: 16px; font-weight: 800; color: var(--nq-gold-dark);
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
 }
 .handle-status { font-size: 12px; font-weight: 600; color: var(--text-2); }
-.star { background: none; border: none; font-size: 24px; color: var(--text-2); cursor: pointer; min-width: 44px; min-height: 44px; }
-.star.on { color: var(--nq-gold); }
-.address {
-  background: none; border: none; cursor: pointer; color: var(--text-2);
-  font-family: var(--nimiq-font-family-mono); font-size: 13px; line-height: 1.5; word-break: break-all; padding: 4px;
+.owner-status-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
 }
-.copy-hint { display: block; font-family: var(--nimiq-font-family); font-size: 11px; color: var(--nq-light-blue); }
+.owner-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: var(--nimiq-radius-pill);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.chip-verified {
+  color: var(--nq-green);
+  background: color-mix(in srgb, var(--nq-green) 18%, transparent);
+}
+.chip-live {
+  color: var(--nq-light-blue);
+  background: color-mix(in srgb, var(--nq-light-blue) 16%, transparent);
+}
+.contact-identity {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+}
+.contact-handle {
+  font-size: 16px; font-weight: 800; color: var(--nq-gold-dark);
+  text-decoration: none;
+}
+.contact-handle:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 2px; border-radius: 4px; }
+.verified-chip {
+  display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px;
+  border-radius: var(--nimiq-radius-pill);
+  background: rgba(33, 188, 165, 0.12);
+  color: var(--nq-green);
+  font-size: 11px; font-weight: 800;
+}
+.identity-row {
+  display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+  margin-top: 2px;
+}
+.identity-chip {
+  display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px;
+  border-radius: var(--nimiq-radius-pill);
+  background: var(--text-6); border: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; color: var(--text-80, var(--text-2));
+  text-transform: capitalize;
+}
+.favorite-chip {
+  background: rgba(233, 178, 19, 0.16);
+  border-color: rgba(233, 178, 19, 0.35);
+  color: var(--nq-gold-dark);
+}
+.relationship-line {
+  margin: 2px 0 0;
+  font-size: 14px; font-weight: 700; color: var(--text-2);
+}
 .bio { margin: 0; color: var(--text-2); font-size: 14px; max-width: 320px; }
+.address {
+  margin-top: 4px;
+  background: none; border: none; cursor: pointer; color: var(--text-2);
+  padding: 6px 8px; border-radius: var(--nimiq-radius-small);
+}
+.address:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 2px; }
+.address-value {
+  display: block;
+  font-family: var(--nimiq-font-family-mono); font-size: 13px; line-height: 1.4;
+}
+.copy-hint {
+  display: block; margin-top: 2px;
+  font-family: var(--nimiq-font-family); font-size: 11px; font-weight: 700;
+  color: var(--nq-light-blue);
+}
 .link-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .link-chip {
   display: inline-flex; align-items: center; min-height: 32px; padding: 0 12px;
   border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill);
   color: var(--nq-light-blue); font-size: 13px; font-weight: 700; text-decoration: none;
 }
-.tag-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
-.tag { background: var(--text-6); border: 1px solid var(--border); border-radius: var(--nimiq-radius-small); padding: 3px 10px; font-size: 12px; }
-.meta { font-size: 12px; color: var(--text-2); }
-.month-stats { font-size: 13px; font-weight: 600; color: var(--text-2); }
-.month-stats .out { color: var(--nq-gold-dark); }
-.month-stats .in { color: var(--nq-green); }
-.balance {
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 6px 16px; border-radius: var(--nimiq-radius-pill);
-  font-size: 15px; font-weight: 800;
+
+.relationship {
+  padding: 8px 20px 12px;
+  display: flex; flex-direction: column;
 }
-.balance.pos { color: var(--nq-green); background: rgba(33, 188, 165, 0.12); }
-.balance.neg { color: var(--nq-gold-dark); background: var(--text-6); }
-.balance-fiat { font-size: 12px; font-weight: 600; color: var(--text-2); }
-.balance-hint { font-size: 11px; font-weight: 600; color: var(--text-2); }
-.actions { display: flex; gap: 10px; }
-.action {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 12px 4px; min-height: 64px; font-size: 20px;
-  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  color: var(--text); cursor: pointer; box-shadow: var(--shadow);
+.rel-block {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border);
 }
-.action span { font-size: 12px; font-weight: 700; }
-.action:disabled { cursor: default; }
-.action.live:active { transform: scale(0.97); }
+.rel-block:last-child { border-bottom: none; }
+.rel-label {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: uppercase; color: var(--text-2);
+}
+.rel-value { font-size: 18px; font-weight: 800; line-height: 1.25; }
+.rel-value.quiet { font-size: 15px; font-weight: 700; }
+.rel-value.pos { color: var(--nq-green); }
+.rel-value.neg { color: var(--nq-gold-dark); }
+.rel-sub { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.month-line { display: flex; flex-direction: column; gap: 4px; }
+.month-line .out { color: var(--nq-gold-dark); }
+.month-line .in { color: var(--nq-green); }
+
+.primary-actions { display: flex; gap: 10px; }
+.primary-action {
+  flex: 1; min-height: 56px; padding: 0 16px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  border: none; border-radius: var(--nimiq-radius-pill);
+  font: inherit; font-size: 17px; font-weight: 800;
+  cursor: pointer; box-shadow: var(--nimiq-shadow);
+  transition: transform var(--attr-duration) var(--nimiq-ease), filter var(--attr-duration) var(--nimiq-ease);
+}
+.primary-action:active { transform: scale(0.98); }
+.primary-action:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 3px; }
+.primary-action.send {
+  background: var(--nimiq-gold-bg); color: var(--nimiq-blue);
+}
+.primary-action.request {
+  background: var(--nimiq-light-blue-darkened); color: var(--nimiq-white);
+}
+.secondary-actions {
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.secondary-action {
+  flex: 1 1 calc(25% - 6px); min-width: 72px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  min-height: 64px; padding: 10px 4px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); color: var(--text);
+  font: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer; box-shadow: var(--shadow);
+}
+.secondary-action span:first-child { font-size: 18px; line-height: 1; }
+.secondary-action:active { transform: scale(0.97); }
+
+.activity { padding: 18px 20px; }
+.activity-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin-bottom: 8px;
+}
+.activity h2 { margin: 0; font-size: 15px; font-weight: 800; }
+.view-all {
+  background: none; border: none; padding: 4px 0; cursor: pointer;
+  color: var(--nq-light-blue); font: inherit; font-size: 13px; font-weight: 800;
+}
+.activity-empty { margin: 8px 0 0; color: var(--text-2); font-size: 14px; line-height: 1.45; }
+.view-all.inline {
+  display: inline; margin-left: 4px; padding: 0;
+  font-size: inherit;
+}
+.activity-list { list-style: none; margin: 0; padding: 0; }
+.activity-list li {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.activity-list li:last-child { border-bottom: none; padding-bottom: 0; }
+.activity-check {
+  flex-shrink: 0; width: 22px; height: 22px; margin-top: 1px;
+  display: inline-grid; place-items: center;
+  border-radius: 50%;
+  background: rgba(33, 188, 165, 0.14); color: var(--nq-green);
+  font-size: 12px; font-weight: 800;
+}
+.activity-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.activity-verb { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.activity-amount { font-size: 15px; font-weight: 800; }
+.activity-msg {
+  font-size: 13px; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.activity-when { flex-shrink: 0; font-size: 12px; font-weight: 600; color: var(--text-2); }
+
 .own-actions { display: flex; gap: 10px; width: 100%; }
 .edit-profile {
   flex: 1; min-height: 48px; padding: 0 16px;
@@ -453,13 +1021,36 @@ async function loadHistory() {
 .notes { padding: 16px 20px; }
 .notes h2 { font-size: 14px; color: var(--text-2); margin: 0 0 6px; }
 .notes p { margin: 0; white-space: pre-wrap; }
-.manage { display: flex; gap: 8px; }
-.manage .secondary { flex: 1; }
+
+.manage-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: transparent;
+  overflow: hidden;
+}
+.manage-toggle {
+  width: 100%; min-height: 48px; padding: 0 16px;
+  display: flex; align-items: center; justify-content: space-between;
+  border: none; background: transparent; color: var(--text-2);
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+.manage-chevron { font-size: 12px; }
+.manage-menu {
+  display: flex; flex-direction: column;
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+.manage-item {
+  min-height: 44px; padding: 0 16px;
+  border: none; background: none; text-align: left;
+  color: var(--nq-light-blue); font: inherit; font-weight: 700; cursor: pointer;
+}
+.manage-item.danger { color: var(--nq-red); }
+
 .secondary {
   min-height: 44px; padding: 0 16px; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   border: 1px solid var(--border); background: var(--card); color: var(--nq-light-blue); font-weight: 700;
 }
-.secondary.danger { color: var(--nq-red); }
 .amount-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .message-label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; font-weight: 700; color: var(--text-2); margin-bottom: 12px; }
 .message-label input {
@@ -479,13 +1070,86 @@ async function loadHistory() {
 .ok { color: var(--nq-green); font-weight: 700; }
 .err { color: var(--nq-red); font-size: 14px; }
 .hint { color: var(--text-2); font-size: 14px; text-align: center; }
-.history { list-style: none; margin: 0; padding: 0; }
-.history li { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-.dir.in { color: var(--nq-green); }
-.dir.out { color: var(--nq-red); }
-.value { flex: 1; font-weight: 700; }
-.tx-message { display: block; font-weight: 400; font-size: 13px; color: var(--text-2); }
-.tx-fiat { display: inline-block; margin-left: 6px; font-weight: 400; font-size: 12px; color: var(--text-2); }
-.when { color: var(--text-2); font-size: 13px; }
-.tx-link { color: var(--nq-light-blue); font-size: 13px; font-weight: 800; text-decoration: none; }
+
+.history-feed { display: flex; flex-direction: column; gap: 20px; padding-bottom: 8px; }
+.history-group { display: flex; flex-direction: column; gap: 10px; }
+.history-group-label {
+  margin: 0;
+  font-size: 12px; font-weight: 800; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-2);
+}
+.history-card {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+.history-card-top {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 2px;
+}
+.history-icon { font-size: 16px; line-height: 1; }
+.history-verb { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.history-card.out .history-verb { color: var(--nq-gold-dark); }
+.history-card.in .history-verb { color: var(--nq-green); }
+.history-amount {
+  margin: 0;
+  font-size: 24px; font-weight: 800; line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+.history-fiat { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.history-when { margin: 4px 0 0; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.history-message {
+  margin: 8px 0 0; padding: 10px 12px;
+  border-radius: var(--nimiq-radius-small);
+  background: var(--card);
+  border: 1px solid var(--border);
+  font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: pre-wrap; word-break: break-word;
+}
+.history-message-label {
+  display: block; margin-bottom: 2px;
+  font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--text-2);
+}
+.history-details { margin-top: 10px; }
+.history-details-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0;
+  color: var(--text-2); font: inherit; font-size: 12px; font-weight: 700;
+  cursor: pointer;
+}
+.history-details-toggle:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 2px; border-radius: 4px; }
+.history-tech {
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 10px; padding: 12px;
+  border-radius: var(--nimiq-radius-small);
+  background: var(--card);
+  border: 1px solid var(--border);
+}
+.history-tech-row {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.history-tech-label {
+  font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
+  text-transform: uppercase; color: var(--text-2);
+}
+.history-tech-value {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  word-break: break-all;
+}
+.history-tech-value.mono { font-family: var(--nimiq-font-family-mono); font-weight: 500; }
+.history-explorer {
+  align-self: flex-start;
+  margin-top: 2px;
+  color: var(--nq-light-blue); text-decoration: none;
+  font-size: 13px; font-weight: 800;
+}
+.history-explorer:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 2px; border-radius: 4px; }
+
+@media (max-width: 360px) {
+  .secondary-action { flex-basis: calc(50% - 4px); }
+  .name { font-size: 24px; }
+}
 </style>

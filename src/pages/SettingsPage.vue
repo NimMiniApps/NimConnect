@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { loadSampleContacts } from '../services/samples'
@@ -20,7 +20,9 @@ import {
   uploadCloudBackup,
 } from '../services/cloud-backup'
 import { getMyAddress, insideNimiqPay } from '../services/nimiq'
+import { copyText } from '../services/share'
 import PassphraseSheet from '../components/PassphraseSheet.vue'
+import QrCode from '../components/QrCode.vue'
 import type { EncryptedBackup } from '../types/profile'
 
 const router = useRouter()
@@ -29,10 +31,39 @@ const message = ref('')
 const confirmReset = ref(false)
 const resetting = ref(false)
 const showAdvanced = ref(false)
+const showIncomingQr = ref(false)
+const incomingCopyFeedback = ref<string | null>(null)
 const passphraseOpen = ref(false)
 const passphraseConfirm = ref(false)
 const passphraseMode = ref<'export' | 'import' | 'cloud-enable' | 'cloud-restore'>('export')
 const pendingImport = ref<EncryptedBackup | null>(null)
+
+const appVersion = __APP_VERSION__
+const buildDate = __BUILD_DATE__
+const gitCommit = __GIT_COMMIT__
+
+const incomingValid = computed(() =>
+  !!incomingAddress.value.trim() && ValidationUtils.isValidAddress(incomingAddress.value.trim()),
+)
+
+const cloudStatusLabel = computed(() => (cloudBackupEnabled.value ? 'Enabled' : 'Not enabled'))
+const cloudLastBackupLabel = computed(() => formatBackupWhen(lastCloudSyncAt.value))
+const localLastBackupLabel = computed(() => formatBackupWhen(lastLocalBackupAt.value))
+
+function formatBackupWhen(ts: number): string {
+  if (!ts) return 'Never'
+  const d = new Date(ts)
+  const now = new Date()
+  const sameDay = d.toDateString() === now.toDateString()
+  const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+  if (sameDay) return `Today ${time}`
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (d.toDateString() === yesterday.toDateString()) return `Yesterday ${time}`
+  const age = formatBackupAge(ts)
+  if (age.endsWith('h ago') || age.endsWith('m ago') || age === 'Just now') return age
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} ${time}`
+}
 
 async function seedSamples() {
   const added = await loadSampleContacts()
@@ -212,6 +243,13 @@ function disableCloudBackup() {
   message.value = 'Cloud backup disabled.'
 }
 
+async function copyIncomingAddress() {
+  if (!incomingValid.value) return
+  await copyText(ValidationUtils.normalizeAddress(incomingAddress.value.trim()))
+  incomingCopyFeedback.value = 'Copied ✓'
+  window.setTimeout(() => { incomingCopyFeedback.value = null }, 2000)
+}
+
 async function resetApp() {
   if (!confirmReset.value) {
     confirmReset.value = true
@@ -230,7 +268,7 @@ async function resetApp() {
     message.value = 'All local data deleted.'
     await router.replace('/')
   } catch {
-    message.value = 'Could not reset — try again.'
+    message.value = 'Could not erase local data — try again.'
   } finally {
     resetting.value = false
   }
@@ -249,48 +287,130 @@ function cancelReset() {
     <div class="card group">
       <h2>Preferences</h2>
       <label class="pref-row">
-        <span>Enter amounts in</span>
+        <span>Preferred currency</span>
         <select v-model="preferredCurrency">
           <option value="NIM">NIM</option>
           <option v-for="c in FIAT_CURRENCIES" :key="c" :value="c">{{ c }}</option>
         </select>
       </label>
       <p class="hint">Default currency for splits and invoices — always converted to NIM at the day's rate.</p>
-      <label class="pref-row">
-        <span>Incoming address</span>
-        <input
-          v-model="incomingAddress"
-          type="text"
-          placeholder="NQ…"
-          :class="{ invalid: incomingAddress.trim() && !ValidationUtils.isValidAddress(incomingAddress.trim()) }"
-        />
-      </label>
+
+      <div class="incoming-block">
+        <label class="pref-row">
+          <span>Incoming address</span>
+          <input
+            v-model="incomingAddress"
+            type="text"
+            placeholder="NQ…"
+            :class="{ invalid: incomingAddress.trim() && !incomingValid }"
+          />
+        </label>
+        <div class="incoming-actions">
+          <button
+            type="button"
+            class="mini-btn"
+            :disabled="!incomingValid"
+            @click="copyIncomingAddress"
+          >
+            {{ incomingCopyFeedback ?? 'Copy' }}
+          </button>
+          <button
+            type="button"
+            class="mini-btn"
+            :disabled="!incomingValid"
+            :aria-pressed="showIncomingQr"
+            @click="showIncomingQr = !showIncomingQr"
+          >
+            {{ showIncomingQr ? 'Hide QR' : 'Show QR' }}
+          </button>
+        </div>
+        <div v-if="showIncomingQr && incomingValid" class="incoming-qr">
+          <QrCode :text="ValidationUtils.normalizeAddress(incomingAddress.trim())" :size="160" />
+        </div>
+      </div>
       <p class="hint">Nimiq Pay receives on a separate address — auto-detected when possible, or paste it here for Activity.</p>
+    </div>
+
+    <div class="card group privacy">
+      <h2>🛡 Privacy &amp; security</h2>
+      <ul class="privacy-list">
+        <li><span class="privacy-check" aria-hidden="true">✓</span> Contacts stay on this device</li>
+        <li><span class="privacy-check" aria-hidden="true">✓</span> Notes are never public</li>
+        <li><span class="privacy-check" aria-hidden="true">✓</span> Public profile only shares selected fields</li>
+      </ul>
     </div>
 
     <div class="card group">
       <h2>Backup</h2>
-      <p class="hint">Last backed up: {{ formatBackupAge(lastLocalBackupAt) }}</p>
-      <button class="item" @click="requestExport">🔒 Export encrypted backup</button>
-      <button class="item" @click="importBackup">⬆ Import backup</button>
-      <input ref="fileInput" type="file" accept="application/json,.nimconnect" hidden @change="importJson" />
+
       <template v-if="cloudBackupAvailable()">
-        <p v-if="!insideNimiqPay" class="hint">Cloud backup requires Nimiq Pay to sign with your wallet.</p>
-        <p class="hint">
-          Cloud: {{ cloudBackupEnabled ? `on · synced ${formatBackupAge(lastCloudSyncAt)}` : 'off' }}
-        </p>
-        <button v-if="!cloudBackupEnabled" class="item" :disabled="!insideNimiqPay" @click="enableCloudBackup">☁️ Enable cloud backup</button>
-        <button v-else class="item" @click="syncCloudNow">☁️ Sync now</button>
-        <button class="item" @click="restoreFromCloud">⬇ Restore from cloud</button>
-        <button v-if="cloudBackupEnabled" class="item subtle" @click="disableCloudBackup">Disable cloud backup</button>
+        <section class="status-card" aria-label="Cloud backup status">
+          <div class="status-card-head">
+            <h3>Cloud backup</h3>
+            <span
+              class="status-badge"
+              :class="cloudBackupEnabled ? 'on' : 'off'"
+            >{{ cloudStatusLabel }}</span>
+          </div>
+          <dl class="status-rows">
+            <div class="status-row">
+              <dt>Status</dt>
+              <dd>{{ cloudBackupEnabled ? 'Enabled ✓' : 'Not enabled' }}</dd>
+            </div>
+            <div class="status-row">
+              <dt>Last backup</dt>
+              <dd>{{ cloudLastBackupLabel }}</dd>
+            </div>
+          </dl>
+          <p v-if="!insideNimiqPay" class="hint">Cloud backup requires Nimiq Pay to sign with your wallet.</p>
+          <div class="status-actions">
+            <button
+              v-if="!cloudBackupEnabled"
+              type="button"
+              class="nq-button status-cta"
+              :disabled="!insideNimiqPay"
+              @click="enableCloudBackup"
+            >
+              Enable
+            </button>
+            <button
+              v-else
+              type="button"
+              class="item status-item"
+              @click="syncCloudNow"
+            >
+              ☁️ Sync now
+            </button>
+            <button type="button" class="item status-item" @click="restoreFromCloud">
+              ⬇ Restore from cloud
+            </button>
+            <button
+              v-if="cloudBackupEnabled"
+              type="button"
+              class="item subtle status-item"
+              @click="disableCloudBackup"
+            >
+              Disable cloud backup
+            </button>
+          </div>
+        </section>
       </template>
+
+      <section class="backup-group" aria-labelledby="local-backup-heading">
+        <h3 id="local-backup-heading">Local backup</h3>
+        <p class="hint">Last backed up: {{ localLastBackupLabel }}</p>
+        <button type="button" class="item" @click="requestExport">🔒 Export encrypted backup</button>
+        <button type="button" class="item" @click="importBackup">⬆ Import backup</button>
+        <input ref="fileInput" type="file" accept="application/json,.nimconnect" hidden @change="importJson" />
+      </section>
+
       <button type="button" class="item subtle" @click="showAdvanced = !showAdvanced">
         {{ showAdvanced ? '▾' : '▸' }} Advanced
       </button>
       <template v-if="showAdvanced">
         <p class="hint">Demo and power-user tools — not needed for normal use.</p>
-        <button class="item subtle" @click="seedSamples">✨ Add sample contacts (demo)</button>
-        <button class="item warn" @click="exportPlainJson">
+        <button type="button" class="item subtle" @click="seedSamples">✨ Add sample contacts (demo)</button>
+        <button type="button" class="item warn" @click="exportPlainJson">
           Export unencrypted JSON
         </button>
       </template>
@@ -300,27 +420,47 @@ function cancelReset() {
     <div class="card group">
       <h2>Data</h2>
       <template v-if="confirmReset">
-        <p class="warn">Delete all contacts and local data? This cannot be undone.</p>
+        <p class="warn">Erase all contacts and local data on this device? This cannot be undone.</p>
         <button type="button" class="item danger" :disabled="resetting" @click="resetApp">
-          {{ resetting ? 'Deleting…' : 'Yes, delete everything' }}
+          {{ resetting ? 'Erasing…' : 'Yes, erase everything' }}
         </button>
         <button type="button" class="item" :disabled="resetting" @click="cancelReset">Cancel</button>
       </template>
-      <button v-else type="button" class="item danger" @click="resetApp">🗑 Reset app</button>
-      <p class="hint">Deletes all contacts and cached history from this device.</p>
+      <button v-else type="button" class="item danger" @click="resetApp">🗑 Erase local data</button>
+      <p class="hint">
+        Removes all local contacts, notes, cached history and settings from this device.
+        Public profiles and blockchain data are not affected.
+      </p>
     </div>
 
     <div class="card group">
       <h2>About</h2>
       <p class="about">
-        NimConnect — a relationship manager for your wallet.<br />
-        Version 0.1.0 · Built for the Nimiq Pay Mini App competition.
+        NimConnect — a relationship manager for your wallet.
       </p>
+      <dl class="about-meta">
+        <div class="about-row">
+          <dt>License</dt>
+          <dd>MIT</dd>
+        </div>
+        <div class="about-row">
+          <dt>Version</dt>
+          <dd>{{ appVersion }}</dd>
+        </div>
+        <div class="about-row">
+          <dt>Build date</dt>
+          <dd>{{ buildDate }}</dd>
+        </div>
+        <div class="about-row">
+          <dt>Git commit</dt>
+          <dd class="mono">{{ gitCommit }}</dd>
+        </div>
+      </dl>
       <a class="item" href="https://github.com/NimMiniApps/NimConnect" target="_blank" rel="noopener">
         ↗ Source code on GitHub
       </a>
       <p class="about">
-        Open source under the MIT license. Built with Vue, Dexie and the official
+        Built for the Nimiq Pay Mini App competition with Vue, Dexie and the official
         Nimiq libraries (@nimiq/mini-app-sdk, @nimiq/utils, @nimiq/identicons) —
         all Apache-2.0/MIT licensed.
       </p>
@@ -342,6 +482,12 @@ function cancelReset() {
 h1 { font-size: 24px; line-height: 1.2; margin: 0 0 16px; }
 .group { padding: 16px 20px; margin-bottom: 16px; }
 .group h2 { font-size: 14px; color: var(--text-2); margin: 0 0 8px; }
+.group h3 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+}
 .pref-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; font-weight: 600; }
 .pref-row select,
 .pref-row input {
@@ -350,6 +496,117 @@ h1 { font-size: 24px; line-height: 1.2; margin: 0 0 16px; }
 }
 .pref-row input { flex: 1; min-width: 0; }
 .pref-row input.invalid { border-color: var(--nq-red); }
+
+.incoming-block { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.incoming-actions { display: flex; gap: 8px; }
+.mini-btn {
+  flex: 1;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--nimiq-radius-pill);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.mini-btn:disabled { opacity: 0.45; cursor: default; }
+.mini-btn:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 2px; }
+.incoming-qr {
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.privacy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.privacy-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.privacy-check {
+  flex-shrink: 0;
+  color: var(--nq-green);
+  font-weight: 800;
+}
+
+.status-card {
+  margin: 4px 0 16px;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+.status-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.status-card-head h3 { margin: 0; }
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 10px;
+  border-radius: var(--nimiq-radius-pill);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.status-badge.on {
+  color: var(--nq-green);
+  background: color-mix(in srgb, var(--nq-green) 18%, transparent);
+}
+.status-badge.off {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.status-rows {
+  margin: 0 0 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.status-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.status-row dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.status-row dd {
+  margin: 0;
+  font-weight: 800;
+  text-align: right;
+}
+.status-actions { display: flex; flex-direction: column; }
+.status-cta {
+  width: 100%;
+  margin-bottom: 4px;
+}
+.status-item { border-bottom-color: color-mix(in srgb, var(--border) 70%, transparent); }
+.backup-group { margin-top: 4px; }
+
 .item {
   display: block; width: 100%; text-align: left; background: none; border: none;
   padding: 12px 0; min-height: 44px; font: inherit; font-weight: 600;
@@ -364,4 +621,30 @@ a.item { text-decoration: none; border-bottom: none; display: flex; align-items:
 .warn { color: var(--nq-red); font-size: 14px; margin: 0 0 8px; line-height: 1.4; }
 .hint { color: var(--text-2); font-size: 13px; margin: 4px 0 0; line-height: 1.4; }
 .about { color: var(--text-2); font-size: 14px; line-height: 1.6; margin: 0; }
+.about-meta {
+  margin: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.about-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.about-row dt {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.about-row dd {
+  margin: 0;
+  font-weight: 800;
+  text-align: right;
+}
+.about-row dd.mono {
+  font-family: var(--nimiq-font-family-mono);
+  font-size: 12px;
+}
 </style>

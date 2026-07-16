@@ -34,14 +34,14 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Payment request" footer-verb="Sent">
     <template #identity>
-      <Identicon :address="payment.recipient" :size="96" />
+      <Identicon :address="payment.recipient" :size="80" />
       <p class="identity__request"><strong>{{ payment.label || shortAddress(payment.recipient) }}</strong> requests a payment</p>
     </template>
 
     <template #panel>
       <p v-if="amountText" class="payment-panel__amount">{{ amountText }}</p>
       <p v-if="payment.message" class="payment-panel__message">{{ payment.message }}</p>
-      <QrCode :text="nimiqUri" :size="260" />
+      <QrCode :text="nimiqUri" :size="180" />
       <span>Scan with any Nimiq wallet, or use a wallet app below</span>
       <PublicAddressCopy :address="payment.recipient" />
     </template>

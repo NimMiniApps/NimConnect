@@ -35,6 +35,10 @@ watch([nimValue, currency, raw], () => {
     : null)
 })
 
+watch(currency, (value) => {
+  preferredCurrency.value = value
+})
+
 function reset() {
   raw.value = null
   currency.value = preferredCurrency.value
@@ -83,6 +87,12 @@ defineExpose({ reset, setNim })
   width: 84px; font: inherit; font-weight: 700; padding: 0 8px;
   border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
-.approx { margin: 0; font-size: 13px; color: var(--nq-green); font-weight: 700; text-align: center; }
+.approx {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-align: center;
+}
 .warn { margin: 0; font-size: 13px; color: var(--nq-red); text-align: center; }
 </style>

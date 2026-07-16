@@ -22,7 +22,7 @@ const hasActions = computed(() =>
   <main class="public-surface">
     <div class="public-surface__canvas">
       <header class="public-surface__masthead">
-        <span class="public-surface__brand">NimConnect</span>
+        <a class="public-surface__brand" href="#/" aria-label="NimConnect home">NimConnect</a>
         <span class="public-surface__context" :data-public-context="context">{{ context }}</span>
       </header>
 
@@ -56,27 +56,30 @@ const hasActions = computed(() =>
 <style scoped>
 .public-surface {
   align-items: stretch;
-  background: var(--nimiq-blue);
+  /* Blue gradient frame stays distinct from the canvas in both themes. */
+  background: var(--nimiq-blue-bg);
   color: var(--text);
   display: flex;
   justify-content: center;
   min-height: 100dvh;
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
 }
 
 .public-surface__canvas {
   animation: public-surface-enter 180ms ease-out both;
-  background: linear-gradient(160deg, var(--card) 0%, var(--bg) 100%);
-  border-radius: 1.5rem;
+  /* Page --bg (not --card) so the panel can sit clearly above it. */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.75rem;
   isolation: isolate;
-  max-width: 42rem;
-  min-height: calc(100dvh - 2.5rem);
+  max-width: 26rem;
+  min-height: calc(100dvh - 2rem);
   overflow: hidden;
-  padding: clamp(1.25rem, 4vw, 2.5rem);
+  padding: clamp(1rem, 3vw, 1.5rem);
   position: relative;
   width: 100%;
 }
@@ -85,7 +88,7 @@ const hasActions = computed(() =>
   background: var(--nimiq-blue-bg);
   content: '';
   inset: -20%;
-  opacity: 0.12;
+  opacity: 0.08;
   pointer-events: none;
   position: absolute;
   z-index: 0;
@@ -113,26 +116,47 @@ const hasActions = computed(() =>
 
 .public-surface__brand {
   color: var(--text);
-  font-size: 1rem;
+  font-size: 0.875rem;
+  opacity: 0.55;
+  text-decoration: none;
+}
+
+.public-surface__brand:hover {
+  opacity: 0.8;
+}
+
+.public-surface__context {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--text-2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.625rem;
+  text-transform: uppercase;
 }
 
 .public-surface__identity {
   display: grid;
   gap: 0.625rem;
   justify-items: center;
+  margin-bottom: 1.875rem;
   text-align: center;
 }
 
 .public-surface__panel {
   background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 1.25rem;
-  box-shadow: var(--shadow);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  border-radius: 1rem;
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px color-mix(in srgb, var(--nimiq-white) 4%, transparent);
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-items: center;
-  padding: clamp(1rem, 3vw, 1.5rem);
+  padding: 0.5rem 0.75rem;
   text-align: center;
+  width: 100%;
 }
 
 .public-surface__panel :slotted(p) { margin: 0; }
@@ -140,14 +164,18 @@ const hasActions = computed(() =>
 
 .public-surface__actions {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.875rem;
 }
 
 .public-surface__primary,
 .public-surface__secondary,
 .public-surface__tertiary {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.75rem;
+}
+
+.public-surface__primary :deep(.nq-button) {
+  min-height: 3.5rem;
 }
 
 .public-surface__primary:empty,
@@ -157,17 +185,26 @@ const hasActions = computed(() =>
 .public-surface__secondary :slotted(.public-action--outline),
 .public-surface__secondary :slotted([data-public-action='outline']) {
   align-items: center;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
   border-radius: 0.875rem;
   box-sizing: border-box;
   color: var(--text);
   display: inline-flex;
   font-weight: 800;
   justify-content: center;
-  min-height: 3rem;
-  padding: 0.75rem 1rem;
+  min-height: 2.75rem;
+  padding: 0.625rem 1rem;
   text-decoration: none;
+  transition:
+    border-color 180ms var(--nimiq-ease),
+    transform 180ms var(--nimiq-ease);
+}
+
+.public-surface__secondary :slotted(.public-action--outline:hover),
+.public-surface__secondary :slotted([data-public-action='outline']:hover) {
+  border-color: color-mix(in srgb, var(--text) 42%, transparent);
+  transform: translateY(-2px);
 }
 
 .public-surface__tertiary {
@@ -233,12 +270,13 @@ const hasActions = computed(() =>
 
 @media (min-width: 48rem) {
   .public-surface {
-    padding-bottom: max(2rem, env(safe-area-inset-bottom));
-    padding-top: max(2rem, env(safe-area-inset-top));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    padding-top: max(1.5rem, env(safe-area-inset-top));
   }
 
   .public-surface__canvas {
-    min-height: min(48rem, calc(100dvh - 4rem));
+    max-width: 28rem;
+    min-height: min(40rem, calc(100dvh - 3rem));
   }
 }
 </style>

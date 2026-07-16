@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
 
-const props = defineProps<{ open: boolean; title: string }>()
+const props = defineProps<{
+  open: boolean
+  title: string
+  subtitle?: string
+  prominentTitle?: boolean
+}>()
 const emit = defineEmits<{ close: [] }>()
 
 const dragY = ref(0)
@@ -79,7 +84,10 @@ function onPointerUp(event: PointerEvent) {
           >
             <span class="sheet-bar" />
           </button>
-          <h2>{{ title }}</h2>
+          <header class="sheet-head">
+            <h2 :class="{ 'sheet-title--prominent': prominentTitle }">{{ title }}</h2>
+            <p v-if="subtitle" class="sheet-subtitle">{{ subtitle }}</p>
+          </header>
           <slot />
         </div>
       </div>
@@ -119,7 +127,20 @@ function onPointerUp(event: PointerEvent) {
 }
 .sheet-handle:active { cursor: grabbing; }
 .sheet-bar { width: 40px; height: 4px; border-radius: 2px; background: var(--text-20); }
-.sheet h2 { font-size: 20px; line-height: 1.2; margin: 12px 0 16px; }
+.sheet-head { margin: 12px 0 16px; }
+.sheet h2 { font-size: 20px; line-height: 1.2; margin: 0; }
+.sheet h2.sheet-title--prominent {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+.sheet-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--text-2);
+}
 .sheet-enter-active, .sheet-leave-active { transition: opacity var(--attr-duration) var(--nimiq-ease); }
 .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: transform var(--attr-duration) var(--nimiq-ease); }
 .sheet-enter-from, .sheet-leave-to { opacity: 0; }
