@@ -76,3 +76,16 @@ describe('PublicAddressCopy', () => {
     expect(publicAddressCopySource).toMatch(/\.public-address-copy--compact \.public-address-copy__button\s*\{[\s\S]*?min-height:\s*2\.75rem;/)
   })
 })
+
+describe('PublicAddressCopy token migration', () => {
+  it('no longer references the removed --public-* custom properties or their hex fallbacks', () => {
+    expect(publicAddressCopySource).not.toMatch(/--public-ink/)
+    expect(publicAddressCopySource).not.toMatch(/--public-soft-blue/)
+  })
+
+  it('uses themed tokens for its background, border, and text color', () => {
+    expect(publicAddressCopySource).toMatch(/\.public-address-copy\s*\{[\s\S]*?background:\s*var\(--bg\);/)
+    expect(publicAddressCopySource).toMatch(/border:\s*1px solid var\(--border\);/)
+    expect(publicAddressCopySource).toMatch(/color:\s*var\(--text\);/)
+  })
+})

@@ -46,17 +46,28 @@ describe('public landings', () => {
     expect(wrapper.find('.public-surface').exists()).toBe(true)
     expect(wrapper.get('[data-public-context]').text()).toBe('NimConnect')
     expect(wrapper.get('[data-public-primary] a').attributes('href')).toBe(NIMPAY_OPEN_URL)
-    expect(wrapper.text()).toContain('Send NIM, manage contacts, split bills, and track payments.')
+    expect(wrapper.text()).toContain('People, not wallet addresses.')
+    expect(wrapper.text()).toContain('Manage contacts, share public @handles, and receive payments.')
+    expect(wrapper.text()).toContain('Public @handles')
+    expect(wrapper.text()).toContain('Payment pages')
+    expect(wrapper.text()).toContain('Wallet contacts')
     expect(wrapper.get(`[href="${NIMPAY_PLAY_STORE_URL}"]`).text()).toContain('Get it on Google Play')
     expect(wrapper.get(`[href="${NIMPAY_APP_STORE_URL}"]`).text()).toContain('Download on the App Store')
 
-    await wrapper.get('button').trigger('click')
+    const continueButton = wrapper.findAll('button').find(button =>
+      button.text().includes('Continue in browser'))
+    expect(continueButton).toBeTruthy()
+    await continueButton!.trigger('click')
     expect(wrapper.emitted('continue')).toHaveLength(1)
 
-    await wrapper.setProps({ allowBrowserContinue: false })
-    expect(wrapper.findAll('button').some(button => button.text().includes('Continue in browser'))).toBe(false)
-    expect(wrapper.text()).toContain('On desktop, NimConnect works best for')
-    expect(wrapper.text()).toContain('look up public')
+    const desktop = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    expect(desktop.findAll('button').some(button => button.text().includes('Continue in browser'))).toBe(false)
+    expect(desktop.get('[data-public-primary] a').attributes('href')).toBe(NIMPAY_OPEN_URL)
+    expect(desktop.get('[data-public-primary] a').classes()).toContain('nq-button')
+    expect(desktop.get('[data-public-lookup] button').classes()).toContain('light-blue')
+    expect(desktop.find('[data-public-lookup]').exists()).toBe(true)
   })
 
   it('shows public profile lookup only on the desktop handoff', async () => {
@@ -66,7 +77,6 @@ describe('public landings', () => {
     await wrapper.setProps({ allowBrowserContinue: false })
     expect(wrapper.find('[data-public-lookup]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Look up a public profile')
-    expect(wrapper.text()).toContain('look up public')
     expect(wrapper.get('[data-public-lookup] input').attributes('placeholder'))
       .toBe('@handle or Nimiq address')
   })

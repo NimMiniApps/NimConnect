@@ -34,24 +34,24 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Payment request" footer-verb="Sent">
     <template #identity>
-      <Identicon :address="payment.recipient" :size="64" />
+      <Identicon :address="payment.recipient" :size="80" />
       <p class="identity__request"><strong>{{ payment.label || shortAddress(payment.recipient) }}</strong> requests a payment</p>
     </template>
 
     <template #panel>
       <p v-if="amountText" class="payment-panel__amount">{{ amountText }}</p>
       <p v-if="payment.message" class="payment-panel__message">{{ payment.message }}</p>
-      <QrCode :text="nimiqUri" :size="220" />
+      <QrCode :text="nimiqUri" :size="180" />
       <span>Scan with any Nimiq wallet, or use a wallet app below</span>
       <PublicAddressCopy :address="payment.recipient" />
     </template>
 
     <template #primary>
-      <a :href="payDeepLink">Pay with Nimiq Pay</a>
+      <a class="nq-button" :href="payDeepLink">Pay with Nimiq Pay</a>
     </template>
 
     <template #secondary>
-      <a :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a class="nq-button light-blue" :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
     </template>
 
     <template #tertiary>

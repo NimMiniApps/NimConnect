@@ -35,10 +35,25 @@ describe('PublicSurface', () => {
     expect(wrapper.find('.public-surface__actions').exists()).toBe(false)
   })
 
-  it('keeps public semantic tokens readable on its light canvas when the system prefers dark mode', () => {
-    expect(publicSurfaceSource).toMatch(/\.public-surface\s*\{[\s\S]*?--text:\s*#1f2348;/)
-    expect(publicSurfaceSource).toMatch(/\.public-surface\s*\{[\s\S]*?--text-2:\s*#59627d;/)
-    expect(publicSurfaceSource).toMatch(/\.public-surface\s*\{[\s\S]*?--border:\s*#dce7ff;/)
+  it('no longer defines the removed --public-* custom properties, so app-wide dark mode applies', () => {
+    expect(publicSurfaceSource).not.toMatch(/--public-ink:/)
+    expect(publicSurfaceSource).not.toMatch(/--public-blue:/)
+    expect(publicSurfaceSource).not.toMatch(/--public-gold:/)
+    expect(publicSurfaceSource).not.toMatch(/--public-soft-blue:/)
+  })
+
+  it('keeps a visible focus-visible outline sourced from a token that passes 3:1 in both themes', () => {
+    expect(publicSurfaceSource).toMatch(/:focus-visible\)[\s\S]*?outline:\s*3px solid var\(--nq-light-blue\);/)
+  })
+
+  it('gives its decorative canvas glow pointer-events: none and no transition or animation', () => {
+    const canvasGlowBlock = publicSurfaceSource.match(/\.public-surface__canvas::before\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    expect(canvasGlowBlock).toMatch(/pointer-events:\s*none;/)
+    expect(canvasGlowBlock).not.toMatch(/transition|animation/)
+  })
+
+  it('no longer duplicates filled-button styling — that now lives only in .nq-button', () => {
+    expect(publicSurfaceSource).not.toMatch(/__primary :slotted\(a\)[\s\S]*?background:\s*var\(--nimiq-gold/)
   })
 
   it('gives a browser continuation control a 44px minimum target', () => {

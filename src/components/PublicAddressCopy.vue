@@ -47,30 +47,34 @@ onBeforeUnmount(() => {
 <style scoped>
 .public-address-copy {
   align-items: center;
-  background: var(--public-soft-blue, #eef4ff);
-  border: 1px solid #dce7ff;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 0.875rem;
   display: flex;
   gap: 0.75rem;
   justify-content: space-between;
-  padding: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  text-align: left;
+  width: 100%;
 }
 
 .public-address-copy__address {
-  color: var(--public-ink, #1f2348);
+  color: var(--text);
+  flex: 1 1 auto;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 0.8125rem;
-  line-height: 1.45;
+  font-size: 0.75rem;
+  line-height: 1.4;
   min-width: 0;
   overflow-wrap: anywhere;
+  text-align: left;
   user-select: all;
 }
 
 .public-address-copy__button {
   background: transparent;
-  border: 1px solid #bdc9e5;
+  border: 1px solid var(--border);
   border-radius: 0.625rem;
-  color: var(--public-ink, #1f2348);
+  color: var(--text);
   cursor: pointer;
   flex: 0 0 auto;
   font: inherit;
@@ -87,12 +91,5 @@ onBeforeUnmount(() => {
 .public-address-copy--compact .public-address-copy__button {
   min-height: 2.75rem;
   padding: 0.375rem 0.5rem;
-}
-
-@media (max-width: 26rem) {
-  .public-address-copy {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 </style>

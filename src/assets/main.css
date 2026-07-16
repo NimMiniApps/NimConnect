@@ -91,6 +91,14 @@ button { font: inherit; }
   box-shadow: var(--shadow);
 }
 
+/*
+ * Contrast (WCAG relative luminance, computed against the actual gradient
+ * stops above, not assumed): white text on --nimiq-gold-bg is 1.94-2.30:1
+ * and on --nimiq-light-blue-bg is 4.16-5.79:1 — both fail 4.5:1 AA for
+ * normal text at one or both stops. --nimiq-blue text on the gold gradient
+ * is 6.56-7.79:1; white text on the solid --nimiq-light-blue-darkened is
+ * 5.06:1. Both pass — keep these pairings if the gradient stops change.
+ */
 .nq-button {
   min-height: 48px;
   padding: 0 24px;
@@ -99,7 +107,7 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--nimiq-white);
+  color: var(--nimiq-blue);
   background: var(--nimiq-gold-bg);
   font: inherit;
   font-weight: 700;
@@ -111,8 +119,85 @@ button { font: inherit; }
     opacity var(--attr-duration) var(--nimiq-ease);
 }
 
-.nq-button:active { transform: scale(0.98); }
+.nq-button:hover:not(:disabled) {
+  background: var(--nimiq-gold-bg-darkened);
+  transform: translateY(-2px);
+}
+.nq-button:active:not(:disabled) { transform: scale(0.98); }
 .nq-button:disabled { cursor: default; opacity: 0.5; }
-.nq-button.light-blue { background: var(--nimiq-light-blue-bg); }
-.nq-button.green { background: var(--nimiq-green-bg); }
-.nq-button.red { background: var(--nimiq-red-bg); }
+.nq-button:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 3px; }
+.nq-button.light-blue { background: var(--nimiq-light-blue-darkened); color: var(--nimiq-white); }
+.nq-button.green { background: var(--nimiq-green-bg); color: var(--nimiq-white); }
+.nq-button.red { background: var(--nimiq-red-bg); color: var(--nimiq-white); }
+
+/* Shared motion + loading polish */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text) 8%, var(--card));
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--text) 10%, transparent),
+    transparent
+  );
+  animation: skeleton-shimmer 1.15s var(--nimiq-ease) infinite;
+}
+.skeleton-line {
+  height: 12px;
+  margin: 0 0 10px;
+}
+.skeleton-line.short { width: 42%; }
+.skeleton-line.medium { width: 68%; }
+.skeleton-line.long { width: 92%; }
+.skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+.skeleton-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.skeleton-stack { flex: 1; min-width: 0; }
+
+.amount-pop {
+  display: inline-block;
+  animation: amount-pop 0.35s var(--nimiq-ease);
+}
+.star-pop {
+  display: inline-block;
+  animation: star-pop 0.42s var(--nimiq-ease);
+}
+
+@keyframes skeleton-shimmer {
+  100% { transform: translateX(100%); }
+}
+@keyframes amount-pop {
+  0% { transform: scale(0.92); opacity: 0.55; }
+  55% { transform: scale(1.06); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes star-pop {
+  0% { transform: scale(0.8) rotate(-12deg); }
+  45% { transform: scale(1.35) rotate(8deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after,
+  .amount-pop,
+  .star-pop {
+    animation: none !important;
+  }
+}

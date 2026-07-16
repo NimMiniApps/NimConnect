@@ -39,12 +39,15 @@ describe('profiles store views', () => {
     expect(store.allTags).toEqual(['coffee', 'family', 'merchant'])
   })
 
-  it('searches across name, address, notes, tags', async () => {
-    const { store } = await seed()
+  it('searches across name, address, notes, tags, and @handles', async () => {
+    const { store, alice } = await seed()
+    await store.update(alice.id, { handle: 'alice' })
     expect(store.search('coffee').map(p => p.name)).toEqual(['Bob Café'])
     expect(store.search('RENT').map(p => p.name)).toEqual(['Alice'])
     expect(store.search('nq268mmt').map(p => p.name)).toEqual(['Bob Café'])
     expect(store.search('family').map(p => p.name)).toEqual(['Alice'])
+    expect(store.search('@alice').map(p => p.name)).toEqual(['Alice'])
+    expect(store.search('alice').map(p => p.name)).toEqual(['Alice'])
     expect(store.search('')).toHaveLength(2)
     expect(store.search('zzz')).toHaveLength(0)
   })

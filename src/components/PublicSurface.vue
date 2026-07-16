@@ -22,7 +22,7 @@ const hasActions = computed(() =>
   <main class="public-surface">
     <div class="public-surface__canvas">
       <header class="public-surface__masthead">
-        <span class="public-surface__brand">NimConnect</span>
+        <a class="public-surface__brand" href="#/" aria-label="NimConnect home">NimConnect</a>
         <span class="public-surface__context" :data-public-context="context">{{ context }}</span>
       </header>
 
@@ -55,40 +55,58 @@ const hasActions = computed(() =>
 
 <style scoped>
 .public-surface {
-  --public-ink: #1f2348;
-  --public-blue: #2252c7;
-  --public-soft-blue: #eef4ff;
-  --public-gold: #f4c547;
-  --text: #1f2348;
-  --text-2: #59627d;
-  --border: #dce7ff;
   align-items: stretch;
-  background: var(--public-ink);
-  color: var(--public-ink);
+  /* Blue gradient frame stays distinct from the canvas in both themes. */
+  background: var(--nimiq-blue-bg);
+  color: var(--text);
   display: flex;
   justify-content: center;
   min-height: 100dvh;
-  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1.5rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+  padding: max(0.75rem, env(safe-area-inset-top)) max(0.75rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(0.75rem, env(safe-area-inset-left));
 }
 
 .public-surface__canvas {
   animation: public-surface-enter 180ms ease-out both;
-  background: linear-gradient(160deg, #ffffff 0%, var(--public-soft-blue) 100%);
-  border-radius: 1.5rem;
+  /* Page --bg (not --card) so the panel can sit clearly above it. */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
-  max-width: 42rem;
-  min-height: calc(100dvh - 2.5rem);
-  padding: clamp(1.25rem, 4vw, 2.5rem);
+  gap: 0.75rem;
+  isolation: isolate;
+  max-width: 26rem;
+  min-height: calc(100dvh - 2rem);
+  overflow: hidden;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  position: relative;
   width: 100%;
+}
+
+.public-surface__canvas::before {
+  background: var(--nimiq-blue-bg);
+  content: '';
+  inset: -20%;
+  opacity: 0.08;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.public-surface__masthead,
+.public-surface__identity,
+.public-surface__panel,
+.public-surface__actions,
+.public-surface__footer {
+  position: relative;
+  z-index: 1;
 }
 
 .public-surface__masthead,
 .public-surface__footer {
   align-items: center;
-  color: #59627d;
+  color: var(--text-2);
   display: flex;
   font-size: 0.8125rem;
   font-weight: 700;
@@ -97,27 +115,48 @@ const hasActions = computed(() =>
 }
 
 .public-surface__brand {
-  color: var(--public-ink);
-  font-size: 1rem;
+  color: var(--text);
+  font-size: 0.875rem;
+  opacity: 0.55;
+  text-decoration: none;
+}
+
+.public-surface__brand:hover {
+  opacity: 0.8;
+}
+
+.public-surface__context {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--text-2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.625rem;
+  text-transform: uppercase;
 }
 
 .public-surface__identity {
   display: grid;
   gap: 0.625rem;
   justify-items: center;
+  margin-bottom: 1.875rem;
   text-align: center;
 }
 
 .public-surface__panel {
-  background: #ffffff;
-  border: 1px solid #dce7ff;
-  border-radius: 1.25rem;
-  box-shadow: 0 1rem 2.5rem rgb(31 35 72 / 0.1);
+  background: var(--card);
+  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  border-radius: 1rem;
+  box-shadow:
+    var(--shadow),
+    0 0 0 1px color-mix(in srgb, var(--nimiq-white) 4%, transparent);
   display: grid;
-  gap: 0.75rem;
+  gap: 0.5rem;
   justify-items: center;
-  padding: clamp(1rem, 3vw, 1.5rem);
+  padding: 0.5rem 0.75rem;
   text-align: center;
+  width: 100%;
 }
 
 .public-surface__panel :slotted(p) { margin: 0; }
@@ -125,59 +164,51 @@ const hasActions = computed(() =>
 
 .public-surface__actions {
   display: grid;
-  gap: 0.75rem;
+  gap: 0.875rem;
 }
 
 .public-surface__primary,
 .public-surface__secondary,
 .public-surface__tertiary {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.75rem;
+}
+
+.public-surface__primary :deep(.nq-button) {
+  min-height: 3.5rem;
 }
 
 .public-surface__primary:empty,
 .public-surface__secondary:empty,
 .public-surface__tertiary:empty { display: none; }
 
-.public-surface__primary :slotted(a),
-.public-surface__primary :slotted(button),
-.public-surface__secondary :slotted(a),
-.public-surface__secondary :slotted(button) {
-  align-items: center;
-  border-radius: 0.875rem;
-  box-sizing: border-box;
-  display: inline-flex;
-  font: inherit;
-  font-weight: 800;
-  justify-content: center;
-  min-height: 3rem;
-  padding: 0.75rem 1rem;
-  text-decoration: none;
-}
-
-.public-surface__primary :slotted(a),
-.public-surface__primary :slotted(button) {
-  background: var(--public-gold);
-  border: 1px solid var(--public-gold);
-  color: var(--public-ink);
-}
-
-.public-surface__secondary :slotted(a),
-.public-surface__secondary :slotted(button) {
-  background: var(--public-blue);
-  border: 1px solid var(--public-blue);
-  color: #ffffff;
-}
-
 .public-surface__secondary :slotted(.public-action--outline),
 .public-surface__secondary :slotted([data-public-action='outline']) {
-  background: transparent;
-  border-color: #bdc9e5;
-  color: var(--public-ink);
+  align-items: center;
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 28%, transparent);
+  border-radius: 0.875rem;
+  box-sizing: border-box;
+  color: var(--text);
+  display: inline-flex;
+  font-weight: 800;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.625rem 1rem;
+  text-decoration: none;
+  transition:
+    border-color 180ms var(--nimiq-ease),
+    transform 180ms var(--nimiq-ease);
+}
+
+.public-surface__secondary :slotted(.public-action--outline:hover),
+.public-surface__secondary :slotted([data-public-action='outline']:hover) {
+  border-color: color-mix(in srgb, var(--text) 42%, transparent);
+  transform: translateY(-2px);
 }
 
 .public-surface__tertiary {
-  border-top: 1px solid #dce7ff;
+  border-top: 1px solid var(--border);
   padding-top: 1rem;
 }
 
@@ -194,7 +225,7 @@ const hasActions = computed(() =>
 .public-surface__footer :slotted(button) {
   background: none;
   border: 0;
-  color: var(--nq-light-blue);
+  color: var(--nimiq-light-blue);
   cursor: pointer;
   font: inherit;
   font-weight: 700;
@@ -215,7 +246,7 @@ const hasActions = computed(() =>
 .public-surface :deep(input:focus-visible),
 .public-surface :deep(textarea:focus-visible),
 .public-surface :deep(select:focus-visible) {
-  outline: 3px solid var(--public-gold);
+  outline: 3px solid var(--nq-light-blue);
   outline-offset: 3px;
 }
 
@@ -239,12 +270,13 @@ const hasActions = computed(() =>
 
 @media (min-width: 48rem) {
   .public-surface {
-    padding-bottom: max(2rem, env(safe-area-inset-bottom));
-    padding-top: max(2rem, env(safe-area-inset-top));
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+    padding-top: max(1.5rem, env(safe-area-inset-top));
   }
 
   .public-surface__canvas {
-    min-height: min(48rem, calc(100dvh - 4rem));
+    max-width: 28rem;
+    min-height: min(40rem, calc(100dvh - 3rem));
   }
 }
 </style>

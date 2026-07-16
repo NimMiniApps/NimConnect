@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PublicProfilePage from './PublicProfilePage.vue'
+import publicProfilePageSource from './PublicProfilePage.vue?raw'
 import { makeNimiqPayAddLink, makeWalletRequestLink } from '../services/links'
 
 const mocks = vi.hoisted(() => ({
@@ -98,5 +99,31 @@ describe('PublicProfilePage', () => {
     expect(wrapper.text()).toContain('@ada is free')
     expect(wrapper.get('[data-public-panel]').text()).toContain('Claim it in NimConnect')
     expect(wrapper.get('[data-public-panel] a[href="/"]').text()).toContain('Claim it in NimConnect')
+  })
+})
+
+describe('PublicProfilePage visual sizing and hero polish', () => {
+  it('uses the 80px avatar and 180px QR code sizes', () => {
+    expect(publicProfilePageSource).toMatch(/<Identicon :address="payAddress" :size="80"/)
+    expect(publicProfilePageSource).toMatch(/<QrCode :text="payUri" :size="180"/)
+  })
+
+  it('wraps the avatar in a glow container that never blocks interaction and never animates', () => {
+    expect(publicProfilePageSource).toMatch(/class="identity__avatar"/)
+    const glowBlock = publicProfilePageSource.match(/\.identity__avatar::before\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    expect(glowBlock).toMatch(/pointer-events:\s*none;/)
+    expect(glowBlock).not.toMatch(/transition|animation/)
+  })
+
+  it('styles the verified badge as a pill with theme-safe text on a green tint', () => {
+    const verifiedBlock = publicProfilePageSource.match(/\.verified\s*\{[\s\S]*?\}/)?.[0] ?? ''
+    expect(verifiedBlock).toMatch(/border-radius:\s*var\(--nimiq-radius-pill\);/)
+    expect(verifiedBlock).toMatch(/--nimiq-green/)
+    expect(verifiedBlock).toMatch(/color:\s*var\(--text\);/)
+  })
+
+  it('uses the shared .nq-button class on its filled actions instead of a bespoke implementation', () => {
+    expect(publicProfilePageSource.match(/class="nq-button"/g)?.length).toBe(2)
+    expect(publicProfilePageSource).toContain('class="nq-button light-blue"')
   })
 })

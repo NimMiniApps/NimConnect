@@ -6,6 +6,7 @@ import { useAfterRestoreRefresh } from '../composables/useAfterRestoreRefresh'
 import ProfileRow from '../components/ProfileRow.vue'
 import SearchBar from '../components/SearchBar.vue'
 import EmptyState from '../components/EmptyState.vue'
+import type { Profile } from '../types/profile'
 
 const store = useProfilesStore()
 const invoicesStore = useInvoicesStore()
@@ -19,11 +20,25 @@ useAfterRestoreRefresh(refreshPageData)
 
 const searching = computed(() => query.value.trim().length > 0)
 const results = computed(() => store.search(query.value))
-const sections = computed(() => [
-  { title: 'Recent', items: store.recent },
-  { title: 'Favorites', items: store.favorites },
-  { title: 'All', items: store.sortedContacts },
-].filter(s => s.items.length > 0))
+
+/**
+ * Adaptive relationship buckets — scales past a handful of contacts without
+ * repeating the same person in Recent + All.
+ */
+const sections = computed(() => {
+  const favoriteIds = new Set(store.favorites.map(p => p.id))
+  const recentlyActive = store.recent.filter(p => !favoriteIds.has(p.id))
+  const recentIds = new Set(recentlyActive.map(p => p.id))
+  const everyone = store.sortedContacts.filter(
+    p => !favoriteIds.has(p.id) && !recentIds.has(p.id),
+  )
+  const list: { title: string; items: Profile[] }[] = [
+    { title: '⭐ Favorites', items: store.favorites },
+    { title: '🕒 Recently active', items: recentlyActive },
+    { title: '👥 Everyone', items: everyone },
+  ]
+  return list.filter(s => s.items.length > 0)
+})
 
 function pendingCount(address: string): number {
   return invoicesStore.pendingByAddress(address).length
@@ -34,18 +49,17 @@ function pendingCount(address: string): number {
   <div class="page">
     <header class="header">
       <h1>Contacts</h1>
-      <SearchBar v-model="query" />
+      <SearchBar v-model="query" placeholder="Search people, @handles, notes or tags…" />
     </header>
 
     <template v-if="store.contacts.length === 0">
       <EmptyState
         icon="👥"
         title="No contacts yet"
-        hint="Start with a wallet address, QR scan, or backup import."
+        hint="Save people you pay often to make future payments easier."
       >
         <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
         <router-link to="/settings" class="empty-action">Import backup</router-link>
-        <router-link to="/me" class="empty-action">Share profile</router-link>
       </EmptyState>
     </template>
 
@@ -72,15 +86,15 @@ function pendingCount(address: string): number {
 <style scoped>
 .page { padding: 16px 16px 88px; }
 .header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 12px; }
-.section { margin-top: 20px; }
+.section { margin-top: 18px; }
 .section-title {
-  font-size: 14px;
-  text-transform: uppercase;
-  letter-spacing: 0.107em;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
   color: var(--text-2);
-  margin: 0 0 8px 4px;
+  margin: 0 0 6px 4px;
 }
-.list { overflow: hidden; padding: 4px 0; }
+.list { overflow: hidden; padding: 2px 0; }
 .fab {
   position: fixed;
   right: max(16px, calc(50% - 264px));

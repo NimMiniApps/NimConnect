@@ -42,17 +42,17 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 
     <template #panel>
       <p class="payment-panel__label">Send NIM to {{ profile.name }}</p>
-      <QrCode :text="nimiqUri" :size="220" />
+      <QrCode :text="nimiqUri" :size="180" />
       <span>Scan with any Nimiq wallet, or use a wallet app below</span>
       <PublicAddressCopy :address="profile.address" />
     </template>
 
     <template #primary>
-      <a :href="payDeepLink">Pay with Nimiq Pay</a>
+      <a class="nq-button" :href="payDeepLink">Pay with Nimiq Pay</a>
     </template>
 
     <template #secondary>
-      <a :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a class="nq-button light-blue" :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
       <a :href="addInPayLink" class="public-action--outline">Add to NimConnect</a>
     </template>
 
@@ -75,7 +75,22 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 .identity__bio { line-height: 1.45; max-width: 22.5rem; }
 .identity__tags,
 .identity__links { display: flex; flex-wrap: wrap; gap: 0.5rem; justify-content: center; }
-.identity__tags span,
-.identity__links a { border: 1px solid var(--border); border-radius: var(--nimiq-radius-pill); color: var(--text-2); font-size: 0.8125rem; font-weight: 700; padding: 0.375rem 0.625rem; text-decoration: none; }
+.identity__links a {
+  border: 1px solid color-mix(in srgb, var(--nq-light-blue) 45%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--nq-light-blue);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  padding: 0.375rem 0.75rem;
+  text-decoration: none;
+}
+.identity__tags span {
+  background: color-mix(in srgb, var(--nimiq-gold) 24%, transparent);
+  border-radius: var(--nimiq-radius-pill);
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.3125rem 0.75rem;
+}
 .payment-panel__label { color: var(--text-2); font-weight: 800; }
 </style>
