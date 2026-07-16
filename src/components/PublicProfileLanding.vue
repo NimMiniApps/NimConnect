@@ -27,7 +27,7 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Shared profile">
     <template #identity>
-      <Identicon :address="profile.address" :size="80" />
+      <Identicon :address="profile.address" :size="96" />
       <h1 class="identity__title">{{ profile.name }}</h1>
       <p v-if="profile.bio" class="identity__bio">{{ profile.bio }}</p>
       <div v-if="profile.tags.length" class="identity__tags">
@@ -42,17 +42,17 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 
     <template #panel>
       <p class="payment-panel__label">Send NIM to {{ profile.name }}</p>
-      <QrCode :text="nimiqUri" :size="220" />
+      <QrCode :text="nimiqUri" :size="260" />
       <span>Scan with any Nimiq wallet, or use a wallet app below</span>
       <PublicAddressCopy :address="profile.address" />
     </template>
 
     <template #primary>
-      <a :href="payDeepLink">Pay with Nimiq Pay</a>
+      <a class="nq-button" :href="payDeepLink">Pay with Nimiq Pay</a>
     </template>
 
     <template #secondary>
-      <a :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
+      <a class="nq-button light-blue" :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
       <a :href="addInPayLink" class="public-action--outline">Add to NimConnect</a>
     </template>
 
