@@ -66,10 +66,13 @@ export function createProfileClient(options: ProfileClientOptions = {}): Profile
   }
 
   async function getDisplayIdentity(address: string): Promise<DisplayIdentity> {
-    const [handleClaim, storedProfile] = await Promise.all([
+    // allSettled: a 5xx/network failure on one side must not discard the other.
+    const [handleResult, profileResult] = await Promise.allSettled([
       getHandleByAddress(address),
       getProfileByAddress(address),
     ])
+    const handleClaim = handleResult.status === 'fulfilled' ? handleResult.value : null
+    const storedProfile = profileResult.status === 'fulfilled' ? profileResult.value : null
     const profile = storedProfile?.profile
 
     return {
