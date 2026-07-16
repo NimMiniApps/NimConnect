@@ -34,16 +34,50 @@ export function createProfileClient(options: ProfileClientOptions): ProfileClien
     }
   }
 
-  async function resolveHandle(): Promise<HandleClaim | null> {
-    throw new Error('not implemented')
+  function parseHandleClaim(body: any): HandleClaim {
+    return {
+      handle: body.handle,
+      address: body.address,
+      txHash: body.tx_hash,
+      blockHeight: body.block_height,
+      txIndex: body.tx_index,
+    }
   }
 
-  async function getHandleByAddress(): Promise<HandleClaim | null> {
-    throw new Error('not implemented')
+  async function resolveHandle(handle: string): Promise<HandleClaim | null> {
+    const res = await fetch(`${baseUrl}/api/resolve/${handle}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`resolve handle failed: ${res.status}`)
+    return parseHandleClaim(await res.json())
   }
 
-  async function getDisplayIdentity(): Promise<DisplayIdentity> {
-    throw new Error('not implemented')
+  async function getHandleByAddress(address: string): Promise<HandleClaim | null> {
+    const res = await fetch(`${baseUrl}/api/handles/by-address/${compactAddress(address)}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`handle by address fetch failed: ${res.status}`)
+    return parseHandleClaim(await res.json())
+  }
+
+  async function getDisplayIdentity(address: string): Promise<DisplayIdentity> {
+    const [handleClaim, storedProfile] = await Promise.all([
+      getHandleByAddress(address),
+      getProfileByAddress(address),
+    ])
+    const profile = storedProfile?.profile
+
+    return {
+      address,
+      handle: handleClaim?.handle,
+      displayName: profile?.display_name,
+      bio: profile?.bio,
+      links: profile
+        ? { website: profile.website, github: profile.github, x: profile.x }
+        : undefined,
+    }
   }
 
   return { getProfileByAddress, resolveHandle, getHandleByAddress, getDisplayIdentity }
