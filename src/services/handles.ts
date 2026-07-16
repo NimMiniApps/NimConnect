@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2'
 import { bytesToHex } from '@noble/hashes/utils'
+import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { apiUrl, hasApiBase } from './api'
 import { fetchTransactionsByAddress } from './history'
 import { sendNim, signChallenge } from './nimiq'
@@ -30,6 +31,23 @@ export function handlesEnabled(): boolean {
 // by the 64-char text-transaction limit; longer names claim via NimFeed/Hub.
 export function isValidHandle(h: string): boolean {
   return /^[a-z0-9_]{3,31}$/.test(h)
+}
+
+export type PublicLookupQuery =
+  | { kind: 'handle'; handle: string }
+  | { kind: 'address'; address: string }
+  | { kind: 'invalid' }
+
+/** Classify desktop public-lookup input before any network call. */
+export function parsePublicLookupQuery(raw: string): PublicLookupQuery {
+  const trimmed = raw.trim()
+  if (!trimmed) return { kind: 'invalid' }
+  if (ValidationUtils.isValidAddress(trimmed)) {
+    return { kind: 'address', address: ValidationUtils.normalizeAddress(trimmed) }
+  }
+  const handle = trimmed.replace(/^@/, '').toLowerCase()
+  if (isValidHandle(handle)) return { kind: 'handle', handle }
+  return { kind: 'invalid' }
 }
 
 export const MAX_PAY_CLAIM_CHARS = 26
