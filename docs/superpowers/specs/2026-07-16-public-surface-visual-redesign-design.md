@@ -43,14 +43,24 @@ a re-architecture — no consumer's `<script>` changes.
   (`--nimiq-blue`, `--text`, `--text-2`, `--border`, etc.), inheriting
   `main.css`'s existing `@media (prefers-color-scheme: dark)` block instead of
   redefining a parallel light-only palette.
-- Primary action button uses `--nimiq-gold-bg` (gradient, matches `.nq-button`
-  elsewhere in the app) instead of flat `var(--public-gold)`.
-- Secondary action button uses `--nimiq-light-blue-bg` gradient instead of
-  flat `var(--public-blue)`; the existing `.public-action--outline` variant is
-  unchanged (still transparent/bordered).
-- Canvas background becomes a subtle radial gradient (reusing the
-  `--nimiq-blue-bg` gradient family at low opacity) instead of the flat
-  white-to-soft-blue linear gradient, for a less "generic SaaS card" feel.
+- Primary/secondary action buttons adopt the shared `.nq-button` rules from
+  `main.css` (gold gradient for primary, light-blue gradient for secondary)
+  rather than redefining button styling locally — same hover, `:active`
+  scale/opacity, `:disabled`, and `:focus-visible` behavior as every other
+  button in the app, in both light and dark mode. The existing
+  `.public-action--outline` variant keeps its own transparent/bordered look
+  but still inherits the shared focus-visible outline. Foreground text on
+  both gradients must continue to meet WCAG AA contrast (`--nimiq-white` on
+  gold/light-blue gradients is the app's existing combination — reuse it
+  as-is, don't introduce a new text color for public buttons).
+- Canvas background gets a decorative radial glow *behind* the existing
+  gradient, not a reduction of the canvas's own opacity: an absolutely
+  positioned `::before` (or a second background layer) using the
+  `--nimiq-blue-bg` gradient at reduced *element* opacity (e.g. `opacity:
+  0.15` on the pseudo-element itself), stacked under the card content
+  (`z-index` below `.public-surface__canvas` children). The canvas surface
+  and its text stay fully opaque — only the decorative layer is
+  translucent. No new hardcoded colors; only existing tokens.
 - No layout/structural change: same grid, same slot regions, same responsive
   breakpoints.
 
@@ -59,8 +69,11 @@ a re-architecture — no consumer's `<script>` changes.
 - Identicon/avatar size in the `identity` slot goes from 64–80px to 96px
   across all four consumers (one prop value change per file, no markup
   change).
-- QR code size goes from 200–220px to 260px (`PublicProfilePage`,
-  `PublicPayLanding`, `PublicProfileLanding`).
+- QR code size targets 260px but must stay responsive: wrap `QrCode` in a
+  container capped with `max-width: 100%` (and `width: min(260px, 100%)` or
+  equivalent) so it scales down proportionally on narrow viewports —
+  verified down to ~320px wide — instead of overflowing or forcing
+  horizontal scroll. Aspect ratio (1:1) is preserved at every size.
 - Headline (`h1`) font-size increases one step in the type scale for more
   hero presence.
 
@@ -71,9 +84,27 @@ a re-architecture — no consumer's `<script>` changes.
   `--nimiq-radius-pill` token) sitting directly under the handle, instead of
   a plain underlined link. It remains a link to the explorer; behavior
   unchanged, only visual treatment.
-- The identity section gets a soft radial glow behind the avatar (CSS
-  `::before` pseudo-element, decorative, `aria-hidden` via no interactive
-  content) — no new DOM elements beyond what pure CSS requires.
+- The identity section gets a soft radial glow behind the avatar: a
+  decorative `::before` pseudo-element, `pointer-events: none`, negative
+  `z-index` (or otherwise stacked strictly behind the avatar/content) so it
+  never intercepts clicks/taps or visually overlaps the identicon itself.
+  Static only — no animation, transition, or motion on the glow (keeps this
+  pass free of added complexity and respects
+  `prefers-reduced-motion` trivially since there's no motion to reduce). No
+  new DOM elements beyond what pure CSS requires.
+
+## Accessibility
+
+- Every button and link keeps a visible `:focus-visible` outline in both
+  light and dark mode — reuse the existing shared focus-visible rule
+  (`PublicSurface`'s current `outline: 3px solid var(--public-gold)` block
+  becomes an existing app token, e.g. `--nimiq-gold`, applied the same way)
+  rather than dropping it during the token swap.
+- Gradient button text must meet WCAG AA contrast against both ends of the
+  gradient — use the app's existing white-on-gradient combination rather
+  than a new color.
+- No change to tab order, semantics, or ARIA — this pass touches CSS and a
+  handful of size/prop values only.
 
 ## Non-goals
 
@@ -91,7 +122,12 @@ a re-architecture — no consumer's `<script>` changes.
 - Existing `PublicSurface.test.ts` and `PublicProfilePage.test.ts` assert
   structure/slot presence, not exact colors — should continue passing
   unchanged; extend only if a test asserts a removed CSS custom property name.
-- Manual check: all four public pages in light and dark OS theme, mobile and
-  desktop width, confirm no layout shift/overflow from the larger
-  identicon/QR sizes.
+- Manual review checklist (screenshot-based): all four public pages
+  (`PublicProfilePage`, `PublicPayLanding`, `PublicProfileLanding`,
+  `OpenInNimiqPayLanding`) × light mode × dark mode × desktop width × mobile
+  width (~320px and ~390px), confirming no layout shift/overflow from the
+  larger identicon/QR sizes and that focus-visible outlines are checked on
+  at least one button per page in each theme. Add one extra case: a profile
+  with a long handle and/or long display name, to check header wrapping and
+  spacing don't break.
 - No new automated visual regression tooling — out of scope for this pass.
