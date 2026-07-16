@@ -103,7 +103,9 @@ them rather than failing — the schema is additive-only.
 
 Reverse lookup: finds the handle claim owned by an address, if any.
 
-- `address` path segment: same Nimiq address format as above.
+Unlike profile GET, this handler does **not** validate Nimiq address format.
+The path segment is compact-compared against indexed claims; malformed and
+unknown addresses both miss and return the same 404.
 
 **200 OK** — same shape as `GET /api/resolve/{handle}`:
 
@@ -117,7 +119,7 @@ Reverse lookup: finds the handle claim owned by an address, if any.
 }
 ```
 
-**404 Not Found** — address owns no handle:
+**404 Not Found** — no handle for that address (including malformed addresses):
 
 ```json
 { "error": "no handle" }
