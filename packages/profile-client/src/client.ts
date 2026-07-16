@@ -10,6 +10,9 @@ export function compactAddress(address: string): string {
   return address.replace(/\s+/g, '').toUpperCase()
 }
 
+/** Same default as `PUBLIC_APP_ORIGIN` in `backend/main.go`. */
+export const DEFAULT_BASE_URL = 'https://nimconnect.nimiqminiapps.com'
+
 export interface ProfileClient {
   getProfileByAddress(address: string): Promise<StoredPublicProfile | null>
   resolveHandle(handle: string): Promise<HandleClaim | null>
@@ -17,8 +20,8 @@ export interface ProfileClient {
   getDisplayIdentity(address: string): Promise<DisplayIdentity>
 }
 
-export function createProfileClient(options: ProfileClientOptions): ProfileClient {
-  const baseUrl = options.baseUrl.replace(/\/+$/, '')
+export function createProfileClient(options: ProfileClientOptions = {}): ProfileClient {
+  const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
 
   async function getProfileByAddress(address: string): Promise<StoredPublicProfile | null> {
     const res = await fetch(`${baseUrl}/api/profile/${compactAddress(address)}`, {
