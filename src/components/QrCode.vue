@@ -16,5 +16,14 @@ watchEffect(async () => {
 </template>
 
 <style scoped>
-.qr { border-radius: 12px; background: #fff; padding: 8px; display: block; margin: 0 auto; }
+/* Stays white regardless of theme: a light quiet zone keeps the code camera-scannable. */
+.qr {
+  background: var(--nimiq-white);
+  border-radius: 12px;
+  display: block;
+  height: auto;
+  margin: 0 auto;
+  max-width: 100%;
+  padding: 8px;
+}
 </style>
