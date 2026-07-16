@@ -52,7 +52,7 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
 <template>
   <PublicSurface context="NimConnect">
     <template #identity>
-      <img class="handoff__logo" :src="iconUrl" alt="" width="80" height="80" />
+      <img class="handoff__logo" :src="iconUrl" alt="" width="96" height="96" />
       <h1>NimConnect</h1>
       <p class="handoff__tagline">A relationship manager for your wallet.</p>
     </template>
@@ -73,7 +73,7 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
     </template>
 
     <template #primary>
-      <a :href="openUrl">Open in Nimiq Pay</a>
+      <a class="nq-button" :href="openUrl">Open in Nimiq Pay</a>
     </template>
 
     <template #secondary>
@@ -88,6 +88,7 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
         </label>
         <input
           id="public-lookup-input"
+          class="handoff__lookup-input"
           v-model="lookupQuery"
           type="text"
           autocomplete="off"
@@ -95,8 +96,8 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
           placeholder="@handle or Nimiq address"
           :disabled="lookupPending"
         />
-        <button type="submit" :disabled="lookupPending">Look up</button>
-        <p v-if="lookupError" role="status">{{ lookupError }}</p>
+        <button type="submit" class="nq-button" :disabled="lookupPending">Look up</button>
+        <p v-if="lookupError" class="handoff__lookup-error" role="status">{{ lookupError }}</p>
       </form>
     </template>
 
@@ -144,7 +145,7 @@ h1 {
   max-width: 21.25rem;
 }
 
-.handoff__body strong { color: var(--public-ink); font-weight: 800; }
+.handoff__body strong { color: var(--text); font-weight: 800; }
 
 .handoff__lookup {
   display: flex;
@@ -159,8 +160,41 @@ h1 {
   font-weight: 600;
 }
 
-.handoff__lookup input {
-  width: 100%;
+.handoff__lookup-input {
+  appearance: none;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  box-shadow: inset 0 1px 2px rgb(31 35 72 / 0.04);
   box-sizing: border-box;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  min-height: 3rem;
+  padding: 0.75rem 1rem;
+  width: 100%;
+}
+
+.handoff__lookup-input::placeholder {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.handoff__lookup-input:hover:not(:disabled) {
+  border-color: var(--text-2);
+}
+
+.handoff__lookup-input:focus {
+  border-color: var(--nq-light-blue);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--nq-light-blue) 12%, transparent);
+}
+
+.handoff__lookup-error {
+  color: var(--nimiq-red);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0;
 }
 </style>
