@@ -28,8 +28,21 @@ describe('public landings', () => {
     expect(wrapper.emitted('continue')).toHaveLength(1)
 
     await wrapper.setProps({ allowBrowserContinue: false })
-    expect(wrapper.find('button').exists()).toBe(false)
+    expect(wrapper.findAll('button').some(button => button.text().includes('Continue in browser'))).toBe(false)
     expect(wrapper.text()).toContain('On desktop, NimConnect works best for')
+    expect(wrapper.text()).toContain('look up public')
+  })
+
+  it('shows public profile lookup only on the desktop handoff', async () => {
+    const wrapper = mount(OpenInNimiqPayLanding)
+    expect(wrapper.find('[data-public-lookup]').exists()).toBe(false)
+
+    await wrapper.setProps({ allowBrowserContinue: false })
+    expect(wrapper.find('[data-public-lookup]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Look up a public profile')
+    expect(wrapper.text()).toContain('look up public')
+    expect(wrapper.get('[data-public-lookup] input').attributes('placeholder'))
+      .toBe('@handle or Nimiq address')
   })
 
   it('uses a supplied Nimiq Pay deep link for a browser handoff', () => {
