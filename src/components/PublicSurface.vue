@@ -55,16 +55,9 @@ const hasActions = computed(() =>
 
 <style scoped>
 .public-surface {
-  --public-ink: #1f2348;
-  --public-blue: #2252c7;
-  --public-soft-blue: #eef4ff;
-  --public-gold: #f4c547;
-  --text: #1f2348;
-  --text-2: #59627d;
-  --border: #dce7ff;
   align-items: stretch;
-  background: var(--public-ink);
-  color: var(--public-ink);
+  background: var(--nimiq-blue);
+  color: var(--text);
   display: flex;
   justify-content: center;
   min-height: 100dvh;
@@ -73,22 +66,44 @@ const hasActions = computed(() =>
 
 .public-surface__canvas {
   animation: public-surface-enter 180ms ease-out both;
-  background: linear-gradient(160deg, #ffffff 0%, var(--public-soft-blue) 100%);
+  background: linear-gradient(160deg, var(--card) 0%, var(--bg) 100%);
   border-radius: 1.5rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  isolation: isolate;
   max-width: 42rem;
   min-height: calc(100dvh - 2.5rem);
+  overflow: hidden;
   padding: clamp(1.25rem, 4vw, 2.5rem);
+  position: relative;
   width: 100%;
+}
+
+.public-surface__canvas::before {
+  background: var(--nimiq-blue-bg);
+  content: '';
+  inset: -20%;
+  opacity: 0.12;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
+}
+
+.public-surface__masthead,
+.public-surface__identity,
+.public-surface__panel,
+.public-surface__actions,
+.public-surface__footer {
+  position: relative;
+  z-index: 1;
 }
 
 .public-surface__masthead,
 .public-surface__footer {
   align-items: center;
-  color: #59627d;
+  color: var(--text-2);
   display: flex;
   font-size: 0.8125rem;
   font-weight: 700;
@@ -97,7 +112,7 @@ const hasActions = computed(() =>
 }
 
 .public-surface__brand {
-  color: var(--public-ink);
+  color: var(--text);
   font-size: 1rem;
 }
 
@@ -109,10 +124,10 @@ const hasActions = computed(() =>
 }
 
 .public-surface__panel {
-  background: #ffffff;
-  border: 1px solid #dce7ff;
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: 1.25rem;
-  box-shadow: 0 1rem 2.5rem rgb(31 35 72 / 0.1);
+  box-shadow: var(--shadow);
   display: grid;
   gap: 0.75rem;
   justify-items: center;
@@ -139,15 +154,15 @@ const hasActions = computed(() =>
 .public-surface__secondary:empty,
 .public-surface__tertiary:empty { display: none; }
 
-.public-surface__primary :slotted(a),
-.public-surface__primary :slotted(button),
-.public-surface__secondary :slotted(a),
-.public-surface__secondary :slotted(button) {
+.public-surface__secondary :slotted(.public-action--outline),
+.public-surface__secondary :slotted([data-public-action='outline']) {
   align-items: center;
+  background: transparent;
+  border: 1px solid var(--border);
   border-radius: 0.875rem;
   box-sizing: border-box;
+  color: var(--text);
   display: inline-flex;
-  font: inherit;
   font-weight: 800;
   justify-content: center;
   min-height: 3rem;
@@ -155,29 +170,8 @@ const hasActions = computed(() =>
   text-decoration: none;
 }
 
-.public-surface__primary :slotted(a),
-.public-surface__primary :slotted(button) {
-  background: var(--public-gold);
-  border: 1px solid var(--public-gold);
-  color: var(--public-ink);
-}
-
-.public-surface__secondary :slotted(a),
-.public-surface__secondary :slotted(button) {
-  background: var(--public-blue);
-  border: 1px solid var(--public-blue);
-  color: #ffffff;
-}
-
-.public-surface__secondary :slotted(.public-action--outline),
-.public-surface__secondary :slotted([data-public-action='outline']) {
-  background: transparent;
-  border-color: #bdc9e5;
-  color: var(--public-ink);
-}
-
 .public-surface__tertiary {
-  border-top: 1px solid #dce7ff;
+  border-top: 1px solid var(--border);
   padding-top: 1rem;
 }
 
@@ -194,7 +188,7 @@ const hasActions = computed(() =>
 .public-surface__footer :slotted(button) {
   background: none;
   border: 0;
-  color: var(--nq-light-blue);
+  color: var(--nimiq-light-blue);
   cursor: pointer;
   font: inherit;
   font-weight: 700;
@@ -215,7 +209,7 @@ const hasActions = computed(() =>
 .public-surface :deep(input:focus-visible),
 .public-surface :deep(textarea:focus-visible),
 .public-surface :deep(select:focus-visible) {
-  outline: 3px solid var(--public-gold);
+  outline: 3px solid var(--nq-light-blue);
   outline-offset: 3px;
 }
 
