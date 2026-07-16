@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "workspaces": ["packages/*"],
   "scripts": {
     "dev": "vite",
     "dev:https": "VITE_HTTPS=true vite",
@@ -10,7 +11,8 @@
     "build": "vue-tsc -b && vite build",
     "build:pages": "GITHUB_PAGES=true npm run build",
     "preview": "vite preview",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests",
+    "test:profile-client": "npm run test -w @nimconnect/profile-client"
   },
   "dependencies": {
     "@fontsource/mulish": "^5.2.5",
