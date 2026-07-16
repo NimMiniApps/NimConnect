@@ -8,6 +8,7 @@ import { receiveAddress } from '../services/nimiq'
 import { splitAmount } from '../utils/split'
 import { sendPaymentRequest, shouldAutoDeliverInbox, inboxAvailable } from '../services/inbox'
 import { shareOrCopy, canShare } from '../services/share'
+import { celebrateOnce } from '../services/delight'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { preferredCurrency } from '../services/prefs'
 import ActionSheet from './ActionSheet.vue'
@@ -287,6 +288,7 @@ async function createRequests() {
       if (shouldAutoDeliverInbox(p.address, store.contacts)) await sendToInbox(p, inv.id)
     }
     created.value = true
+    celebrateOnce('first-split')
   } finally {
     creating.value = false
   }
@@ -378,7 +380,7 @@ function close() {
               <span aria-hidden="true">👤</span>
               {{ row.label }}
             </span>
-            <span class="breakdown-amt">{{ row.amount }}</span>
+            <span :key="row.amount" class="breakdown-amt amount-pop">{{ row.amount }}</span>
           </li>
         </ul>
       </div>
@@ -391,7 +393,7 @@ function close() {
           <div class="card-body">
             <span class="card-name">Include me</span>
             <template v-if="includeMe && total && headcount > 0">
-              <span class="card-share">{{ shareLabels(myShareNim).primary }}</span>
+              <span :key="shareLabels(myShareNim).primary" class="card-share amount-pop">{{ shareLabels(myShareNim).primary }}</span>
               <span v-if="shareLabels(myShareNim).secondary" class="card-nim">
                 {{ shareLabels(myShareNim).secondary }}
               </span>
@@ -406,7 +408,7 @@ function close() {
             <span class="card-name">{{ p.name }}</span>
             <template v-if="total">
               <template v-if="splitMode === 'equal'">
-                <span class="card-share">{{ shareLabels(shares[p.id] ?? 0).primary }}</span>
+                <span :key="shareLabels(shares[p.id] ?? 0).primary" class="card-share amount-pop">{{ shareLabels(shares[p.id] ?? 0).primary }}</span>
                 <span v-if="shareLabels(shares[p.id] ?? 0).secondary" class="card-nim">
                   {{ shareLabels(shares[p.id] ?? 0).secondary }}
                 </span>

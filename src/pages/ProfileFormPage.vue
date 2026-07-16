@@ -3,6 +3,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { parsePaymentRequest, shortAddress, makePublicHandleLink } from '../services/links'
+import { celebrateOnce } from '../services/delight'
 import { decodeSharedProfile, parseProfileShare, type SharedProfile } from '../services/profile-share'
 import { useProfilesStore } from '../stores/profiles'
 import {
@@ -693,7 +694,10 @@ async function save() {
         const updated = store.getById(editId)!
         try {
           const result = await syncPublicProfile(updated, publicShare.value, myAddresses(updated.address))
-          if (result === 'published') publishNote.value = 'Public page updated'
+          if (result === 'published') {
+            publishNote.value = 'Public page updated'
+            celebrateOnce('first-public-profile')
+          }
           if (result === 'unpublished') publishNote.value = 'Public page cleared'
         } catch (e) {
           error.value = `Saved locally, but public page sync failed: ${(e as Error).message}`
@@ -1161,7 +1165,11 @@ async function save() {
               :aria-pressed="favorite"
               @click="favorite = !favorite"
             >
-              <span class="favorite-star" aria-hidden="true">{{ favorite ? '⭐' : '☆' }}</span>
+              <span
+                class="favorite-star"
+                :class="{ 'star-pop': favorite }"
+                aria-hidden="true"
+              >{{ favorite ? '⭐' : '☆' }}</span>
               {{ favorite ? 'Marked as favorite' : 'Mark as favorite' }}
             </button>
           </section>

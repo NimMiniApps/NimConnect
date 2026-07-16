@@ -106,7 +106,11 @@ async function onFavoriteClick(e: Event) {
       :title="profile.favorite ? 'Remove from favorites' : 'Add to favorites'"
       @click="onFavoriteClick"
     >
-      <span class="fav-star" aria-hidden="true">{{ profile.favorite ? '★' : '☆' }}</span>
+      <span
+        class="fav-star"
+        :class="{ 'star-pop': !!flash && profile.favorite }"
+        aria-hidden="true"
+      >{{ profile.favorite ? '★' : '☆' }}</span>
     </button>
   </div>
 </template>

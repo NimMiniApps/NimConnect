@@ -141,8 +141,14 @@ function onPointerUp(event: PointerEvent) {
   line-height: 1.35;
   color: var(--text-2);
 }
-.sheet-enter-active, .sheet-leave-active { transition: opacity var(--attr-duration) var(--nimiq-ease); }
-.sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: transform var(--attr-duration) var(--nimiq-ease); }
+.sheet-enter-active, .sheet-leave-active { transition: opacity var(--movement-duration) var(--nimiq-ease); }
+.sheet-enter-active .sheet, .sheet-leave-active .sheet {
+  transition: transform var(--movement-duration) var(--nimiq-ease);
+}
 .sheet-enter-from, .sheet-leave-to { opacity: 0; }
 .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: translateY(100%); }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-enter-active, .sheet-leave-active,
+  .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: none; }
+}
 </style>

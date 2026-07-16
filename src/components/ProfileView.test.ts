@@ -51,6 +51,7 @@ describe('ProfileView relationship-first contact page', () => {
     expect(source).toMatch(/They paid you/)
     expect(source).toMatch(/No payments yet/)
     expect(source).toMatch(/recentActivity/)
+    expect(source).toMatch(/activity-skeleton|skeleton-row/)
   })
 
   it('renders contact history as relationship payment cards, not a tx log', () => {

@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import ActionSheet from './ActionSheet.vue'
 import { insideNimiqPay } from '../services/nimiq'
 import { isValidHandle, checkHandle, claimHandle, type HandleClaim } from '../services/handles'
+import { celebrate } from '../services/delight'
 import { myAddresses } from '../services/nimiq'
 import { useProfilesStore } from '../stores/profiles'
 
@@ -85,6 +86,7 @@ async function doClaim() {
     const wallets = store.self ? myAddresses(store.self.address) : []
     const { status, txHash, claim } = await claimHandle(h, wallets)
     result.value = status
+    celebrate()
     emit('claimed', h, txHash, claim)
   } catch (e) {
     error.value = claimErrorHint((e as Error).message)

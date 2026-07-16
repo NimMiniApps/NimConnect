@@ -413,7 +413,20 @@ async function loadSenderAliases() {
         Connect inside Nimiq Pay to see payments sent to your wallet, including unknown senders.
       </p>
       <p v-else-if="incomingError" class="notice inset">Recent payments are unavailable right now.</p>
-      <p v-else-if="incomingLoading && incoming.length === 0" class="subtle">Checking your wallet…</p>
+      <div
+        v-else-if="incomingLoading && incoming.length === 0"
+        class="incoming-skeleton"
+        aria-busy="true"
+        aria-label="Checking your wallet"
+      >
+        <div v-for="n in 3" :key="n" class="skeleton-row">
+          <div class="skeleton skeleton-avatar" />
+          <div class="skeleton-stack">
+            <div class="skeleton skeleton-line medium" />
+            <div class="skeleton skeleton-line short" />
+          </div>
+        </div>
+      </div>
       <div v-else-if="incomingNewest.length" class="incoming-list">
         <article v-for="payment in incomingNewest.slice(0, 8)" :key="payment.hash" class="panel-item incoming-card">
           <div class="invoice-head">
@@ -1007,7 +1020,17 @@ async function loadSenderAliases() {
 .bucket-name { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bucket-amount { flex: 0 0 auto; font-weight: 700; font-size: 13px; color: var(--nq-gold-dark); }
 .bucket-bar { height: 8px; border-radius: 4px; background: var(--text-6); overflow: hidden; }
-.bucket-fill { height: 100%; border-radius: 4px; background: var(--nimiq-gold-bg); transition: width 0.3s ease; }
+.bucket-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--nimiq-gold-bg);
+  transition: width var(--movement-duration) var(--nimiq-ease);
+}
+.bucket-done .bucket-fill {
+  background: var(--nimiq-green-bg);
+}
+.incoming-skeleton { padding: 4px 0 8px; }
+.incoming-skeleton .skeleton-row { padding: 10px 0; }
 .activity-banner {
   display: flex;
   align-items: center;

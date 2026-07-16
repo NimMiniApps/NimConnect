@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import type { Profile, ProfileType } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
@@ -48,6 +48,20 @@ const manageOpen = ref(false)
 const shareFeedback = ref<string | null>(null)
 const contactHandle = ref<string | null>(null)
 const expandedTxHash = ref<string | null>(null)
+const favPop = ref(false)
+let favPopTimer: ReturnType<typeof setTimeout> | undefined
+
+async function onFavoriteToggle() {
+  await store.toggleFavorite(props.profile.id)
+  favPop.value = false
+  requestAnimationFrame(() => {
+    favPop.value = true
+    clearTimeout(favPopTimer)
+    favPopTimer = setTimeout(() => { favPop.value = false }, 450)
+  })
+}
+
+onUnmounted(() => clearTimeout(favPopTimer))
 
 // Requests are always paid to *my* address — own profile or asking a contact.
 const requestLink = computed(() => {
@@ -448,9 +462,13 @@ async function loadHistory() {
           :class="{ on: profile.favorite }"
           :aria-label="profile.favorite ? 'Remove from favorites' : 'Add to favorites'"
           :aria-pressed="profile.favorite"
-          @click="store.toggleFavorite(profile.id)"
+          @click="onFavoriteToggle"
         >
-          <span class="favorite-star" aria-hidden="true">★</span>
+          <span
+            class="favorite-star"
+            :class="{ 'star-pop': favPop }"
+            aria-hidden="true"
+          >★</span>
         </button>
       </div>
 
@@ -578,7 +596,22 @@ async function loadHistory() {
           View all →
         </button>
       </div>
-      <p v-if="history === null && !historyError" class="activity-empty">Loading…</p>
+      <div v-if="history === null && !historyError" class="activity-skeleton" aria-busy="true" aria-label="Loading activity">
+        <div class="skeleton-row">
+          <div class="skeleton skeleton-avatar" />
+          <div class="skeleton-stack">
+            <div class="skeleton skeleton-line medium" />
+            <div class="skeleton skeleton-line short" />
+          </div>
+        </div>
+        <div class="skeleton-row">
+          <div class="skeleton skeleton-avatar" />
+          <div class="skeleton-stack">
+            <div class="skeleton skeleton-line long" />
+            <div class="skeleton skeleton-line short" />
+          </div>
+        </div>
+      </div>
       <p v-else-if="historyError" class="activity-empty">
         Activity is unavailable right now.
         <button type="button" class="view-all inline" @click="openSheet('history')">Try History</button>
@@ -703,7 +736,11 @@ async function loadHistory() {
 
     <ActionSheet :open="sheet === 'history'" :title="historySheetTitle" @close="sheet = null">
       <p v-if="historyError" class="hint">History is unavailable right now{{ store.self ? '' : ' — connect inside Nimiq Pay first' }}.</p>
-      <p v-else-if="history === null" class="hint">Loading…</p>
+      <div v-else-if="history === null" class="history-skeleton" aria-busy="true" aria-label="Loading history">
+        <div class="skeleton skeleton-line long" />
+        <div class="skeleton skeleton-line medium" />
+        <div class="skeleton skeleton-line short" />
+      </div>
       <EmptyState
         v-else-if="history.length === 0"
         icon="🕘"
@@ -809,6 +846,8 @@ async function loadHistory() {
 }
 .favorite-star { font-size: 22px; line-height: 1; }
 .favorite-btn.on .favorite-star { font-size: 24px; }
+.activity-skeleton, .history-skeleton { margin-top: 8px; }
+.history-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 8px 0; }
 .owner-identity {
   display: flex;
   flex-direction: column;

@@ -7,6 +7,7 @@ import { makeRequestLink, makePaymentShareLink, shortAddress } from '../services
 import { receiveAddress } from '../services/nimiq'
 import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
 import { shareOrCopy } from '../services/share'
+import { celebrateOnce } from '../services/delight'
 import ActionSheet from './ActionSheet.vue'
 import QrCode from './QrCode.vue'
 import CurrencyAmountInput from './CurrencyAmountInput.vue'
@@ -326,6 +327,13 @@ async function addManual() {
   manualInput.value?.reset()
 }
 
+async function markBucketStatus() {
+  if (!props.bucket) return
+  const next = props.bucket.status === 'active' ? 'completed' : 'active'
+  await bucketsStore.setStatus(props.bucket.id, next)
+  if (next === 'completed') celebrateOnce('first-bucket-complete')
+}
+
 async function removeBucket() {
   if (!props.bucket) return
   await bucketsStore.remove(props.bucket.id)
@@ -545,7 +553,7 @@ function close() {
             <button
               type="button"
               class="settings-row"
-              @click="bucketsStore.setStatus(bucket.id, bucket.status === 'active' ? 'completed' : 'active')"
+              @click="markBucketStatus"
             >
               <span>{{ bucket.status === 'active' ? '✅ Mark complete' : '↩ Reopen' }}</span>
             </button>
