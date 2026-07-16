@@ -12,6 +12,16 @@ pass only — no new data, no backend changes, no new subsystems (reputation,
 themes, multi-asset, activity feeds are explicitly out of scope; see the
 2026-07-14 public-profiles spec for those directions if picked up later).
 
+## Explicit reversal of prior decision
+
+`PublicSurface.test.ts` currently asserts the shell stays light-mode only
+regardless of the viewer's OS theme (a deliberate prior decision, likely to
+keep shared/QR-scan links readable no matter what theme the opener's device
+uses). This spec reverses that: the public surface adopts real dark-mode
+support via `main.css`'s existing `prefers-color-scheme: dark` tokens, same
+as the rest of the app. The old light-only-guard test is replaced with a
+test asserting both themes render with adequate contrast (see Testing).
+
 ## Why now
 
 `PublicSurface.vue` hardcodes its own flat palette (`--public-ink`,
@@ -119,9 +129,13 @@ a re-architecture — no consumer's `<script>` changes.
 
 ## Testing
 
-- Existing `PublicSurface.test.ts` and `PublicProfilePage.test.ts` assert
-  structure/slot presence, not exact colors — should continue passing
-  unchanged; extend only if a test asserts a removed CSS custom property name.
+- `PublicSurface.test.ts`'s light-only-guard test (asserting hardcoded
+  `--text`/`--text-2`/`--border` regardless of theme) is replaced with a test
+  asserting the shell defines both a light-mode token set and a
+  `prefers-color-scheme: dark` override block (source-level check, consistent
+  with the existing source-matching style in that file). Other tests in that
+  file and `PublicProfilePage.test.ts` assert structure/slot presence, not
+  exact colors — continue passing unchanged.
 - Manual review checklist (screenshot-based): all four public pages
   (`PublicProfilePage`, `PublicPayLanding`, `PublicProfileLanding`,
   `OpenInNimiqPayLanding`) × light mode × dark mode × desktop width × mobile
