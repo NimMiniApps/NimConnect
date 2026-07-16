@@ -19,3 +19,10 @@ describe('PublicStoreLinks', () => {
     expect(publicStoreLinksSource).toMatch(/\.public-store-links a\s*\{[\s\S]*?min-height:\s*2\.75rem;/)
   })
 })
+
+describe('PublicStoreLinks token migration', () => {
+  it('uses a themed border token instead of a hardcoded light-only hex', () => {
+    expect(publicStoreLinksSource).not.toMatch(/#bdc9e5/)
+    expect(publicStoreLinksSource).toMatch(/border:\s*1px solid var\(--border\);/)
+  })
+})

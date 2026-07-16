@@ -47,8 +47,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .public-address-copy {
   align-items: center;
-  background: var(--public-soft-blue, #eef4ff);
-  border: 1px solid #dce7ff;
+  background: var(--bg);
+  border: 1px solid var(--border);
   border-radius: 0.875rem;
   display: flex;
   gap: 0.75rem;
@@ -57,7 +57,7 @@ onBeforeUnmount(() => {
 }
 
 .public-address-copy__address {
-  color: var(--public-ink, #1f2348);
+  color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.8125rem;
   line-height: 1.45;
@@ -68,9 +68,9 @@ onBeforeUnmount(() => {
 
 .public-address-copy__button {
   background: transparent;
-  border: 1px solid #bdc9e5;
+  border: 1px solid var(--border);
   border-radius: 0.625rem;
-  color: var(--public-ink, #1f2348);
+  color: var(--text);
   cursor: pointer;
   flex: 0 0 auto;
   font: inherit;
