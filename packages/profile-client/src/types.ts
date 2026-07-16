@@ -38,5 +38,6 @@ export interface DisplayIdentity {
 }
 
 export interface ProfileClientOptions {
-  baseUrl: string
+  /** Defaults to the production NimConnect origin when omitted. */
+  baseUrl?: string
 }

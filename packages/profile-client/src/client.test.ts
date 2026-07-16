@@ -1,8 +1,21 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { createProfileClient } from './client'
+import { createProfileClient, DEFAULT_BASE_URL } from './client'
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('createProfileClient', () => {
+  it('uses the default base URL when options omit baseUrl', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false, status: 404 })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = createProfileClient()
+    await client.getProfileByAddress('NQ01 TEST')
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${DEFAULT_BASE_URL}/api/profile/NQ01TEST`,
+      expect.any(Object),
+    )
+  })
 })
 
 describe('getProfileByAddress', () => {
