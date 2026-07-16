@@ -223,4 +223,26 @@ describe('getDisplayIdentity', () => {
     expect(result.handle).toBe('ada')
     expect(result.displayName).toBeUndefined()
   })
+
+  it('keeps profile data when handle lookup returns 500', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url.includes('/api/handles/by-address/')) {
+        return Promise.resolve({ ok: false, status: 500 })
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          address: 'NQ01 TEST',
+          updated_at: 1,
+          profile: { display_name: 'Ada Lovelace' },
+        }),
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const client = createProfileClient({ baseUrl: 'https://nc.example' })
+    const result = await client.getDisplayIdentity('NQ01 TEST')
+    expect(result.handle).toBeUndefined()
+    expect(result.displayName).toBe('Ada Lovelace')
+  })
 })
