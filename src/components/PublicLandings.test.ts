@@ -1,11 +1,30 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OpenInNimiqPayLanding from './OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './PublicPayLanding.vue'
 import PublicProfileLanding from './PublicProfileLanding.vue'
 import { NIMPAY_APP_STORE_URL, NIMPAY_OPEN_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
 import { makeNimiqPayDeepLink, makeWalletRequestLink } from '../services/links'
 import { makeNimiqPayProfileLink } from '../services/profile-share'
+
+const mocks = vi.hoisted(() => ({
+  resolveHandle: vi.fn(),
+  handleForAddress: vi.fn(),
+  push: vi.fn(),
+}))
+
+vi.mock('vue-router', () => ({
+  useRouter: () => ({ push: mocks.push }),
+}))
+
+vi.mock('../services/handles', async importOriginal => {
+  const actual = await importOriginal<typeof import('../services/handles')>()
+  return {
+    ...actual,
+    resolveHandle: mocks.resolveHandle,
+    handleForAddress: mocks.handleForAddress,
+  }
+})
 
 const address = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
 const stubs = {
@@ -14,6 +33,12 @@ const stubs = {
 }
 
 describe('public landings', () => {
+  beforeEach(() => {
+    mocks.resolveHandle.mockReset()
+    mocks.handleForAddress.mockReset()
+    mocks.push.mockReset()
+  })
+
   it('places the generic Nimiq Pay handoff in the common public surface', async () => {
     const wrapper = mount(OpenInNimiqPayLanding)
 
@@ -43,6 +68,66 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('look up public')
     expect(wrapper.get('[data-public-lookup] input').attributes('placeholder'))
       .toBe('@handle or Nimiq address')
+  })
+
+  it('navigates to /u/:handle after a successful handle lookup', async () => {
+    mocks.resolveHandle.mockResolvedValue({
+      handle: 'ada',
+      address,
+      tx_hash: 't',
+      block_height: 1,
+      tx_index: 0,
+    })
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    await wrapper.get('[data-public-lookup] input').setValue('@ada')
+    await wrapper.get('[data-public-lookup]').trigger('submit')
+    await flushPromises()
+    expect(mocks.resolveHandle).toHaveBeenCalledWith('ada')
+    expect(mocks.push).toHaveBeenCalledWith('/u/ada')
+  })
+
+  it('resolves addresses through by-address then navigates', async () => {
+    mocks.handleForAddress.mockResolvedValue({
+      handle: 'ada',
+      address,
+      tx_hash: 't',
+      block_height: 1,
+      tx_index: 0,
+    })
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    await wrapper.get('[data-public-lookup] input').setValue(address)
+    await wrapper.get('[data-public-lookup]').trigger('submit')
+    await flushPromises()
+    expect(mocks.handleForAddress).toHaveBeenCalled()
+    expect(mocks.push).toHaveBeenCalledWith('/u/ada')
+  })
+
+  it('shows an empty-state message when no public handle exists', async () => {
+    mocks.resolveHandle.mockResolvedValue(null)
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    await wrapper.get('[data-public-lookup] input').setValue('ghost')
+    await wrapper.get('[data-public-lookup]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('No public @handle found')
+    expect(mocks.push).not.toHaveBeenCalled()
+  })
+
+  it('validates garbage input without calling the network', async () => {
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    await wrapper.get('[data-public-lookup] input').setValue('nope!')
+    await wrapper.get('[data-public-lookup]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Enter an @handle or Nimiq address')
+    expect(mocks.resolveHandle).not.toHaveBeenCalled()
+    expect(mocks.handleForAddress).not.toHaveBeenCalled()
   })
 
   it('uses a supplied Nimiq Pay deep link for a browser handoff', () => {

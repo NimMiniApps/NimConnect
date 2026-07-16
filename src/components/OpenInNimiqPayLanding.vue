@@ -1,8 +1,43 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import PublicStoreLinks from './PublicStoreLinks.vue'
 import PublicSurface from './PublicSurface.vue'
 import { NIMPAY_OPEN_URL } from '../config/host-app'
+import {
+  handleForAddress,
+  parsePublicLookupQuery,
+  resolveHandle,
+} from '../services/handles'
+
+const router = useRouter()
+const lookupQuery = ref('')
+const lookupError = ref<string | null>(null)
+const lookupPending = ref(false)
+
+async function submitLookup() {
+  lookupError.value = null
+  const parsed = parsePublicLookupQuery(lookupQuery.value)
+  if (parsed.kind === 'invalid') {
+    lookupError.value = 'Enter an @handle or Nimiq address'
+    return
+  }
+  lookupPending.value = true
+  try {
+    const claim = parsed.kind === 'handle'
+      ? await resolveHandle(parsed.handle)
+      : await handleForAddress(parsed.address)
+    if (!claim) {
+      lookupError.value = 'No public @handle found'
+      return
+    }
+    await router.push(`/u/${claim.handle}`)
+  } catch {
+    lookupError.value = 'Lookup failed — try again'
+  } finally {
+    lookupPending.value = false
+  }
+}
 
 const emit = defineEmits<{ continue: [] }>()
 const props = withDefaults(defineProps<{ allowBrowserContinue?: boolean; openUrl?: string }>(), {
@@ -46,19 +81,22 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
         v-if="allowBrowserContinue === false"
         class="handoff__lookup"
         data-public-lookup
-        @submit.prevent
+        @submit.prevent="submitLookup"
       >
         <label class="handoff__lookup-label" for="public-lookup-input">
           Look up a public profile
         </label>
         <input
           id="public-lookup-input"
+          v-model="lookupQuery"
           type="text"
           autocomplete="off"
           spellcheck="false"
           placeholder="@handle or Nimiq address"
+          :disabled="lookupPending"
         />
-        <button type="submit">Look up</button>
+        <button type="submit" :disabled="lookupPending">Look up</button>
+        <p v-if="lookupError" role="status">{{ lookupError }}</p>
       </form>
     </template>
 
