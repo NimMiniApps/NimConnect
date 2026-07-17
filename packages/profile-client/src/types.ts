@@ -45,5 +45,8 @@ export interface ProfileClientOptions {
 /** Recipient + tx data for claiming a @handle — sign and send with your own wallet integration. */
 export interface HandleClaimPayload {
   recipient: string
+  /** "NFH:" + hex envelope — for wallets that only accept text extraData (e.g. Nimiq Pay). */
   extraData: string
+  /** Raw binary payload — for wallets that accept binary extraData directly (e.g. Nimiq Hub). */
+  extraDataBytes: Uint8Array
 }

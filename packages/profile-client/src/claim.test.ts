@@ -38,4 +38,12 @@ describe('buildHandleClaimPayload', () => {
   it('throws on an invalid handle', () => {
     expect(() => buildHandleClaimPayload('AB')).toThrow(/invalid handle/)
   })
+
+  it('also returns the raw binary payload for wallets that accept binary extraData', () => {
+    const { extraDataBytes } = buildHandleClaimPayload('chuck')
+    expect(extraDataBytes).toBeInstanceOf(Uint8Array)
+    expect(Array.from(extraDataBytes.slice(0, 4))).toEqual([0x4e, 0x46, 0x01, 0x01])
+    const handle = String.fromCharCode(...extraDataBytes.slice(4))
+    expect(handle).toBe('chuck')
+  })
 })

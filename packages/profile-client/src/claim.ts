@@ -40,6 +40,11 @@ export function buildHandleClaimPayload(handle: string): HandleClaimPayload {
     CLAIM_TYPE_PROFILE,
     ...Array.from(handle, (c) => c.charCodeAt(0)),
   ]
+  const extraDataBytes = new Uint8Array(bytes)
   const payloadHex = bytes.map((b) => b.toString(16).padStart(2, '0')).join('')
-  return { recipient: HANDLE_REGISTRY_ADDRESS, extraData: CLAIM_TEXT_PREFIX + payloadHex }
+  return {
+    recipient: HANDLE_REGISTRY_ADDRESS,
+    extraData: CLAIM_TEXT_PREFIX + payloadHex,
+    extraDataBytes,
+  }
 }
