@@ -1,9 +1,13 @@
 /// <reference types="vitest/config" />
 import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import basicSsl from '@vitejs/plugin-basic-ssl'
+
+const require = createRequire(import.meta.url)
+const fakeIndexedDbAuto = require.resolve('fake-indexeddb/auto')
 
 // GitHub Pages project site: https://nimminiapps.github.io/NimConnect/
 const base = process.env.GITHUB_PAGES === 'true' ? '/NimConnect/' : '/'
@@ -52,6 +56,8 @@ export default defineConfig({
         url: 'https://nimconnect.nimiqminiapps.com/',
       },
     },
-    setupFiles: ['fake-indexeddb/auto'],
+    // Absolute path keeps vitest from resolving into a parent checkout's node_modules
+    // (common when this repo is opened from a git worktree nested under another clone).
+    setupFiles: [fakeIndexedDbAuto],
   },
 })
