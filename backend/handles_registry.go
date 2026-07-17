@@ -113,16 +113,27 @@ func (r *HandleRegistry) Available(handle string) (bool, string) {
 	return true, ""
 }
 
-// ResolveAddress finds the handle owned by an address.
+// ResolveAddress finds the handle owned by an address. An address can end up
+// with more than one claim on chain (nothing prevents sending multiple claim
+// txs), so this must pick deterministically — earliest (block, txIndex)
+// wins, same rule as handle-vs-handle collisions in Rebuild. Do not iterate
+// r.handles and return the first hit: Go randomizes map iteration order, so
+// that would return a different handle on every call once an address has 2+
+// claims.
 // ponytail: O(n) scan; index it if the registry ever holds >~50k handles.
 func (r *HandleRegistry) ResolveAddress(address string) (HandleClaim, bool) {
 	compact := compactAddress(address)
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	best, found := HandleClaim{}, false
 	for _, claim := range r.handles {
-		if compactAddress(claim.Address) == compact {
-			return claim, true
+		if compactAddress(claim.Address) != compact {
+			continue
+		}
+		if !found || claim.BlockHeight < best.BlockHeight ||
+			(claim.BlockHeight == best.BlockHeight && claim.TxIndex < best.TxIndex) {
+			best, found = claim, true
 		}
 	}
-	return HandleClaim{}, false
+	return best, found
 }

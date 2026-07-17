@@ -29,3 +29,4 @@ docker-compose.homelab.yml
 # Local backend backup files (docker compose)
 data/
 .worktrees/
+backend/nimconnect-backend

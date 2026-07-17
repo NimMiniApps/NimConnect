@@ -97,6 +97,22 @@ func TestResolveAddress(t *testing.T) {
 	}
 }
 
+func TestResolveAddress_MultipleClaimsSameAddress_EarliestWins(t *testing.T) {
+	r := newTestRegistry(t)
+	// Same address claims two handles; by-address lookup must deterministically
+	// pick the earliest one, not whatever a random map iteration hits.
+	r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OWNER", "second", 20, 0),
+		claimTx("t2", "NQ11 OWNER", "first", 5, 0),
+	})
+	for i := 0; i < 20; i++ {
+		claim, ok := r.ResolveAddress("NQ11 OWNER")
+		if !ok || claim.Handle != "first" {
+			t.Fatalf("want earliest claim 'first', got %+v ok=%v", claim, ok)
+		}
+	}
+}
+
 func TestRegistryPersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "handles.json")
 	r := NewHandleRegistry(path, map[string]bool{})

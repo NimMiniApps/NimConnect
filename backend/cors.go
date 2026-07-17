@@ -6,6 +6,27 @@ import (
 	"strings"
 )
 
+// publicReadPaths are GET-only, documented-public endpoints (see
+// docs/api/public-profile-read.md) meant for any ecosystem mini-app to read
+// directly — they're always CORS-open regardless of ALLOWED_ORIGIN, so a new
+// consumer never needs a config change to read a profile or resolve a
+// handle. Write endpoints on the same path prefixes (PUT/DELETE) are not
+// GET, so they still go through the origin allow-list below; they're also
+// gated by a wallet signature, which is the real trust boundary either way.
+var publicReadPaths = []string{"/api/resolve/", "/api/profile/", "/api/handles/by-address/"}
+
+func isPublicReadRequest(r *http.Request) bool {
+	if r.Method != http.MethodGet {
+		return false
+	}
+	for _, prefix := range publicReadPaths {
+		if strings.HasPrefix(r.URL.Path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 // withCORS sets Access-Control-Allow-Origin and short-circuits OPTIONS
 // preflight requests with 204.
 //
@@ -13,7 +34,8 @@ import (
 // origins. For a single value (including "*"), that value is always sent. For
 // a list, the request's Origin header is reflected back only if it's in the
 // list, per the standard multi-origin CORS pattern (Access-Control-Allow-Origin
-// cannot itself contain multiple values).
+// cannot itself contain multiple values). Public read endpoints (see
+// publicReadPaths) always get "*", independent of allowedOrigins.
 func withCORS(allowedOrigins string, next http.Handler) http.Handler {
 	origins := strings.Split(allowedOrigins, ",")
 	for i := range origins {
@@ -21,7 +43,9 @@ func withCORS(allowedOrigins string, next http.Handler) http.Handler {
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if len(origins) == 1 {
+		if isPublicReadRequest(r) {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if len(origins) == 1 {
 			w.Header().Set("Access-Control-Allow-Origin", origins[0])
 		} else if reqOrigin := r.Header.Get("Origin"); slices.Contains(origins, reqOrigin) {
 			w.Header().Set("Access-Control-Allow-Origin", reqOrigin)

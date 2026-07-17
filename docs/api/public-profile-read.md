@@ -1,5 +1,8 @@
 # Public Profile & Handle Read API
 
+For how `@handle`s are claimed (on-chain, not a NimConnect write endpoint),
+see [`handle-claim-protocol.md`](./handle-claim-protocol.md).
+
 Read-only contract for NimConnect's public identity endpoints, intended for
 consumption by other apps in the ecosystem (e.g. NimBomber) via
 `@nimconnect/profile-client`. Source of truth: `backend/handles_handlers.go`,
@@ -139,18 +142,21 @@ Send `If-None-Match` with the previously-seen ETag to get a `304 Not Modified`
 
 ## CORS
 
-Controlled by the `ALLOWED_ORIGIN` environment variable on the server:
+The three read endpoints above are **always CORS-open** (`Access-Control-Allow-Origin: *`),
+regardless of the server's `ALLOWED_ORIGIN` setting — any mini app, from any
+origin, can call them directly with no server-side config change. This is
+what makes the ecosystem self-serve: a new consumer never needs a PR against
+NimConnect's deploy config to start reading profiles/handles.
 
-- Default: `*` (all origins allowed).
-- Can be set to a single origin, or a comma-separated allow-list
-  (e.g. `https://a.example,https://b.example`). For a list, the response
-  reflects back the request's `Origin` header only if it appears in the list
-  (with `Vary: Origin`); otherwise no `Access-Control-Allow-Origin` header is
-  sent.
-- `OPTIONS` preflight requests short-circuit with `204 No Content`.
+`ALLOWED_ORIGIN` (single origin, `*`, or a comma-separated allow-list) still
+governs everything else — the signed write endpoints
+(`PUT`/`DELETE /api/profile/{address}`, `POST /api/handles/claims`) and any
+other route. Those stay origin-gated; a wallet signature is the real trust
+boundary for writes either way, origin-locking is defense in depth on top of it.
 
-Read-only consumers hitting these three GET endpoints don't send custom
-headers or non-simple methods, so preflight is generally not triggered.
+`OPTIONS` preflight requests short-circuit with `204 No Content`. Read-only
+consumers hitting these three GET endpoints don't send custom headers or
+non-simple methods, so preflight is generally not triggered anyway.
 
 ## Out of scope for consumers
 

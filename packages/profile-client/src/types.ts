@@ -41,3 +41,9 @@ export interface ProfileClientOptions {
   /** Defaults to the production NimConnect origin when omitted. */
   baseUrl?: string
 }
+
+/** Recipient + tx data for claiming a @handle — sign and send with your own wallet integration. */
+export interface HandleClaimPayload {
+  recipient: string
+  extraData: string
+}

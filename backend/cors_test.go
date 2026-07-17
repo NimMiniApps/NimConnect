@@ -85,6 +85,40 @@ func TestWithCORS_HandlesOptionsPreflight(t *testing.T) {
 	}
 }
 
+func TestWithCORS_PublicReadEndpoints_AlwaysWildcard(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	handler := withCORS("https://nimconnect.nimiqminiapps.com", next)
+
+	for _, path := range []string{
+		"/api/resolve/chuck",
+		"/api/profile/NQ11TEST",
+		"/api/handles/by-address/NQ11TEST",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.Header.Set("Origin", "https://some-random-mini-app.example")
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, req)
+
+		if got := w.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+			t.Errorf("%s: expected wildcard CORS, got %q", path, got)
+		}
+	}
+}
+
+func TestWithCORS_ProfileWrite_StillOriginGated(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) })
+	handler := withCORS("https://nimconnect.nimiqminiapps.com,https://nimbomber.nimiqminiapps.com", next)
+
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/NQ11TEST", nil)
+	req.Header.Set("Origin", "https://some-random-mini-app.example")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Errorf("expected no Access-Control-Allow-Origin for write from unlisted origin, got %q", got)
+	}
+}
+
 func TestWithCORS_AllowsInboxAuthHeadersAndMethods(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 	handler := withCORS("*", next)

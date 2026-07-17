@@ -1,6 +1,8 @@
 {
   "name": "@nimconnect/profile-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Read and claim @handles and public profiles on the shared NimFeed/NimConnect identity registry — works with any Nimiq mini app, on-chain or via NimConnect's API.",
+  "keywords": ["nimiq", "nimconnect", "nimfeed", "handle", "profile", "identity"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
