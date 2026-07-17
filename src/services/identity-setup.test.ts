@@ -25,7 +25,6 @@ const base = (over: Partial<IdentitySetupInput> = {}): IdentitySetupInput => ({
   handlesEnabled: true,
   handle: null,
   contactCount: 0,
-  now: 1_000_000,
   ...over,
 })
 
@@ -41,6 +40,11 @@ describe('identity-setup', () => {
     expect(r.nextStep).toBe('claim-handle')
     expect(r.steps.map(s => s.id)).toEqual(['claim-handle', 'first-contact', 'share-profile'])
     expect(r.steps[0]!.done).toBe(false)
+  })
+
+  it('treats empty or whitespace handle as unclaimed', () => {
+    expect(resolveIdentitySetup(base({ handle: '' })).nextStep).toBe('claim-handle')
+    expect(resolveIdentitySetup(base({ handle: '   ' })).nextStep).toBe('claim-handle')
   })
 
   it('starts at first contact when handles disabled', () => {
@@ -84,5 +88,12 @@ describe('identity-setup', () => {
     expect(r.celebration).toBeNull()
     expect(r.nextStep).toBe('first-contact')
     expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(true)
+  })
+
+  it('normalizes celebration handle to trimmed lowercase', () => {
+    markHandleClaimedCelebration('  Chuck  ')
+    const r = resolveIdentitySetup(base({ handle: 'chuck' }))
+    expect(r.celebration).toBe('claimed')
+    expect(r.celebrationHandle).toBe('chuck')
   })
 })

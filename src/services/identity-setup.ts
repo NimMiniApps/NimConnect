@@ -13,7 +13,10 @@ export interface IdentitySetupInput {
   handlesEnabled: boolean
   handle: string | null
   contactCount: number
-  now: number
+}
+
+function normalizeHandle(handle: string | null | undefined): string | null {
+  return handle?.trim().toLowerCase() || null
 }
 
 export interface IdentitySetupStep {
@@ -47,9 +50,11 @@ export function markPublicProfileShared(): void {
 }
 
 export function markHandleClaimedCelebration(handle: string): void {
+  const normalized = normalizeHandle(handle)
+  if (!normalized) return
   try {
     globalThis.localStorage?.setItem(CELEBRATION_KEY, 'claimed')
-    globalThis.localStorage?.setItem(CELEBRATION_HANDLE_KEY, handle)
+    globalThis.localStorage?.setItem(CELEBRATION_HANDLE_KEY, normalized)
   } catch { /* best-effort */ }
   cancelSnooze()
 }
@@ -99,10 +104,11 @@ export function clearIdentitySetupState(): void {
 }
 
 export function resolveIdentitySetup(input: IdentitySetupInput): IdentitySetupResult {
+  const handle = normalizeHandle(input.handle)
   const steps: IdentitySetupStep[] = []
 
   if (input.handlesEnabled) {
-    steps.push({ id: 'claim-handle', label: STEP_LABELS['claim-handle'], done: input.handle != null })
+    steps.push({ id: 'claim-handle', label: STEP_LABELS['claim-handle'], done: !!handle })
   }
   steps.push({ id: 'first-contact', label: STEP_LABELS['first-contact'], done: input.contactCount > 0 })
   steps.push({ id: 'share-profile', label: STEP_LABELS['share-profile'], done: publicProfileShared() })
