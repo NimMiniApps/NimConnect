@@ -1,4 +1,4 @@
-import type { HandleClaimPayload } from './types';
+import type { HandleClaimPayload } from './types.js';
 /**
  * The shared on-chain @handle registry (NimFeed catalog address). A claim is
  * a transaction sent to this address — NimConnect is one of several readers

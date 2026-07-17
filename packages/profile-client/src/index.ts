@@ -1,6 +1,6 @@
-export { createProfileClient, compactAddress, DEFAULT_BASE_URL } from './client'
-export type { ProfileClient } from './client'
-export { buildHandleClaimPayload, isValidHandle, HANDLE_REGISTRY_ADDRESS } from './claim'
+export { createProfileClient, compactAddress, DEFAULT_BASE_URL } from './client.js'
+export type { ProfileClient } from './client.js'
+export { buildHandleClaimPayload, isValidHandle, HANDLE_REGISTRY_ADDRESS } from './claim.js'
 export {
   parseClaimTxData,
   resolveHandleRegistry,
@@ -8,11 +8,11 @@ export {
   isHandleAvailable,
   ownerFromHtlcCreationData,
   HTLC_ACCOUNT_TYPE,
-} from './registry'
-export type { RegistryTx, ResolvedHandleClaim, ResolveHandleRegistryOptions } from './registry'
-export { userFriendlyAddress } from './nimiqAddress'
-export { fetchHandleRegistry, DEFAULT_RPC_URL } from './rpc'
-export type { FetchHandleRegistryOptions } from './rpc'
+} from './registry.js'
+export type { RegistryTx, ResolvedHandleClaim, ResolveHandleRegistryOptions } from './registry.js'
+export { userFriendlyAddress } from './nimiqAddress.js'
+export { fetchHandleRegistry, DEFAULT_RPC_URL } from './rpc.js'
+export type { FetchHandleRegistryOptions } from './rpc.js'
 export type {
   PublicProfileFields,
   StoredPublicProfile,
@@ -20,4 +20,4 @@ export type {
   DisplayIdentity,
   ProfileClientOptions,
   HandleClaimPayload,
-} from './types'
+} from './types.js'

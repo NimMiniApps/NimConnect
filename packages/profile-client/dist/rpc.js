@@ -1,6 +1,6 @@
-import { compactAddress } from './client';
-import { HANDLE_REGISTRY_ADDRESS } from './claim';
-import { HTLC_ACCOUNT_TYPE, ownerFromHtlcCreationData, resolveHandleRegistry } from './registry';
+import { compactAddress } from './client.js';
+import { HANDLE_REGISTRY_ADDRESS } from './claim.js';
+import { HTLC_ACCOUNT_TYPE, ownerFromHtlcCreationData, resolveHandleRegistry } from './registry.js';
 /** Public mainnet RPC gateway — same default the backend uses. */
 export const DEFAULT_RPC_URL = 'https://rpc-mainnet.nimiqscan.com';
 function txSender(tx) {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildHandleClaimPayload } from './claim'
+import { buildHandleClaimPayload } from './claim.js'
 import {
   parseClaimTxData,
   resolveHandleRegistry,
@@ -8,7 +8,7 @@ import {
   ownerFromHtlcCreationData,
   HTLC_ACCOUNT_TYPE,
   type RegistryTx,
-} from './registry'
+} from './registry.js'
 
 // The tx `data` field on chain is the hex-encoded raw bytes of the "NFH:..."
 // text envelope — mirrors backend/handles_registry_test.go's claimTx helper.

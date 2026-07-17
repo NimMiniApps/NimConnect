@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildHandleClaimPayload, isValidHandle, HANDLE_REGISTRY_ADDRESS } from './claim';
+import { buildHandleClaimPayload, isValidHandle, HANDLE_REGISTRY_ADDRESS } from './claim.js';
 describe('isValidHandle', () => {
     it('accepts 3-31 char lowercase/digit/underscore handles', () => {
         expect(isValidHandle('chuck')).toBe(true);

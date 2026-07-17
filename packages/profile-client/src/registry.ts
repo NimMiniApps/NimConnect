@@ -1,6 +1,6 @@
-import { compactAddress } from './client'
-import { isValidHandle } from './claim'
-import { userFriendlyAddress } from './nimiqAddress'
+import { compactAddress } from './client.js'
+import { isValidHandle } from './claim.js'
+import { userFriendlyAddress } from './nimiqAddress.js'
 
 // Mirrors backend/handles.go's claim constants exactly — keep in sync.
 const CLAIM_MAGIC0 = 0x4e

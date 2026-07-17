@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { createProfileClient, DEFAULT_BASE_URL } from './client';
+import { createProfileClient, DEFAULT_BASE_URL } from './client.js';
 afterEach(() => {
     vi.unstubAllGlobals();
 });

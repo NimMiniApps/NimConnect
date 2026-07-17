@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { buildHandleClaimPayload, HANDLE_REGISTRY_ADDRESS } from './claim'
-import { fetchHandleRegistry, DEFAULT_RPC_URL } from './rpc'
+import { buildHandleClaimPayload, HANDLE_REGISTRY_ADDRESS } from './claim.js'
+import { fetchHandleRegistry, DEFAULT_RPC_URL } from './rpc.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()

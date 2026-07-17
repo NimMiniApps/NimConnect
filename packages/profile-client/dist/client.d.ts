@@ -1,4 +1,4 @@
-import type { DisplayIdentity, HandleClaim, ProfileClientOptions, StoredPublicProfile } from './types';
+import type { DisplayIdentity, HandleClaim, ProfileClientOptions, StoredPublicProfile } from './types.js';
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export declare function compactAddress(address: string): string;
 /** Production API origin (SPA is on nimconnect.nimiqminiapps.com; API is separate). */

@@ -1,4 +1,4 @@
-import type { ResolvedHandleClaim, ResolveHandleRegistryOptions } from './registry';
+import type { ResolvedHandleClaim, ResolveHandleRegistryOptions } from './registry.js';
 /** Public mainnet RPC gateway — same default the backend uses. */
 export declare const DEFAULT_RPC_URL = "https://rpc-mainnet.nimiqscan.com";
 export interface FetchHandleRegistryOptions {

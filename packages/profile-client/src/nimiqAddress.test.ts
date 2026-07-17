@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { userFriendlyAddress } from './nimiqAddress'
+import { userFriendlyAddress } from './nimiqAddress.js'
 
 describe('userFriendlyAddress', () => {
   it('encodes 20 raw bytes into the matching NQ address', () => {

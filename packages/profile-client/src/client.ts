@@ -3,7 +3,7 @@ import type {
   HandleClaim,
   ProfileClientOptions,
   StoredPublicProfile,
-} from './types'
+} from './types.js'
 
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export function compactAddress(address: string): string {
