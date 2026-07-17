@@ -12,7 +12,8 @@ not be called from other apps — see [Out of scope for consumers](#out-of-scope
 
 ## Base URL
 
-Production: `https://nimconnect.nimiqminiapps.com`
+Production SPA: `https://nimconnect.nimiqminiapps.com`  
+Production API: `https://api-nimconnect.nimiqminiapps.com`
 
 ## Endpoints
 
