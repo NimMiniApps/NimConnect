@@ -9,6 +9,7 @@ import {
   cancelSnooze,
   resolveIdentitySetup,
   noteIdentitySetupProgress,
+  SNOOZE_MS,
   type IdentitySetupInput,
 } from './identity-setup'
 
@@ -69,7 +70,7 @@ describe('identity-setup', () => {
     const t0 = 1_000_000
     snoozeIdentitySetup(t0)
     expect(isSnoozed(t0 + 1000)).toBe(true)
-    expect(isSnoozed(t0 + 24 * 60 * 60 * 1000 + 1)).toBe(false)
+    expect(isSnoozed(t0 + SNOOZE_MS + 1)).toBe(false)
     snoozeIdentitySetup(t0)
     cancelSnooze()
     expect(isSnoozed(t0 + 1000)).toBe(false)
@@ -95,5 +96,34 @@ describe('identity-setup', () => {
     const r = resolveIdentitySetup(base({ handle: 'chuck' }))
     expect(r.celebration).toBe('claimed')
     expect(r.celebrationHandle).toBe('chuck')
+  })
+
+  it('suppresses celebration when handle is missing', () => {
+    markHandleClaimedCelebration('chuck')
+    const r = resolveIdentitySetup(base({ handle: null }))
+    expect(r.celebration).toBeNull()
+    expect(r.celebrationHandle).toBeNull()
+  })
+
+  it('celebration claimed overrides active snooze', () => {
+    const t0 = 1_000_000
+    markHandleClaimedCelebration('chuck')
+    snoozeIdentitySetup(t0)
+    const r = resolveIdentitySetup(base({ handle: 'chuck' }))
+    expect(r.celebration).toBe('claimed')
+    expect(isSnoozed(t0 + 1000)).toBe(true)
+    expect(identitySetupVisible(r, t0 + 1000)).toBe(true)
+  })
+
+  it('hides when incomplete, snoozed, and not celebrating', () => {
+    const t0 = 1_000_000
+    snoozeIdentitySetup(t0)
+    const r = resolveIdentitySetup(base())
+    expect(identitySetupVisible(r, t0 + 1000)).toBe(false)
+  })
+
+  it('shows when incomplete and not snoozed', () => {
+    const r = resolveIdentitySetup(base())
+    expect(identitySetupVisible(r, 1_000_000)).toBe(true)
   })
 })

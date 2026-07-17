@@ -90,6 +90,7 @@ export function isSnoozed(now: number): boolean {
   return now < until
 }
 
+/** Cancels snooze when Home observes handle/contact progress. */
 export function noteIdentitySetupProgress(): void {
   cancelSnooze()
 }
@@ -105,10 +106,11 @@ export function clearIdentitySetupState(): void {
 
 export function resolveIdentitySetup(input: IdentitySetupInput): IdentitySetupResult {
   const handle = normalizeHandle(input.handle)
+  const hasHandle = !!handle
   const steps: IdentitySetupStep[] = []
 
   if (input.handlesEnabled) {
-    steps.push({ id: 'claim-handle', label: STEP_LABELS['claim-handle'], done: !!handle })
+    steps.push({ id: 'claim-handle', label: STEP_LABELS['claim-handle'], done: hasHandle })
   }
   steps.push({ id: 'first-contact', label: STEP_LABELS['first-contact'], done: input.contactCount > 0 })
   steps.push({ id: 'share-profile', label: STEP_LABELS['share-profile'], done: publicProfileShared() })
@@ -117,7 +119,9 @@ export function resolveIdentitySetup(input: IdentitySetupInput): IdentitySetupRe
   const nextStep = firstUndone ? firstUndone.id : null
   const complete = nextStep == null
 
-  const { celebration, celebrationHandle } = currentCelebration()
+  const stored = currentCelebration()
+  const celebration = stored.celebration === 'claimed' && hasHandle ? 'claimed' : null
+  const celebrationHandle = celebration ? stored.celebrationHandle : null
 
   return { steps, nextStep, complete, celebration, celebrationHandle }
 }
