@@ -86,21 +86,13 @@ reading public profiles — usable from other Nimiq apps.
 
 ## Deployment
 
-### Homelab (primary) — `nimconnect.nimiqminiapps.com`
+**Production:** https://nimconnect.nimiqminiapps.com (and API at `api-nimconnect.nimiqminiapps.com`).
 
-Docker Swarm stack with Traefik, same pattern as [NimiqLens](https://github.com/NimMiniApps/NimiqLens):
+**GitHub Pages demo:** pushes to `main` deploy via [pages.yml](.github/workflows/pages.yml)
+when `VITE_API_BASE_URL` is set → https://nimminiapps.github.io/NimConnect/
 
-1. Set repo variable `VITE_API_BASE_URL=https://api-nimconnect.nimiqminiapps.com`
-2. Push to `main` — [docker-build.yml](.github/workflows/docker-build.yml) publishes frontend + backend to GHCR
-3. `cp docker-compose.homelab.yml.example docker-compose.homelab.yml`
-4. `docker stack deploy -c docker-compose.homelab.yml nimconnect`
-
-### GitHub Pages (demo mirror)
-
-Pushes to `main` also deploy via [pages.yml](.github/workflows/pages.yml) when
-`VITE_API_BASE_URL` is set.
-
-The app uses hash routing, so deep links work without server rewrites.
+The app uses hash routing, so deep links work without server rewrites. For the Go API
+locally, see [backend/README.md](backend/README.md).
 
 ## Architecture
 
