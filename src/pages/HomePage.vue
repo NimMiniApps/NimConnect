@@ -18,7 +18,7 @@ import { newActivity, getLastSeen, setLastSeen } from '../services/activity'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
 import { resolveMyAddresses, receiveAddress, myAddresses as walletAddressVariants } from '../services/nimiq'
 import { preferredCurrency } from '../services/prefs'
-import { handlesEnabled, loadMyHandle, handleForAddress, saveMyHandle } from '../services/handles'
+import { handlesEnabled, loadMyHandle, findMyHandle, saveMyHandle } from '../services/handles'
 import {
   resolveIdentitySetup,
   identitySetupVisible,
@@ -97,7 +97,7 @@ watch(() => profilesStore.self?.address, async (address, prev) => {
   }
 })
 
-/** Local @handle: optimistic from cache/profile, then confirmed via the registry. */
+/** Local @handle: optimistic from cache/profile, then confirmed via findMyHandle (like MyProfile). */
 async function loadSelfHandle() {
   const self = profilesStore.self
   selfHandle.value = self?.handle ?? null
@@ -106,7 +106,7 @@ async function loadSelfHandle() {
   const cached = loadMyHandle(wallets)
   if (cached?.handle) selfHandle.value = cached.handle
   try {
-    const claim = await handleForAddress(self.address)
+    const claim = await findMyHandle(wallets)
     if (claim) {
       selfHandle.value = claim.handle
       saveMyHandle(wallets, claim)
@@ -137,6 +137,10 @@ watch(() => profilesStore.contacts.length, (count, prev) => {
 
 watch(selfHandle, (handle, prev) => {
   if (!prev && handle) noteIdentitySetupProgress()
+})
+
+watch(() => identitySetup.value.nextStep, (step) => {
+  if (step !== 'claim-handle') showLearnMore.value = false
 })
 
 function claimIdentity() {
@@ -415,15 +419,18 @@ async function loadSenderAliases() {
       title="Welcome to NimConnect"
       hint="Add the people you pay — splits, requests and invoices show up here."
     >
-      <template v-if="!selfHandle">
+      <template v-if="!selfHandle && handlesEnabled()">
         <button type="button" class="empty-action primary-action" @click="claimIdentity">Claim @handle</button>
         <router-link to="/add" class="empty-action">Add contact</router-link>
       </template>
-      <template v-else>
+      <template v-else-if="selfHandle">
         <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
         <button type="button" class="empty-action" @click="shareIdentityProfile">
           {{ justShared ? 'Shared ✓' : 'Share public profile' }}
         </button>
+      </template>
+      <template v-else>
+        <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
       </template>
     </EmptyState>
 

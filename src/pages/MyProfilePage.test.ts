@@ -54,6 +54,13 @@ describe('MyProfilePage identity-first redesign', () => {
   })
 })
 
+describe('MyProfilePage claim sheet query', () => {
+  it('opens claimOpen when navigated with sheet=claim', () => {
+    expect(source).toMatch(/route\.query\.sheet === 'claim'/)
+    expect(source).toMatch(/claimOpen\.value = true/)
+  })
+})
+
 describe('bottom nav', () => {
   it('does not surface Insights in the bar', () => {
     expect(appSource).not.toMatch(/to="\/insights"/)

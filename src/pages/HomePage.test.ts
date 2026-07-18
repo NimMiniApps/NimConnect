@@ -91,20 +91,36 @@ describe('HomePage identity setup guidance', () => {
     expect(source).toMatch(/v-if="freshUser && !identityCardVisible"/)
   })
 
-  it('offers a claim-first empty state before a handle exists, with no Share profile CTA', () => {
-    const block = source.match(/<template v-if="!selfHandle">([\s\S]*?)<\/template>/)
-    expect(block, 'expected a !selfHandle branch in the empty-state CTAs').toBeTruthy()
+  it('loads the self handle via findMyHandle after an optimistic cache read', () => {
+    expect(source).toMatch(/loadMyHandle\(wallets\)/)
+    expect(source).toMatch(/findMyHandle\(wallets\)/)
+    expect(source).not.toMatch(/handleForAddress\(/)
+  })
+
+  it('offers a claim-first empty state only when handles are enabled, with no Share profile CTA', () => {
+    const block = source.match(/<template v-if="!selfHandle && handlesEnabled\(\)">([\s\S]*?)<\/template>/)
+    expect(block, 'expected a handlesEnabled claim-first empty-state branch').toBeTruthy()
     const noHandleCtas = block![1]!
     expect(noHandleCtas).toMatch(/Claim @handle/)
     expect(noHandleCtas).toMatch(/Add contact/)
     expect(noHandleCtas).not.toMatch(/Share profile/i)
   })
 
+  it('falls back to Add contact primary when handles are disabled and no handle exists', () => {
+    expect(source).toMatch(/v-else>\s*<router-link to="\/add" class="empty-action primary-action">Add contact<\/router-link>/)
+  })
+
   it('offers Add contact primary and Share public profile secondary once a handle exists', () => {
-    const block = source.match(/<template v-else>([\s\S]*?)<\/template>/)
-    expect(block, 'expected a v-else branch in the empty-state CTAs').toBeTruthy()
+    const block = source.match(/<template v-else-if="selfHandle">([\s\S]*?)<\/template>/)
+    expect(block, 'expected a selfHandle empty-state branch').toBeTruthy()
     const hasHandleCtas = block![1]!
     expect(hasHandleCtas).toMatch(/primary-action[\s\S]*?Add contact/)
     expect(hasHandleCtas).toMatch(/Share public profile/)
+  })
+
+  it('clears learn-more when the next step leaves claim-handle', () => {
+    expect(source).toMatch(/identitySetup\.value\.nextStep/)
+    expect(source).toMatch(/step !== 'claim-handle'/)
+    expect(source).toMatch(/showLearnMore\.value = false/)
   })
 })
