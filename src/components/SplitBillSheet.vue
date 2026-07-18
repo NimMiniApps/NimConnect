@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import type { Profile } from '../types/profile'
 import { useProfilesStore } from '../stores/profiles'
 import { useInvoicesStore } from '../stores/invoices'
@@ -19,6 +20,7 @@ import CurrencyAmountInput from './CurrencyAmountInput.vue'
 const props = defineProps<{ profile?: Profile; open: boolean }>()
 const emit = defineEmits<{ close: [] }>()
 
+const router = useRouter()
 const store = useProfilesStore()
 const invoicesStore = useInvoicesStore()
 
@@ -294,6 +296,11 @@ async function createRequests() {
   }
 }
 
+function goAddContact() {
+  router.push('/add')
+  close()
+}
+
 function close() {
   total.value = null
   fiatInfo.value = null
@@ -318,6 +325,11 @@ function close() {
     @close="close"
   >
     <p v-if="!store.self" class="hint">Connect inside Nimiq Pay first — split requests are paid to your address.</p>
+    <div v-else-if="store.loaded && splittable.length === 0" class="split-empty">
+      <p class="split-empty-title">Split bills with people, not wallet addresses.</p>
+      <p class="split-empty-hint">Add your first contact to start splitting expenses.</p>
+      <button type="button" class="primary" @click="goAddContact">Add your first contact</button>
+    </div>
     <template v-else>
       <label class="field-label">
         What was it for?
@@ -453,10 +465,6 @@ function close() {
         </template>
 
         <p v-if="filter && pickerSections.length === 0" class="hint">No matches.</p>
-        <p v-if="store.loaded && splittable.length === 0" class="hint">
-          Add a person contact first, then come back to split a bill.
-          <router-link to="/add" class="inline-link" @click="close">Add contact</router-link>
-        </p>
       </div>
 
       <div v-if="previewLines.length" class="preview">
@@ -710,6 +718,33 @@ function close() {
   font-size: 13px;
   font-weight: 600;
   text-align: center;
+}
+
+.split-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 12px 8px;
+  text-align: center;
+}
+.split-empty-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+.split-empty-hint {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.split-empty .primary {
+  width: auto;
+  min-width: 220px;
+  padding: 0 24px;
+  margin-bottom: 4px;
 }
 
 .preview {
