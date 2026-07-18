@@ -3,7 +3,7 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 export const router = createRouter({
   history: createWebHashHistory(),
   routes: [
-    { path: '/', component: () => import('./pages/HomePage.vue') },
+    { path: '/', component: () => import('./pages/PortalHomePage.vue') },
     { path: '/contacts', component: () => import('./pages/ContactsPage.vue') },
     { path: '/profile/:id', component: () => import('./pages/ProfileDetailsPage.vue') },
     { path: '/add', component: () => import('./pages/ProfileFormPage.vue') },
