@@ -410,7 +410,7 @@ async function loadSenderAliases() {
       @dismiss="dismissIdentitySetup"
     />
     <p v-if="showLearnMore" class="identity-learn-more">
-      An @handle is a memorable link people can pay or message you at — no address to copy, and you decide what shows on your public page.
+      Your @handle is your public identity on Nimiq — friends can open it to pay or message you, no wallet address needed.
     </p>
 
     <EmptyState

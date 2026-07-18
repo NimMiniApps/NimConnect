@@ -123,4 +123,16 @@ describe('HomePage identity setup guidance', () => {
     expect(source).toMatch(/step !== 'claim-handle'/)
     expect(source).toMatch(/showLearnMore\.value = false/)
   })
+
+  it('keeps the learn-more copy short, positive about @handle, and under the identity card', () => {
+    expect(indexOf('identity-learn-more')).toBeGreaterThan(indexOf('@dismiss="dismissIdentitySetup"'))
+    const match = source.match(/<p v-if="showLearnMore" class="identity-learn-more">([\s\S]*?)<\/p>/)
+    expect(match, 'expected a showLearnMore paragraph').toBeTruthy()
+    const copy = match![1]!.trim()
+    expect(copy.length).toBeLessThan(160)
+    expect(copy).toMatch(/@handle/)
+    expect(copy).toMatch(/friends?/i)
+    expect(copy).toMatch(/pay|open/i)
+    expect(copy).not.toMatch(/skip/i)
+  })
 })
