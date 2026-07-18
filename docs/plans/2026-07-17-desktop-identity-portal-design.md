@@ -104,11 +104,16 @@ NimConnect should not become another desktop wallet.
 
 Instead it becomes:
 
-**The identity layer for the Nimiq ecosystem.**
+**The identity portal for the Nimiq ecosystem.**
 
-Desktop is for identity.
+Desktop is for identity management.
 
-Nimiq Pay is for payments.
+Nimiq Pay remains the place for everyday payments and relationship management.
+
+Claiming a handle and publishing a profile still require wallet
+authorization and on-chain operations (see [Resolved MVP](#resolved-mvp-review-2026-07-17)
+— Hub `checkout`/`signMessage`), so desktop is not "wallet-free." It simply
+isn't intended to replace payment flows.
 
 ---
 
@@ -150,19 +155,23 @@ No private keys are ever handled by NimConnect.
 
 ## Desktop navigation
 
-Desktop navigation should be intentionally small.
+Desktop navigation should be intentionally small, and split by auth state
+(MVP scope — see [Resolved MVP](#resolved-mvp-review-2026-07-17)):
 
-Home
+Public:
 
-Profiles
+- Home
+- Lookup (exact @handle or address — not a directory)
+- About
+- Public profile page (`/u/:handle`)
 
-My Identity
+Authenticated (via Nimiq Hub):
 
-About
+- My Identity — claim handle, edit profile, per-field visibility, live preview, share
 
-Sign In / Connect Wallet
-
-Do NOT duplicate the full Mini App navigation.
+Do NOT duplicate the full Mini App navigation. "Profiles" as a browsable
+nav item is long-term roadmap, not MVP — MVP only ever resolves one exact
+handle/address at a time.
 
 ---
 

@@ -77,12 +77,15 @@ describe('DesktopIdentityPage', () => {
     mocks.saveMyHandle.mockReset()
   })
 
-  it('shows the authorize CTA when disconnected', async () => {
+  it('shows a logged-out onboarding panel with Connect Wallet', async () => {
     const wrapper = await mountPage()
 
     const cta = wrapper.find('[data-desktop-identity-connect] button')
     expect(cta.exists()).toBe(true)
-    expect(cta.text()).toBe('Authorize identity')
+    expect(cta.text()).toBe('Connect Wallet')
+    expect(wrapper.text()).toContain('Manage your public identity across the Nimiq ecosystem.')
+    expect(wrapper.text()).toContain("What you'll be able to do")
+    expect(wrapper.text()).toContain('Claim your @handle')
     expect(wrapper.find('[data-desktop-identity-claim]').exists()).toBe(false)
   })
 
@@ -97,7 +100,8 @@ describe('DesktopIdentityPage', () => {
     expect(mocks.setDesktopHubAddress).toHaveBeenCalledWith(address)
     expect(mocks.findMyHandle).toHaveBeenCalledWith([address])
     expect(wrapper.find('[data-desktop-identity-claim]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Claim your identity')
+    expect(wrapper.text()).toContain('Claim your @handle')
+    expect(wrapper.find('[data-desktop-identity-account]').exists()).toBe(true)
   })
 
   it('recovers an existing claim instead of showing the claim form', async () => {
@@ -117,6 +121,30 @@ describe('DesktopIdentityPage', () => {
     expect((wrapper.find('input[placeholder="Ada"]').element as HTMLInputElement).value).toBe('Ada Lovelace')
     expect(wrapper.text()).toContain('@ada')
     expect(wrapper.text()).toContain('Ada Lovelace')
+    expect(wrapper.text()).toContain('Verified on-chain')
+    expect(wrapper.text()).toContain('Open Public Profile')
+    expect(wrapper.text()).toContain('Last published')
+    expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(false)
+  })
+
+  it('marks unsaved changes and enables publish after edits', async () => {
+    mocks.getDesktopHubAddress.mockReturnValue(address)
+    mocks.findMyHandle.mockResolvedValue(claim)
+    mocks.fetchPublicProfile.mockResolvedValue({
+      updatedAt: 1,
+      profile: { display_name: 'Ada Lovelace' },
+    })
+
+    const wrapper = await mountPage()
+    const publishBtn = wrapper.find('[data-desktop-identity-edit] button[type="submit"]')
+    expect(publishBtn.attributes('disabled')).toBeDefined()
+
+    await wrapper.get('input[placeholder="Ada"]').setValue('Ada L.')
+    await flushPromises()
+
+    expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(true)
+    expect(publishBtn.attributes('disabled')).toBeUndefined()
+    expect(publishBtn.text()).toBe('Publish Public Profile')
   })
 
   it('toggling a visibility switch updates the live preview', async () => {
@@ -129,7 +157,6 @@ describe('DesktopIdentityPage', () => {
 
     const wrapper = await mountPage()
 
-    // Bio was never published, so it starts private even once typed.
     await wrapper.get('textarea[placeholder="A line about you…"]').setValue('Computing pioneer')
     expect(wrapper.find('.desktop-identity__preview-bio').exists()).toBe(false)
 
@@ -141,6 +168,7 @@ describe('DesktopIdentityPage', () => {
     await flushPromises()
 
     expect(wrapper.find('.desktop-identity__preview-bio').text()).toBe('Computing pioneer')
+    expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(true)
   })
 
   it('publishes via syncPublicProfile using a Hub-backed signer', async () => {
@@ -155,13 +183,14 @@ describe('DesktopIdentityPage', () => {
 
     const wrapper = await mountPage()
 
+    await wrapper.get('input[placeholder="Ada"]').setValue('Ada Lovelace II')
     await wrapper.find('[data-desktop-identity-edit]').trigger('submit')
     await flushPromises()
 
     expect(mocks.syncPublicProfile).toHaveBeenCalledTimes(1)
     const [profileArg, shareArg, walletsArg, signArg] = mocks.syncPublicProfile.mock.calls[0]
     expect(profileArg.address).toBe(address)
-    expect(profileArg.name).toBe('Ada Lovelace')
+    expect(profileArg.name).toBe('Ada Lovelace II')
     expect(shareArg.name).toBe(true)
     expect(walletsArg).toEqual([address])
 
@@ -169,6 +198,7 @@ describe('DesktopIdentityPage', () => {
     expect(mocks.hubSignMessage).toHaveBeenCalledWith('a message', address)
 
     expect(wrapper.text()).toContain('Public profile published')
+    expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(false)
   })
 
   it('claims a handle via the Hub and reveals the edit form', async () => {
