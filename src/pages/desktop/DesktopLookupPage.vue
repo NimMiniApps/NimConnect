@@ -86,14 +86,19 @@ async function submitLookup() {
 
   pending.value = true
   try {
-    const matchedBy: MatchedBy = parsed.kind === 'handle' ? 'handle' : 'address'
-    const claim = matchedBy === 'handle'
-      ? await resolveHandle(parsed.handle)
-      : await handleForAddress(parsed.address)
+    let claim
+    let matchedBy: MatchedBy
+    if (parsed.kind === 'handle') {
+      matchedBy = 'handle'
+      claim = await resolveHandle(parsed.handle)
+    } else {
+      matchedBy = 'address'
+      claim = await handleForAddress(parsed.address)
+    }
 
     if (!claim) {
       error.value = "We couldn't find that public identity. Check the @handle or wallet address and try again."
-      if (matchedBy === 'handle') {
+      if (parsed.kind === 'handle') {
         try {
           const check = await checkHandle(parsed.handle)
           if (check.available) claimableHandle.value = parsed.handle
