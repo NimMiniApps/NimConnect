@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite",
     "dev:https": "VITE_HTTPS=true vite",
@@ -16,6 +18,8 @@
   },
   "dependencies": {
     "@fontsource/mulish": "^5.2.5",
+    "@nimconnect/profile-client": "*",
+    "@nimiq/hub-api": "^1.14.0",
     "@nimiq/identicons": "^1.6.2",
     "@nimiq/mini-app-sdk": "^0.1.0",
     "@nimiq/utils": "^0.12.4",
