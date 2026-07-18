@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useVisiblePolling } from '../composables/useVisiblePolling'
 import { useAfterRestoreRefresh } from '../composables/useAfterRestoreRefresh'
 import { useProfilesStore } from '../stores/profiles'
@@ -8,18 +9,29 @@ import { useBucketsStore, bucketTotalNim } from '../stores/buckets'
 import { useInboxStore } from '../stores/inbox'
 import InboxRequestCard from '../components/InboxRequestCard.vue'
 import BucketSheet from '../components/BucketSheet.vue'
-import { makeRequestLink, makePaymentShareLink, shortAddress, transactionExplorerUrl } from '../services/links'
+import IdentitySetupCard from '../components/IdentitySetupCard.vue'
+import { makeRequestLink, makePaymentShareLink, makePublicHandleLink, shortAddress, transactionExplorerUrl } from '../services/links'
 import { sendPaymentRequest, inboxAvailable } from '../services/inbox'
 import { shareOrCopy, canShare } from '../services/share'
 import { fetchIncomingPayments, fetchForwardAddresses, newestFirst, type IncomingPayment } from '../services/history'
 import { newActivity, getLastSeen, setLastSeen } from '../services/activity'
 import { getRates, nimToFiat, type NimRates } from '../services/rates'
-import { resolveMyAddresses, receiveAddress } from '../services/nimiq'
+import { resolveMyAddresses, receiveAddress, myAddresses as walletAddressVariants } from '../services/nimiq'
 import { preferredCurrency } from '../services/prefs'
+import { handlesEnabled, loadMyHandle, handleForAddress, saveMyHandle } from '../services/handles'
+import {
+  resolveIdentitySetup,
+  identitySetupVisible,
+  markPublicProfileShared,
+  snoozeIdentitySetup,
+  noteIdentitySetupProgress,
+  type IdentitySetupResult,
+} from '../services/identity-setup'
 import EmptyState from '../components/EmptyState.vue'
 import Identicon from '../components/Identicon.vue'
 import type { Bucket } from '../types/profile'
 
+const router = useRouter()
 const profilesStore = useProfilesStore()
 const invoicesStore = useInvoicesStore()
 const bucketsStore = useBucketsStore()
@@ -54,6 +66,9 @@ const dueDismissed = ref(false)
 const incomingLoading = ref(false)
 const incomingError = ref(false)
 const rates = ref<NimRates | null>(null)
+const selfHandle = ref<string | null>(null)
+const showLearnMore = ref(false)
+const justShared = ref(false)
 
 async function refreshPageData() {
   await Promise.all([
@@ -72,11 +87,81 @@ useAfterRestoreRefresh(refreshPageData)
 onMounted(() => {
   bucketsStore.load()
   getRates().then(r => (rates.value = r))
+  void loadSelfHandle()
 })
 
 watch(() => profilesStore.self?.address, async (address, prev) => {
-  if (address && address !== prev) await loadIncoming()
+  if (address && address !== prev) {
+    await loadIncoming()
+    await loadSelfHandle()
+  }
 })
+
+/** Local @handle: optimistic from cache/profile, then confirmed via the registry. */
+async function loadSelfHandle() {
+  const self = profilesStore.self
+  selfHandle.value = self?.handle ?? null
+  if (!handlesEnabled() || !self) return
+  const wallets = walletAddressVariants(self.address)
+  const cached = loadMyHandle(wallets)
+  if (cached?.handle) selfHandle.value = cached.handle
+  try {
+    const claim = await handleForAddress(self.address)
+    if (claim) {
+      selfHandle.value = claim.handle
+      saveMyHandle(wallets, claim)
+    }
+  } catch {
+    // registry unreachable — keep the cached/optimistic handle
+  }
+}
+
+/** Identity setup guidance: next step to claim a handle, add a contact, or share the profile. */
+const identitySetup = computed<IdentitySetupResult>(() =>
+  resolveIdentitySetup({
+    handlesEnabled: handlesEnabled(),
+    handle: selfHandle.value,
+    contactCount: profilesStore.contacts.length,
+  }),
+)
+
+const identityCardVisible = computed(() => identitySetupVisible(identitySetup.value))
+
+const identityPublicUrl = computed(() =>
+  selfHandle.value ? makePublicHandleLink(selfHandle.value) : undefined,
+)
+
+watch(() => profilesStore.contacts.length, (count, prev) => {
+  if ((prev ?? 0) === 0 && count > 0) noteIdentitySetupProgress()
+})
+
+watch(selfHandle, (handle, prev) => {
+  if (!prev && handle) noteIdentitySetupProgress()
+})
+
+function claimIdentity() {
+  router.push({ path: '/me', query: { sheet: 'claim' } })
+}
+
+function addContactFromIdentity() {
+  router.push('/add')
+}
+
+async function shareIdentityProfile() {
+  if (!identityPublicUrl.value) return
+  await shareOrCopy(identityPublicUrl.value)
+  markPublicProfileShared()
+  justShared.value = true
+  setTimeout(() => (justShared.value = false), 2000)
+}
+
+function toggleLearnMore() {
+  showLearnMore.value = !showLearnMore.value
+}
+
+function dismissIdentitySetup() {
+  snoozeIdentitySetup(Date.now())
+}
 
 useVisiblePolling(() => loadIncoming(), 60_000)
 
@@ -310,14 +395,36 @@ async function loadSenderAliases() {
       <router-link to="/add" class="add-link" aria-label="Add contact">＋</router-link>
     </header>
 
+    <IdentitySetupCard
+      v-if="identityCardVisible"
+      :result="identitySetup"
+      :public-url="identityPublicUrl"
+      @claim="claimIdentity"
+      @add-contact="addContactFromIdentity"
+      @share="shareIdentityProfile"
+      @learn-more="toggleLearnMore"
+      @dismiss="dismissIdentitySetup"
+    />
+    <p v-if="showLearnMore" class="identity-learn-more">
+      An @handle is a memorable link people can pay or message you at — no address to copy, and you decide what shows on your public page.
+    </p>
+
     <EmptyState
-      v-if="freshUser"
+      v-if="freshUser && !identityCardVisible"
       icon="👋"
       title="Welcome to NimConnect"
       hint="Add the people you pay — splits, requests and invoices show up here."
     >
-      <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
-      <router-link to="/me" class="empty-action">Share profile</router-link>
+      <template v-if="!selfHandle">
+        <button type="button" class="empty-action primary-action" @click="claimIdentity">Claim @handle</button>
+        <router-link to="/add" class="empty-action">Add contact</router-link>
+      </template>
+      <template v-else>
+        <router-link to="/add" class="empty-action primary-action">Add contact</router-link>
+        <button type="button" class="empty-action" @click="shareIdentityProfile">
+          {{ justShared ? 'Shared ✓' : 'Share public profile' }}
+        </button>
+      </template>
     </EmptyState>
 
     <section v-if="quickContacts.length && !freshUser" class="home-panel people-panel">
@@ -850,6 +957,15 @@ async function loadSenderAliases() {
   font-size: 13px;
 }
 .notice.inset { margin: 0; }
+.identity-learn-more {
+  margin: -4px 0 16px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--text-6);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
 .unknown-head { margin-top: 16px; margin-bottom: 10px; }
 .show-more { margin-top: 10px; align-self: flex-start; }
 .invoice-list { display: flex; flex-direction: column; gap: 10px; }

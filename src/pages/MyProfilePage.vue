@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useProfilesStore } from '../stores/profiles'
 import { useBucketsStore } from '../stores/buckets'
 import { useInvoicesStore } from '../stores/invoices'
@@ -29,6 +29,7 @@ import { makePublicHandleLink, makeRequestLink, makePaymentShareLink } from '../
 import { copyText } from '../services/share'
 
 const router = useRouter()
+const route = useRoute()
 const store = useProfilesStore()
 const bucketsStore = useBucketsStore()
 const invoicesStore = useInvoicesStore()
@@ -143,8 +144,9 @@ onMounted(async () => {
   } finally {
     ready.value = true
   }
-  void loadHandleState()
   void loadRecentIncoming()
+  await loadHandleState()
+  if (handlesEnabled() && route.query.sheet === 'claim' && !myHandle.value) claimOpen.value = true
 })
 
 async function retry() {
