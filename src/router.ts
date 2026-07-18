@@ -13,6 +13,8 @@ export const router = createRouter({
     { path: '/pay', component: () => import('./pages/PayPage.vue') },
     { path: '/u/:handle', component: () => import('./pages/PublicProfilePage.vue') },
     { path: '/insights', component: () => import('./pages/InsightsPage.vue') },
+    { path: '/lookup', component: () => import('./pages/desktop/DesktopLookupPage.vue') },
+    { path: '/about', component: () => import('./pages/desktop/DesktopAboutPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
 })

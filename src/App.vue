@@ -13,6 +13,8 @@ import PublicPayLanding from './components/PublicPayLanding.vue'
 import PublicProfileLanding from './components/PublicProfileLanding.vue'
 import { parsePublicAddRoute } from './services/profile-share'
 import { isDesktopBrowser } from './utils/device'
+import { isDesktopPortalPath } from './config/desktop-portal'
+import DesktopShell from './components/desktop/DesktopShell.vue'
 import QuickSendSheet from './components/QuickSendSheet.vue'
 import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
@@ -59,6 +61,8 @@ const handoffOpenUrl = computed(() =>
 )
 // Public profile pages render for everyone — no install wall.
 const publicProfileRoute = computed(() => router.currentRoute.value.path.startsWith('/u/'))
+const routePath = computed(() => router.currentRoute.value.path)
+const desktopPortalRoute = computed(() => isDesktopPortalPath(routePath.value))
 const inboxStore = useInboxStore()
 const profilesStore = useProfilesStore()
 inboxStore.load()
@@ -196,6 +200,19 @@ watch([browserMode, insideNimiqPay], () => {
   void handleIncomingPaymentLink()
 })
 
+watch(routePath, path => {
+  if (
+    desktopBrowser.value
+    && !insideNimiqPay.value
+    && !browserMode.value
+    && !isDesktopPortalPath(path)
+    && path !== '/pay'
+    && path !== '/add'
+  ) {
+    void router.replace('/')
+  }
+}, { immediate: true })
+
 function onContinueInBrowser() {
   if (desktopBrowser.value) return
   enableBrowserMode()
@@ -244,6 +261,9 @@ async function handleIncomingPaymentLink() {
     @continue="onContinueInBrowser"
   />
   <router-view v-else-if="!insideNimiqPay && !browserMode && publicProfileRoute" />
+  <DesktopShell
+    v-else-if="desktopBrowser && !insideNimiqPay && !browserMode && desktopPortalRoute"
+  />
   <OpenInNimiqPayLanding
     v-else-if="!insideNimiqPay && !browserMode"
     :allow-browser-continue="allowBrowserContinue"
