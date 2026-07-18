@@ -61,6 +61,15 @@ describe('MyProfilePage claim sheet query', () => {
   })
 })
 
+describe('MyProfilePage handle-claim celebration', () => {
+  it('marks celebration and returns Home after a successful claim publish attempt', () => {
+    expect(source).toMatch(/markHandleClaimedCelebration\(handle\)/)
+    expect(source).toMatch(/router\.push\('\/'\)/)
+    expect(indexOf('markHandleClaimedCelebration(handle)')).toBeLessThan(indexOf("router.push('/')"))
+    expect(indexOf('tryPublishPublicProfile()')).toBeLessThan(indexOf("router.push('/')"))
+  })
+})
+
 describe('bottom nav', () => {
   it('does not surface Insights in the bar', () => {
     expect(appSource).not.toMatch(/to="\/insights"/)

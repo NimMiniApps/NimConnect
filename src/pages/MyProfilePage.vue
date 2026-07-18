@@ -27,6 +27,7 @@ import {
 } from '../services/handles'
 import { makePublicHandleLink, makeRequestLink, makePaymentShareLink } from '../services/links'
 import { copyText } from '../services/share'
+import { markHandleClaimedCelebration } from '../services/identity-setup'
 
 const router = useRouter()
 const route = useRoute()
@@ -229,10 +230,12 @@ async function onClaimed(handle: string, txHash: string, claim?: HandleClaim) {
     }
     if (claim) saveMyHandle(myAddresses(store.self.address), claim)
   }
+  markHandleClaimedCelebration(handle)
   await loadHandleState()
   await tryPublishPublicProfile()
   window.setTimeout(() => void loadHandleState(), 8_000)
   window.setTimeout(() => void loadHandleState(), 45_000)
+  router.push('/')
 }
 
 async function copyShareLink() {
