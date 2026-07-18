@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import {
   isValidHandle,
   makeClaimPayload,
@@ -12,9 +12,17 @@ import {
   claimOwnerAddress,
   hasAnyPublicShare,
   defaultShareSelection,
+  publishProfile,
+  unpublishProfile,
+  claimHandleViaHub,
   type HandleClaim,
 } from './handles'
 import type { Profile } from '../types/profile'
+
+const claimHandleWithHub = vi.fn()
+vi.mock('./hub', () => ({
+  claimHandleWithHub: (...args: unknown[]) => claimHandleWithHub(...args),
+}))
 
 const profile: Profile = {
   id: '1', address: 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000',
@@ -118,5 +126,79 @@ describe('handles', () => {
     expect(profileToPublicPayload(profile, {
       name: true, bio: true, website: true, github: true, x: true, tags: true,
     })).not.toContain('PRIVATE')
+  })
+})
+
+describe('publishProfile / unpublishProfile with injected signer', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('publishes using the injected signer instead of Pay signChallenge', async () => {
+    const sign = vi.fn().mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await publishProfile(profile, { ...defaultShareSelection(), name: true }, sign)
+
+    expect(sign).toHaveBeenCalledWith(expect.stringContaining('nimconnect:profile:v1'))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0]!
+    expect(String(url)).toContain('/api/profile/')
+    const body = JSON.parse((init as RequestInit).body as string)
+    expect(body).toMatchObject({ public_key: 'pub', signature: 'sig' })
+  })
+
+  it('unpublishes using the injected signer instead of Pay signChallenge', async () => {
+    const sign = vi.fn().mockResolvedValue({ publicKey: 'pub2', signature: 'sig2' })
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true })
+    vi.stubGlobal('fetch', fetchMock)
+
+    await unpublishProfile(profile.address, sign)
+
+    expect(sign).toHaveBeenCalledWith(expect.stringContaining('nimconnect:profile-delete:v1'))
+    const [, init] = fetchMock.mock.calls[0]!
+    expect((init as RequestInit).headers).toMatchObject({
+      'X-Profile-Public-Key': 'pub2',
+      'X-Profile-Signature': 'sig2',
+    })
+  })
+})
+
+describe('claimHandleViaHub', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+    claimHandleWithHub.mockReset()
+  })
+
+  it('claims via Hub checkout and reports indexed status', async () => {
+    claimHandleWithHub.mockResolvedValue({ txHash: 'hub-tx-1' })
+    const claim: HandleClaim = {
+      handle: 'chuck', address: 'NQ01 TEST', tx_hash: 'hub-tx-1', block_height: 1, tx_index: 0,
+    }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'indexed', claim }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await claimHandleViaHub('chuck', 'NQ01 TEST')
+
+    expect(claimHandleWithHub).toHaveBeenCalledWith('chuck', 'NQ01 TEST')
+    expect(result).toEqual({ status: 'indexed', txHash: 'hub-tx-1', claim })
+  })
+
+  it('falls back to pending when the indexer call fails', async () => {
+    claimHandleWithHub.mockResolvedValue({ txHash: 'hub-tx-2' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+
+    const result = await claimHandleViaHub('chuck', 'NQ01 TEST')
+
+    expect(result).toEqual({ status: 'pending', txHash: 'hub-tx-2' })
+  })
+
+  it('rejects invalid handles without touching the Hub', async () => {
+    await expect(claimHandleViaHub('AB', 'NQ01 TEST')).rejects.toThrow('Invalid handle')
+    expect(claimHandleWithHub).not.toHaveBeenCalled()
   })
 })

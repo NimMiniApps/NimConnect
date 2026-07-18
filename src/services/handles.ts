@@ -2,6 +2,7 @@ import { sha256 } from '@noble/hashes/sha2'
 import { bytesToHex } from '@noble/hashes/utils'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { apiUrl, hasApiBase } from './api'
+import { claimHandleWithHub } from './hub'
 import { fetchTransactionsByAddress } from './history'
 import { sendNim, signChallenge } from './nimiq'
 import type { Profile } from '../types/profile'
@@ -206,16 +207,17 @@ export async function syncPublicProfile(
   profile: Profile,
   share: ShareSelection,
   wallets: string[],
+  sign: ChallengeSigner = signChallenge,
 ): Promise<'published' | 'unpublished' | 'skipped'> {
   const claim = await findMyHandle(wallets)
   if (!claim) return 'skipped'
   const address = claimOwnerAddress(claim)
   const signed = { ...profile, address }
   if (!hasAnyPublicShare(share)) {
-    await unpublishProfile(address)
+    await unpublishProfile(address, sign)
     return 'unpublished'
   }
-  await publishProfile(signed, share)
+  await publishProfile(signed, share, sign)
   return 'published'
 }
 
@@ -446,10 +448,44 @@ export async function claimHandle(
   }
 }
 
-export async function publishProfile(profile: Profile, share: ShareSelection): Promise<void> {
+/** Send a Hub-checkout claim tx, then fast-path it to the indexer — no Nimiq Pay needed. */
+export async function claimHandleViaHub(
+  handle: string,
+  address: string,
+): Promise<{ status: 'indexed' | 'pending'; txHash: string; claim?: HandleClaim }> {
+  if (!isValidHandle(handle)) throw new Error('Invalid handle')
+  if (!REGISTRY_ADDRESS) throw new Error('Handle registry not configured')
+  const { txHash } = await claimHandleWithHub(handle, address)
+  const res = await fetch(apiUrl('/api/handles/claims'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tx_hash: txHash }),
+  })
+  if (!res.ok) return { status: 'pending', txHash }
+  const body = await res.json()
+  const claim = body.claim as HandleClaim | undefined
+  if (claim) saveMyHandle([address], claim)
+  return {
+    status: body.status === 'indexed' ? 'indexed' : 'pending',
+    txHash,
+    claim,
+  }
+}
+
+/** Signs a challenge message — defaults to Nimiq Pay's `signChallenge`, but desktop
+ * can inject a Hub-backed signer instead. */
+export type ChallengeSigner = (
+  message: string,
+) => Promise<{ publicKey: string; signature: string }>
+
+export async function publishProfile(
+  profile: Profile,
+  share: ShareSelection,
+  sign: ChallengeSigner = signChallenge,
+): Promise<void> {
   const payload = profileToPublicPayload(profile, share)
   const updatedAt = Date.now()
-  const { publicKey, signature } = await signChallenge(
+  const { publicKey, signature } = await sign(
     buildProfilePutMessage(profile.address, updatedAt, profilePayloadHash(payload)),
   )
   const res = await fetch(apiUrl(`/api/profile/${compact(profile.address)}`), {
@@ -466,9 +502,12 @@ export async function publishProfile(profile: Profile, share: ShareSelection): P
   if (!res.ok) throw new Error(`Publish failed (${res.status})`)
 }
 
-export async function unpublishProfile(address: string): Promise<void> {
+export async function unpublishProfile(
+  address: string,
+  sign: ChallengeSigner = signChallenge,
+): Promise<void> {
   const updatedAt = Date.now()
-  const { publicKey, signature } = await signChallenge(buildProfileDeleteMessage(address, updatedAt))
+  const { publicKey, signature } = await sign(buildProfileDeleteMessage(address, updatedAt))
   const res = await fetch(apiUrl(`/api/profile/${compact(address)}`), {
     method: 'DELETE',
     headers: {
