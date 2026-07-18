@@ -59,7 +59,8 @@ export function markHandleClaimedCelebration(handle: string): void {
   cancelSnooze()
 }
 
-function clearCelebration(): void {
+/** Clears celebration without marking the public profile as shared. */
+export function clearCelebration(): void {
   try {
     globalThis.localStorage?.removeItem(CELEBRATION_KEY)
     globalThis.localStorage?.removeItem(CELEBRATION_HANDLE_KEY)

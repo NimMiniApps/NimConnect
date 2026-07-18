@@ -25,6 +25,7 @@ import {
   markPublicProfileShared,
   snoozeIdentitySetup,
   noteIdentitySetupProgress,
+  clearCelebration,
   type IdentitySetupResult,
 } from '../services/identity-setup'
 import EmptyState from '../components/EmptyState.vue'
@@ -69,6 +70,8 @@ const rates = ref<NimRates | null>(null)
 const selfHandle = ref<string | null>(null)
 const showLearnMore = ref(false)
 const justShared = ref(false)
+/** Bumped when identity-setup localStorage changes so computed state re-reads. */
+const identitySetupVersion = ref(0)
 
 async function refreshPageData() {
   await Promise.all([
@@ -117,18 +120,26 @@ async function loadSelfHandle() {
 }
 
 /** Identity setup guidance: next step to claim a handle, add a contact, or share the profile. */
-const identitySetup = computed<IdentitySetupResult>(() =>
-  resolveIdentitySetup({
+const identitySetup = computed<IdentitySetupResult>(() => {
+  void identitySetupVersion.value
+  return resolveIdentitySetup({
     handlesEnabled: handlesEnabled(),
     handle: selfHandle.value,
     contactCount: profilesStore.contacts.length,
-  }),
-)
+  })
+})
 
-const identityCardVisible = computed(() => identitySetupVisible(identitySetup.value))
+const identityCardVisible = computed(() => {
+  void identitySetupVersion.value
+  return identitySetupVisible(identitySetup.value)
+})
 
 const identityPublicUrl = computed(() =>
   selfHandle.value ? makePublicHandleLink(selfHandle.value) : undefined,
+)
+
+const identityFeedback = computed(() =>
+  justShared.value ? '✓ Public profile shared' : undefined,
 )
 
 watch(() => profilesStore.contacts.length, (count, prev) => {
@@ -155,6 +166,7 @@ async function shareIdentityProfile() {
   if (!identityPublicUrl.value) return
   await shareOrCopy(identityPublicUrl.value)
   markPublicProfileShared()
+  identitySetupVersion.value++
   justShared.value = true
   setTimeout(() => (justShared.value = false), 2000)
 }
@@ -164,7 +176,10 @@ function toggleLearnMore() {
 }
 
 function dismissIdentitySetup() {
+  clearCelebration()
   snoozeIdentitySetup(Date.now())
+  showLearnMore.value = false
+  identitySetupVersion.value++
 }
 
 useVisiblePolling(() => loadIncoming(), 60_000)
@@ -403,6 +418,7 @@ async function loadSenderAliases() {
       v-if="identityCardVisible"
       :result="identitySetup"
       :public-url="identityPublicUrl"
+      :feedback="identityFeedback"
       @claim="claimIdentity"
       @add-contact="addContactFromIdentity"
       @share="shareIdentityProfile"

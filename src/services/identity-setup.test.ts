@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearIdentitySetupState,
+  clearCelebration,
   identitySetupVisible,
   markPublicProfileShared,
   markHandleClaimedCelebration,
@@ -89,6 +90,16 @@ describe('identity-setup', () => {
     expect(r.celebration).toBeNull()
     expect(r.nextStep).toBe('first-contact')
     expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(true)
+  })
+
+  it('clearCelebration drops celebration without marking the profile shared', () => {
+    markHandleClaimedCelebration('chuck')
+    expect(resolveIdentitySetup(base({ handle: 'chuck' })).celebration).toBe('claimed')
+    clearCelebration()
+    const r = resolveIdentitySetup(base({ handle: 'chuck' }))
+    expect(r.celebration).toBeNull()
+    expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(false)
+    expect(r.nextStep).toBe('first-contact')
   })
 
   it('normalizes celebration handle to trimmed lowercase', () => {

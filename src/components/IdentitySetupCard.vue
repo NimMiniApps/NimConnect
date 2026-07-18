@@ -5,6 +5,8 @@ import type { IdentitySetupResult } from '../services/identity-setup'
 const props = defineProps<{
   result: IdentitySetupResult
   publicUrl?: string
+  /** Short status line shown above actions (e.g. after share). */
+  feedback?: string
 }>()
 
 const emit = defineEmits<{
@@ -74,6 +76,8 @@ function runSecondary() {
       </li>
     </ul>
 
+    <p v-if="feedback" class="identity-setup-feedback">{{ feedback }}</p>
+
     <div v-if="primary" class="identity-setup-actions">
       <button type="button" class="identity-setup-primary primary-action" data-primary @click="runPrimary">
         {{ primary.label }}
@@ -119,6 +123,12 @@ function runSecondary() {
   font-size: 13px;
   font-weight: 600;
   overflow-wrap: anywhere;
+}
+.identity-setup-feedback {
+  margin: 0;
+  color: var(--nq-green);
+  font-size: 13px;
+  font-weight: 700;
 }
 .identity-setup-list {
   display: flex;

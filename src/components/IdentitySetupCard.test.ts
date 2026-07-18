@@ -144,6 +144,16 @@ describe('IdentitySetupCard', () => {
     expect(wrapper.emitted('dismiss')).toHaveLength(1)
   })
 
+  it('shows optional feedback above the actions', () => {
+    const withFeedback = mount(IdentitySetupCard, {
+      props: { result: result(), feedback: '✓ Public profile shared' },
+    })
+    expect(withFeedback.text()).toContain('✓ Public profile shared')
+
+    const without = mount(IdentitySetupCard, { props: { result: result() } })
+    expect(without.text()).not.toContain('✓ Public profile shared')
+  })
+
   it('reuses the Home panel visual language instead of a new design system', () => {
     expect(identitySetupCardSource).toMatch(/class="[^"]*home-panel/)
     expect(identitySetupCardSource).toMatch(/var\(--text\)/)

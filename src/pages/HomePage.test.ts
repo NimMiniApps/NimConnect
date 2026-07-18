@@ -64,6 +64,7 @@ describe('HomePage identity setup guidance', () => {
   it('wires IdentitySetupCard events to identity-setup actions', () => {
     expect(source).toMatch(/:result="identitySetup"/)
     expect(source).toMatch(/:public-url="identityPublicUrl"/)
+    expect(source).toMatch(/:feedback="identityFeedback"/)
     expect(source).toMatch(/@claim="claimIdentity"/)
     expect(source).toMatch(/@add-contact="addContactFromIdentity"/)
     expect(source).toMatch(/@share="shareIdentityProfile"/)
@@ -76,6 +77,21 @@ describe('HomePage identity setup guidance', () => {
     expect(source).toMatch(/handlesEnabled:\s*handlesEnabled\(\)/)
     expect(source).toMatch(/handle:\s*selfHandle\.value/)
     expect(source).toMatch(/contactCount:\s*profilesStore\.contacts\.length/)
+  })
+
+  it('bumps identitySetupVersion after share and dismiss so localStorage-backed state refreshes', () => {
+    expect(source).toMatch(/identitySetupVersion/)
+    expect(source).toMatch(/void identitySetupVersion\.value/)
+    const shareFn = source.match(/async function shareIdentityProfile\(\) \{([\s\S]*?)\n\}/)
+    expect(shareFn, 'expected shareIdentityProfile').toBeTruthy()
+    expect(shareFn![1]).toMatch(/markPublicProfileShared\(\)/)
+    expect(shareFn![1]).toMatch(/identitySetupVersion\.value\+\+/)
+    const dismissFn = source.match(/function dismissIdentitySetup\(\) \{([\s\S]*?)\n\}/)
+    expect(dismissFn, 'expected dismissIdentitySetup').toBeTruthy()
+    expect(dismissFn![1]).toMatch(/clearCelebration\(\)/)
+    expect(dismissFn![1]).toMatch(/snoozeIdentitySetup\(/)
+    expect(dismissFn![1]).toMatch(/showLearnMore\.value = false/)
+    expect(dismissFn![1]).toMatch(/identitySetupVersion\.value\+\+/)
   })
 
   it('claims a handle by opening the claim sheet on the profile page', () => {
