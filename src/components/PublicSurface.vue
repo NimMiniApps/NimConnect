@@ -277,13 +277,15 @@ const hasActions = computed(() =>
     min-height: min(40rem, calc(100dvh - 3rem));
   }
 
-  /* Desktop-light: panel can place QR + meta side-by-side when consumers wrap with .panel__pay-row. */
-  .public-surface__panel {
+  /* Desktop-light: 2-col only when consumers wrap QR + meta in .panel__pay-row. */
+  .public-surface__panel :deep(.panel__pay-row) {
     align-items: center;
     column-gap: 1.25rem;
+    display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     justify-items: stretch;
     text-align: left;
+    width: 100%;
   }
 }
 </style>
