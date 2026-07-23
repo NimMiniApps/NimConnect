@@ -161,8 +161,18 @@ describe('public landings', () => {
     await wrapper.get('[data-public-lookup] input').setValue('@ada')
     await wrapper.get('[data-public-lookup]').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('Lookup failed — try again')
+    expect(wrapper.text()).toContain('Lookup failed - try again')
+    expect(wrapper.text()).not.toMatch(/[—–]/)
     expect(mocks.push).not.toHaveBeenCalled()
+  })
+
+  it('keeps handoff copy free of em/en dashes', () => {
+    const wrapper = mount(OpenInNimiqPayLanding, {
+      props: { allowBrowserContinue: false },
+    })
+    expect(wrapper.text()).toContain('People, not wallet addresses.')
+    expect(wrapper.text()).toContain('Save people, not long wallet addresses.')
+    expect(wrapper.text()).not.toMatch(/[—–]/)
   })
 
   it('uses a supplied Nimiq Pay deep link for a browser handoff', () => {

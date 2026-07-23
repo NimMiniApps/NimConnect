@@ -33,7 +33,7 @@ async function submitLookup() {
     }
     await router.push(`/u/${claim.handle}`)
   } catch {
-    lookupError.value = 'Lookup failed — try again'
+    lookupError.value = 'Lookup failed - try again'
   } finally {
     lookupPending.value = false
   }
@@ -114,13 +114,13 @@ const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
           <button
             type="button"
             class="handoff__feature"
-            title="Save people—not long wallet addresses"
+            title="Save people, not long wallet addresses"
             @click="openContactsHint"
           >
             <span class="handoff__feature-icon handoff__feature-icon--contacts" aria-hidden="true" />
             <span class="handoff__feature-text">
               <span class="handoff__feature-title">Wallet contacts</span>
-              <span class="handoff__feature-copy">Save people—not long wallet addresses.</span>
+              <span class="handoff__feature-copy">Save people, not long wallet addresses.</span>
             </span>
           </button>
         </li>
@@ -238,8 +238,8 @@ h1 {
 
 .handoff__feature {
   align-items: flex-start;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-radius: 0.75rem;
   box-sizing: border-box;
   color: inherit;
@@ -251,14 +251,12 @@ h1 {
   text-align: left;
   transition:
     border-color 180ms var(--nimiq-ease),
-    box-shadow 180ms var(--nimiq-ease),
     transform 180ms var(--nimiq-ease);
   width: 100%;
 }
 
 .handoff__feature:hover {
   border-color: color-mix(in srgb, var(--text) 28%, transparent);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.08);
   transform: translateY(-2px);
 }
 
@@ -315,10 +313,9 @@ h1 {
 }
 
 .handoff__lookup {
-  background: var(--bg);
-  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  background: color-mix(in srgb, var(--card) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-radius: 1rem;
-  box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   gap: 0.625rem;
