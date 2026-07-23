@@ -45,30 +45,35 @@ func TestStatsHandlerAuth(t *testing.T) {
 	s := NewStats("") // no persistence
 	s.RecordWallet("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
 
-	h := statsHandler(s, "secret")
+	sessions := NewAdminSessions(nil)
+	token, _, err := sessions.Issue()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := statsHandler(s, sessions)
 
 	r := httptest.NewRequest("GET", "/api/stats", nil)
 	w := httptest.NewRecorder()
 	h(w, r)
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("no token: got %d, want 401", w.Code)
+		t.Fatalf("no session header: got %d, want 401", w.Code)
 	}
 
 	r = httptest.NewRequest("GET", "/api/stats", nil)
-	r.Header.Set("X-Admin-Token", "secret")
+	r.Header.Set("X-Admin-Session", token)
 	w = httptest.NewRecorder()
 	h(w, r)
 	if w.Code != http.StatusOK {
-		t.Fatalf("with token: got %d, want 200", w.Code)
+		t.Fatalf("with valid session: got %d, want 200", w.Code)
 	}
 
-	// Empty configured token disables the endpoint entirely.
-	h = statsHandler(s, "")
 	r = httptest.NewRequest("GET", "/api/stats", nil)
+	r.Header.Set("X-Admin-Session", "not-a-real-token")
 	w = httptest.NewRecorder()
 	h(w, r)
 	if w.Code != http.StatusUnauthorized {
-		t.Fatalf("disabled: got %d, want 401", w.Code)
+		t.Fatalf("invalid session: got %d, want 401", w.Code)
 	}
 }
 

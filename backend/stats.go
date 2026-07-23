@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -115,9 +114,9 @@ func withWalletStat(stats *Stats, next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func statsHandler(stats *Stats, token string) http.HandlerFunc {
+func statsHandler(stats *Stats, sessions *AdminSessions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Admin-Token")), []byte(token)) != 1 {
+		if !sessions.Valid(r.Header.Get("X-Admin-Session")) {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

@@ -29,7 +29,7 @@ func main() {
 	backupStore := NewBackupStore(backupDir)
 	inboxStore := NewInboxStore(getEnv("INBOX_DIR", "/data/inbox"))
 	stats := NewStats(getEnv("STATS_FILE", "/data/stats.json"))
-	adminToken := os.Getenv("ADMIN_TOKEN")
+	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", rootHandler)
@@ -39,7 +39,8 @@ func main() {
 		stats.RecordOpen()
 		ratesHandler(ratesCache)(w, r)
 	})
-	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminToken))
+	mux.HandleFunc("POST /api/admin/login", adminLoginHandler(adminSessions))
+	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions))
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore)))
 	mux.HandleFunc("HEAD /api/backup/{address}", withWalletStat(stats, backupHeadHandler(backupStore)))
 	mux.HandleFunc("PUT /api/backup/{address}", withWalletStat(stats, backupPutHandler(backupStore)))

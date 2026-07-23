@@ -142,3 +142,19 @@ func TestWithCORS_AllowsInboxAuthHeadersAndMethods(t *testing.T) {
 		}
 	}
 }
+
+func TestWithCORS_AllowsAdminSessionHeader(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	handler := withCORS("*", next)
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/stats", nil)
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "x-admin-session")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	allowHeaders := strings.ToLower(w.Header().Get("Access-Control-Allow-Headers"))
+	if !strings.Contains(allowHeaders, "x-admin-session") {
+		t.Errorf("Access-Control-Allow-Headers %q missing x-admin-session", allowHeaders)
+	}
+}

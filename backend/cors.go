@@ -53,7 +53,7 @@ func withCORS(allowedOrigins string, next http.Handler) http.Handler {
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Inbox-Public-Key, X-Inbox-Signature, X-Inbox-Issued-At")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Inbox-Public-Key, X-Inbox-Signature, X-Inbox-Issued-At, X-Admin-Session")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

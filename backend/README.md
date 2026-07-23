@@ -11,7 +11,8 @@ Go REST API for NimConnect: CoinGecko-backed exchange rates, encrypted cloud bac
 | `GET` | `/api/backup/{address}` | Download encrypted backup ciphertext |
 | `PUT` | `/api/backup/{address}` | Upload backup (requires wallet signature) |
 | `HEAD` | `/api/backup/{address}` | Check if backup exists |
-| `GET` | `/api/stats` | Usage stats (requires `X-Admin-Token` header) |
+| `POST` | `/api/admin/login` | Wallet-signed admin login → session token |
+| `GET` | `/api/stats` | Usage stats (requires `X-Admin-Session` header from `/api/admin/login`) |
 | `GET` | `/api/resolve/{handle}` | Resolve @handle → address (requires `REGISTRY_ADDRESS`) |
 | `GET` | `/api/profile/{address}` | Fetch signed public profile JSON |
 | `PUT` | `/api/profile/{address}` | Store signed profile (wallet signature) |
@@ -34,7 +35,7 @@ The server stores only encrypted blobs — it cannot read contact data.
 | `ALLOWED_ORIGIN` | `*` | CORS origins (comma-separated) |
 | `BACKUP_DIR` | `/data/backups` | Filesystem path for backup JSON files |
 | `STATS_FILE` | `/data/stats.json` | Usage stats persistence file |
-| `ADMIN_TOKEN` | _(unset)_ | Enables `/api/stats`; unset = endpoint returns 401 |
+| `ADMIN_ADDRESSES` | _(unset)_ | Comma-separated Nimiq addresses allowed to sign in at `/api/admin/login`; unset = `/api/stats` always returns 401 |
 | `REGISTRY_ADDRESS` | _(unset)_ | Enables handle registry + profile API; unset = routes 404 |
 | `NIMIQ_RPC_URL` | `https://rpc-mainnet.nimiqscan.com` | JSON-RPC endpoint for claim indexing |
 | `HANDLES_FILE` | `/data/handles.json` | Persisted handle→claim map (warm-start cache) |
