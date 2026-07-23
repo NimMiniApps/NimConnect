@@ -1,7 +1,14 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -84,5 +91,159 @@ func TestAdminSessionsIssueRandFailure(t *testing.T) {
 	s.randRead = func(b []byte) (int, error) { return 0, errors.New("boom") }
 	if _, _, err := s.Issue(); err == nil {
 		t.Fatal("expected error when randRead fails")
+	}
+}
+
+func signAdminLoginChallenge(priv ed25519.PrivateKey, address string, timestamp int64) []byte {
+	challenge := adminLoginChallenge(address, timestamp)
+	hash := nimiqSignedMessageHash(challenge)
+	return ed25519.Sign(priv, hash[:])
+}
+
+func adminLoginBody(address, publicKeyHex string, sig []byte, timestamp int64) string {
+	return fmt.Sprintf(`{"address":%q,"publicKey":%q,"signature":%q,"timestamp":%d}`,
+		address, publicKeyHex, hex.EncodeToString(sig), timestamp)
+}
+
+func TestAdminLoginHandlerAcceptsWhitelistedSignature(t *testing.T) {
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	address, err := addressFromPublicKey(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := NewAdminSessions([]string{address})
+	fixedNow := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	sessions.now = func() time.Time { return fixedNow }
+	handler := adminLoginHandler(sessions)
+
+	ts := fixedNow.Unix()
+	sig := signAdminLoginChallenge(priv, address, ts)
+	body := adminLoginBody(address, hex.EncodeToString(pub), sig, ts)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("got %d, want 200, body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Token     string `json:"token"`
+		ExpiresAt int64  `json:"expires_at"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Token == "" {
+		t.Fatal("expected non-empty token")
+	}
+	if !sessions.Valid(resp.Token) {
+		t.Fatal("expected returned token to be a valid session")
+	}
+	if resp.ExpiresAt != fixedNow.Add(adminSessionTTL).Unix() {
+		t.Fatalf("expires_at = %d, want %d", resp.ExpiresAt, fixedNow.Add(adminSessionTTL).Unix())
+	}
+}
+
+func TestAdminLoginHandlerRejectsNonWhitelistedAddress(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+
+	sessions := NewAdminSessions([]string{"NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"}) // someone else
+	fixedNow := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	sessions.now = func() time.Time { return fixedNow }
+	handler := adminLoginHandler(sessions)
+
+	ts := fixedNow.Unix()
+	sig := signAdminLoginChallenge(priv, address, ts)
+	body := adminLoginBody(address, hex.EncodeToString(pub), sig, ts)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401", w.Code)
+	}
+}
+
+func TestAdminLoginHandlerRejectsStaleAndFutureTimestamps(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+	sessions := NewAdminSessions([]string{address})
+	fixedNow := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	sessions.now = func() time.Time { return fixedNow }
+	handler := adminLoginHandler(sessions)
+
+	cases := map[string]int64{
+		"stale":  fixedNow.Add(-10 * time.Minute).Unix(),
+		"future": fixedNow.Add(10 * time.Minute).Unix(),
+	}
+	for name, ts := range cases {
+		sig := signAdminLoginChallenge(priv, address, ts)
+		body := adminLoginBody(address, hex.EncodeToString(pub), sig, ts)
+		req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+		w := httptest.NewRecorder()
+		handler(w, req)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%s timestamp: got %d, want 401", name, w.Code)
+		}
+	}
+}
+
+func TestAdminLoginHandlerRejectsTamperedSignature(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+	sessions := NewAdminSessions([]string{address})
+	fixedNow := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	sessions.now = func() time.Time { return fixedNow }
+	handler := adminLoginHandler(sessions)
+
+	ts := fixedNow.Unix()
+	sig := signAdminLoginChallenge(priv, address, ts)
+	sig[0] ^= 0xFF // tamper
+	body := adminLoginBody(address, hex.EncodeToString(pub), sig, ts)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("got %d, want 401", w.Code)
+	}
+}
+
+func TestAdminLoginHandlerRejectsMalformedJSON(t *testing.T) {
+	sessions := NewAdminSessions(nil)
+	handler := adminLoginHandler(sessions)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader("{not json"))
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("got %d, want 400", w.Code)
+	}
+}
+
+func TestAdminLoginHandlerRandFailureIsServerError(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+	sessions := NewAdminSessions([]string{address})
+	fixedNow := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	sessions.now = func() time.Time { return fixedNow }
+	sessions.randRead = func(b []byte) (int, error) { return 0, errors.New("boom") }
+	handler := adminLoginHandler(sessions)
+
+	ts := fixedNow.Unix()
+	sig := signAdminLoginChallenge(priv, address, ts)
+	body := adminLoginBody(address, hex.EncodeToString(pub), sig, ts)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/login", strings.NewReader(body))
+	w := httptest.NewRecorder()
+	handler(w, req)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("got %d, want 500", w.Code)
 	}
 }

@@ -3,12 +3,16 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 )
 
 const adminSessionTTL = 24 * time.Hour
+const adminLoginWindow = 5 * time.Minute
 
 // AdminSessions authenticates admins by Nimiq wallet signature (see
 // adminLoginHandler) and issues short-lived opaque session tokens for
@@ -84,4 +88,57 @@ func (s *AdminSessions) Valid(token string) bool {
 	s.sweep()
 	_, ok := s.tokens[token]
 	return ok
+}
+
+func adminLoginChallenge(address string, timestamp int64) string {
+	return fmt.Sprintf("nimconnect-admin-login:v1:%s:%d", compactAddress(address), timestamp)
+}
+
+type adminLoginRequest struct {
+	Address   string `json:"address"`
+	PublicKey string `json:"publicKey"`
+	Signature string `json:"signature"`
+	Timestamp int64  `json:"timestamp"`
+}
+
+func adminLoginHandler(sessions *AdminSessions) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req adminLoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+
+		skew := sessions.now().Sub(time.Unix(req.Timestamp, 0))
+		if skew < 0 {
+			skew = -skew
+		}
+		if skew > adminLoginWindow {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		if !sessions.IsAdmin(req.Address) {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		challenge := adminLoginChallenge(req.Address, req.Timestamp)
+		if err := verifySignedMessage(req.Address, req.PublicKey, req.Signature, challenge); err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		token, expiresAt, err := sessions.Issue()
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "session unavailable")
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"token":      token,
+			"expires_at": expiresAt.Unix(),
+		})
+	}
 }
