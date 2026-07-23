@@ -140,21 +140,19 @@ const hasActions = computed(() =>
   display: grid;
   gap: 0.625rem;
   justify-items: center;
-  margin-bottom: 1.875rem;
+  margin-bottom: 2rem;
   text-align: center;
 }
 
+/* Soft pay band — tinted card / hairline only; no competing multi-layer shadow. */
 .public-surface__panel {
-  background: var(--card);
-  border: 1px solid color-mix(in srgb, var(--text) 14%, transparent);
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 10%, transparent);
   border-radius: 1rem;
-  box-shadow:
-    var(--shadow),
-    0 0 0 1px color-mix(in srgb, var(--nimiq-white) 4%, transparent);
   display: grid;
   gap: 0.5rem;
   justify-items: center;
-  padding: 0.5rem 0.75rem;
+  padding: 0.625rem 0.875rem;
   text-align: center;
   width: 100%;
 }
@@ -275,8 +273,19 @@ const hasActions = computed(() =>
   }
 
   .public-surface__canvas {
-    max-width: 28rem;
+    max-width: 34rem;
     min-height: min(40rem, calc(100dvh - 3rem));
+  }
+
+  /* Desktop-light: 2-col only when consumers wrap QR + meta in .panel__pay-row. */
+  .public-surface__panel :deep(.panel__pay-row) {
+    align-items: center;
+    column-gap: 1.25rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    justify-items: stretch;
+    text-align: left;
+    width: 100%;
   }
 }
 </style>

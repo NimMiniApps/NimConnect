@@ -27,7 +27,9 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Shared profile">
     <template #identity>
-      <Identicon :address="profile.address" :size="80" />
+      <div class="identity__avatar">
+        <Identicon :address="profile.address" :size="96" />
+      </div>
       <h1 class="identity__title">{{ profile.name }}</h1>
       <p v-if="profile.bio" class="identity__bio">{{ profile.bio }}</p>
       <div v-if="profile.tags.length" class="identity__tags">
@@ -42,9 +44,13 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 
     <template #panel>
       <p class="payment-panel__label">Send NIM to {{ profile.name }}</p>
-      <QrCode :text="nimiqUri" :size="180" />
-      <span>Scan with any Nimiq wallet, or use a wallet app below</span>
-      <PublicAddressCopy :address="profile.address" />
+      <div class="panel__pay-row">
+        <QrCode :text="nimiqUri" :size="200" />
+        <div class="panel__pay-meta">
+          <span>Scan with any Nimiq wallet, or use a wallet app below</span>
+          <PublicAddressCopy :address="profile.address" />
+        </div>
+      </div>
     </template>
 
     <template #primary>
@@ -61,7 +67,7 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
     </template>
 
     <template #footer>
-      <p>Shared via <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+      <p>Shared via <strong>NimConnect</strong> - a relationship manager for your wallet.</p>
       <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
         Open NimConnect in the browser
       </button>
@@ -70,6 +76,21 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 </template>
 
 <style scoped>
+.identity__avatar { display: grid; place-items: center; position: relative; }
+.identity__avatar::before {
+  background: var(--nimiq-gold-bg);
+  border-radius: 50%;
+  content: '';
+  filter: blur(1.25rem);
+  height: 6.5rem;
+  inset: 50% auto auto 50%;
+  opacity: 0.35;
+  pointer-events: none;
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 6.5rem;
+  z-index: -1;
+}
 .identity__title { color: var(--text); font-size: 1.625rem; margin: 0; }
 .identity__bio { color: var(--text-2); }
 .identity__bio { line-height: 1.45; max-width: 22.5rem; }
@@ -93,4 +114,18 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
   padding: 0.3125rem 0.75rem;
 }
 .payment-panel__label { color: var(--text-2); font-weight: 800; }
+.panel__pay-row {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  width: 100%;
+}
+.panel__pay-meta {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+}
+@media (min-width: 48rem) {
+  .panel__pay-meta { justify-items: start; }
+}
 </style>

@@ -25,7 +25,7 @@ import {
 
 const route = useRoute()
 const state = ref<'loading' | 'ready' | 'notfound' | 'error'>('loading')
-/** Why resolve missed — drives copy on the not-found card. */
+/** Why resolve missed - drives copy on the not-found card. */
 const notFoundKind = ref<'unclaimed' | 'indexing' | 'pending'>('unclaimed')
 const claim = ref<HandleClaim | null>(null)
 const profile = ref<PublicProfile | null>(null)
@@ -122,7 +122,7 @@ async function refresh() {
     <template v-if="state === 'ready' && claim" #identity>
       <header class="identity">
         <div class="identity__avatar">
-          <Identicon :address="payAddress" :size="80" />
+          <Identicon :address="payAddress" :size="96" />
         </div>
         <h1 class="identity__title" :class="{ 'identity__title--handle': !hasDistinctDisplayName }">{{ headline }}</h1>
         <p v-if="hasDistinctDisplayName" class="identity__handle">{{ handleLabel }}</p>
@@ -170,7 +170,7 @@ async function refresh() {
         <template v-else-if="notFoundKind === 'indexing'">
           <h1 class="status__title">Indexing @{{ handle }}</h1>
           <p class="status__lead">
-            This handle is claimed on chain but NimConnect hasn't indexed it yet — try again shortly.
+            This handle is claimed on chain but NimConnect hasn't indexed it yet. Try again shortly.
           </p>
           <a class="status__link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
             Browse claims on the NimFeed registry →
@@ -187,17 +187,21 @@ async function refresh() {
       </template>
 
       <template v-else-if="state === 'error'">
-        <p class="status">Couldn't load this profile — try again in a moment.</p>
+        <p class="status">Couldn't load this profile. Try again in a moment.</p>
       </template>
 
       <template v-else-if="claim">
         <h2 class="panel__label">Pay {{ handleLabel }}</h2>
-        <QrCode :text="payUri" :size="180" />
-        <p class="scan-hint">Scan with any Nimiq wallet</p>
-        <PublicAddressCopy :address="payAddress" />
-        <a class="verified" :href="transactionExplorerUrl(claim.tx_hash)" target="_blank" rel="noopener">
-          ✓ Handle verified on the Nimiq chain
-        </a>
+        <div class="panel__pay-row">
+          <QrCode :text="payUri" :size="200" />
+          <div class="panel__pay-meta">
+            <p class="scan-hint">Scan with any Nimiq wallet</p>
+            <PublicAddressCopy :address="payAddress" />
+            <a class="verified" :href="transactionExplorerUrl(claim.tx_hash)" target="_blank" rel="noopener">
+              ✓ Handle verified on the Nimiq chain
+            </a>
+          </div>
+        </div>
       </template>
     </template>
 
@@ -225,16 +229,16 @@ async function refresh() {
   border-radius: 50%;
   content: '';
   filter: blur(1.25rem);
-  height: 5.5rem;
+  height: 6.5rem;
   inset: 50% auto auto 50%;
   opacity: 0.35;
   pointer-events: none;
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 5.5rem;
+  width: 6.5rem;
   z-index: -1;
 }
-.identity__title, .status__title { color: var(--text); font-size: 1.5rem; margin: 0; }
+.identity__title, .status__title { color: var(--text); font-size: 1.875rem; margin: 0; }
 .identity__title--handle,
 .identity__handle {
   color: var(--nq-gold);
@@ -243,7 +247,21 @@ async function refresh() {
   letter-spacing: 0.01em;
   margin: 0;
 }
-.identity__title--handle { font-size: 1.625rem; }
+.identity__title--handle { font-size: 1.875rem; }
+.panel__pay-row {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  width: 100%;
+}
+.panel__pay-meta {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+}
+@media (min-width: 48rem) {
+  .panel__pay-meta { justify-items: start; }
+}
 .identity__purpose {
   color: var(--text-2);
   font-size: 0.875rem;

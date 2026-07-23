@@ -59,4 +59,23 @@ describe('PublicSurface', () => {
   it('gives a browser continuation control a 44px minimum target', () => {
     expect(publicSurfaceSource).toMatch(/\.public-surface__footer :slotted\(button\)\s*\{[\s\S]*?min-height:\s*2\.75rem;/)
   })
+
+  it('styles the canvas as a full-height content column without a heavy nested panel card look', () => {
+    expect(publicSurfaceSource).toMatch(/\.public-surface__canvas\s*\{[\s\S]*?min-height:\s*calc\(100dvh/)
+    expect(publicSurfaceSource).toMatch(/\.public-surface__panel\s*\{[\s\S]*?/)
+    // Soft band: no multi-layer box-shadow competing with identity
+    const panelBlock = publicSurfaceSource.match(/\.public-surface__panel\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(panelBlock.length).toBeGreaterThan(0)
+    expect(panelBlock).not.toMatch(/box-shadow:[\s\S]*?var\(--shadow\)/)
+  })
+
+  it('scopes desktop pay-band columns to panel__pay-row, not the panel host', () => {
+    const desktopBlock = publicSurfaceSource.match(/@media \(min-width:\s*48rem\)\s*\{[\s\S]*$/)?.[0] ?? ''
+    expect(desktopBlock).toMatch(/:deep\(\.panel__pay-row\)[\s\S]*?grid-template-columns:/)
+    // Panel host inside desktop media should not itself set grid-template-columns
+    const panelHostDesktop = desktopBlock.match(/\.public-surface__panel\s*\{[^}]*\}/)?.[0] ?? ''
+    if (panelHostDesktop) {
+      expect(panelHostDesktop).not.toMatch(/grid-template-columns/)
+    }
+  })
 })
