@@ -67,6 +67,15 @@ describe('PublicSurface', () => {
     const panelBlock = publicSurfaceSource.match(/\.public-surface__panel\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
     expect(panelBlock.length).toBeGreaterThan(0)
     expect(panelBlock).not.toMatch(/box-shadow:[\s\S]*?var\(--shadow\)/)
-    expect(publicSurfaceSource).toMatch(/@media \(min-width:\s*48rem\)\s*\{[\s\S]*?grid-template-columns:/)
+  })
+
+  it('scopes desktop pay-band columns to panel__pay-row, not the panel host', () => {
+    const desktopBlock = publicSurfaceSource.match(/@media \(min-width:\s*48rem\)\s*\{[\s\S]*$/)?.[0] ?? ''
+    expect(desktopBlock).toMatch(/:deep\(\.panel__pay-row\)[\s\S]*?grid-template-columns:/)
+    // Panel host inside desktop media should not itself set grid-template-columns
+    const panelHostDesktop = desktopBlock.match(/\.public-surface__panel\s*\{[^}]*\}/)?.[0] ?? ''
+    if (panelHostDesktop) {
+      expect(panelHostDesktop).not.toMatch(/grid-template-columns/)
+    }
   })
 })
