@@ -34,16 +34,20 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 <template>
   <PublicSurface context="Payment request" footer-verb="Sent">
     <template #identity>
-      <Identicon :address="payment.recipient" :size="80" />
+      <Identicon :address="payment.recipient" :size="96" />
       <p class="identity__request"><strong>{{ payment.label || shortAddress(payment.recipient) }}</strong> requests a payment</p>
     </template>
 
     <template #panel>
       <p v-if="amountText" class="payment-panel__amount">{{ amountText }}</p>
       <p v-if="payment.message" class="payment-panel__message">{{ payment.message }}</p>
-      <QrCode :text="nimiqUri" :size="180" />
-      <span>Scan with any Nimiq wallet, or use a wallet app below</span>
-      <PublicAddressCopy :address="payment.recipient" />
+      <div class="panel__pay-row">
+        <QrCode :text="nimiqUri" :size="200" />
+        <div class="panel__pay-meta">
+          <span>Scan with any Nimiq wallet, or use a wallet app below</span>
+          <PublicAddressCopy :address="payment.recipient" />
+        </div>
+      </div>
     </template>
 
     <template #primary>
@@ -59,7 +63,7 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
     </template>
 
     <template #footer>
-      <p>Sent with <strong>NimConnect</strong> — a relationship manager for your wallet.</p>
+      <p>Sent with <strong>NimConnect</strong> - a relationship manager for your wallet.</p>
       <button v-if="showBrowserContinue" type="button" @click="emit('continue')">
         Open NimConnect in the browser
       </button>
@@ -74,4 +78,15 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 .identity__request strong { color: var(--text); }
 .payment-panel__amount { color: var(--text); font-size: 2.125rem; font-weight: 800; }
 .payment-panel__message { line-height: 1.45; }
+.panel__pay-row {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  width: 100%;
+}
+.panel__pay-meta {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+}
 </style>
