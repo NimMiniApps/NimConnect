@@ -65,7 +65,8 @@ describe('PublicSurface', () => {
     expect(publicSurfaceSource).toMatch(/\.public-surface__panel\s*\{[\s\S]*?/)
     // Soft band: no multi-layer box-shadow competing with identity
     const panelBlock = publicSurfaceSource.match(/\.public-surface__panel\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
-    expect(panelBlock).not.toMatch(/box-shadow:\s*\n\s*var\(--shadow\)/)
-    expect(publicSurfaceSource).toMatch(/@media \(min-width:\s*48rem\)[\s\S]*?\.public-surface__panel--split|\.public-surface__panel\.is-split|grid-template-columns/)
+    expect(panelBlock.length).toBeGreaterThan(0)
+    expect(panelBlock).not.toMatch(/box-shadow:[\s\S]*?var\(--shadow\)/)
+    expect(publicSurfaceSource).toMatch(/@media \(min-width:\s*48rem\)\s*\{[\s\S]*?grid-template-columns:/)
   })
 })
