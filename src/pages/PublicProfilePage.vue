@@ -248,6 +248,12 @@ async function refresh() {
   margin: 0;
 }
 .identity__title--handle { font-size: 1.875rem; }
+.panel__pay-row {
+  display: grid;
+  gap: 0.5rem;
+  justify-items: center;
+  width: 100%;
+}
 .panel__pay-meta {
   display: grid;
   gap: 0.5rem;

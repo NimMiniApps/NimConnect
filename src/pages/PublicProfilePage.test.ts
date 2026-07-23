@@ -108,6 +108,10 @@ describe('PublicProfilePage visual sizing and hero polish', () => {
     expect(publicProfilePageSource).toMatch(/<QrCode :text="payUri" :size="200"/)
   })
 
+  it('wraps ready-state pay content in panel__pay-row', () => {
+    expect(publicProfilePageSource).toMatch(/v-else-if="claim"[\s\S]*?class="panel__pay-row"/)
+  })
+
   it('keeps footer copy free of em/en dashes', () => {
     expect(publicProfilePageSource).not.toMatch(/[—–]/)
   })
