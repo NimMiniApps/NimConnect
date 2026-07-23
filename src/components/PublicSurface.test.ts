@@ -59,4 +59,13 @@ describe('PublicSurface', () => {
   it('gives a browser continuation control a 44px minimum target', () => {
     expect(publicSurfaceSource).toMatch(/\.public-surface__footer :slotted\(button\)\s*\{[\s\S]*?min-height:\s*2\.75rem;/)
   })
+
+  it('styles the canvas as a full-height content column without a heavy nested panel card look', () => {
+    expect(publicSurfaceSource).toMatch(/\.public-surface__canvas\s*\{[\s\S]*?min-height:\s*calc\(100dvh/)
+    expect(publicSurfaceSource).toMatch(/\.public-surface__panel\s*\{[\s\S]*?/)
+    // Soft band: no multi-layer box-shadow competing with identity
+    const panelBlock = publicSurfaceSource.match(/\.public-surface__panel\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
+    expect(panelBlock).not.toMatch(/box-shadow:\s*\n\s*var\(--shadow\)/)
+    expect(publicSurfaceSource).toMatch(/@media \(min-width:\s*48rem\)[\s\S]*?\.public-surface__panel--split|\.public-surface__panel\.is-split|grid-template-columns/)
+  })
 })
