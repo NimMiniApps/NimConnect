@@ -1,15 +1,26 @@
-# NimConnect
+<p align="center">
+  <img src="assets/header-1500x500.png" alt="NimConnect — the shared identity layer for the Nimiq Mini Apps ecosystem" width="100%" />
+</p>
 
-A digital identity and relationship manager for Nimiq — a Nimiq Pay Mini App.
+<p align="center">
+  <img src="assets/nimconnect-logo-full.png" alt="NimConnect logo" width="420" />
+</p>
 
-**Live:** https://nimconnect.nimiqminiapps.com · **GitHub Pages demo:** https://nimminiapps.github.io/NimConnect/
+<h1 align="center">NimConnect</h1>
 
-People don’t remember addresses; they remember people. NimConnect turns wallets into
-**profiles** you can recognize, pay, and share — while keeping private notes and
-relationship data on your device.
+<p align="center">
+  A digital identity and relationship manager for <strong>Nimiq Pay</strong>.<br />
+  Turn wallet addresses into people you can recognize, pay, and share.
+</p>
 
-Open it inside **Nimiq Pay** for live Send and wallet features. In a normal browser you
-can still manage contacts, backups, and public pages.
+<p align="center">
+  <a href="https://nimconnect.nimiqminiapps.com">Open NimConnect</a> ·
+  <a href="https://nimpay.app/miniapps/open/nimconnect.nimiqminiapps.com">Open in Nimiq Pay</a> ·
+  <a href="https://nimiqminiapps.com/apps/nimconnect">Catalog</a> ·
+  <a href="./backend/README.md">Backend guide</a>
+</p>
+
+---
 
 ## What it is
 
@@ -111,6 +122,12 @@ features attach to people, not separate product silos.
 
 Private data (notes, private tags, contact list) stays in IndexedDB. The backup API
 stores only encrypted blobs; public profile payloads contain only fields you chose to share.
+
+## Brand assets
+
+The NimConnect brand pack lives in [`assets/`](./assets/). See the
+[`assets` guide](./assets/README.md) for source files, generated sizes, and
+rebuild instructions.
 
 ## License
 
