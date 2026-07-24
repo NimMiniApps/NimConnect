@@ -6,6 +6,7 @@ const props = defineProps<{
   title: string
   subtitle?: string
   prominentTitle?: boolean
+  embedded?: boolean
 }>()
 const emit = defineEmits<{ close: [] }>()
 
@@ -22,6 +23,7 @@ const sheetStyle = computed(() => ({
 watch(() => props.open, open => {
   dragY.value = 0
   dragging.value = false
+  if (props.embedded) return
   if (open) lockPageScroll()
   else unlockPageScroll()
 }, { immediate: true })
@@ -68,7 +70,7 @@ function onPointerUp(event: PointerEvent) {
 </script>
 
 <template>
-  <teleport to="body">
+  <teleport to="body" v-if="!embedded">
     <transition name="sheet">
       <div v-if="open" class="backdrop" @click.self="close" @touchmove.self.prevent>
         <div class="sheet card" :class="{ dragging }" :style="sheetStyle">
@@ -93,6 +95,13 @@ function onPointerUp(event: PointerEvent) {
       </div>
     </transition>
   </teleport>
+  <div v-else-if="open" class="sheet-embedded">
+    <header class="sheet-head" v-if="title">
+      <h2 :class="{ 'sheet-title--prominent': prominentTitle }">{{ title }}</h2>
+      <p v-if="subtitle" class="sheet-subtitle">{{ subtitle }}</p>
+    </header>
+    <slot />
+  </div>
 </template>
 
 <style scoped>
@@ -127,6 +136,7 @@ function onPointerUp(event: PointerEvent) {
 }
 .sheet-handle:active { cursor: grabbing; }
 .sheet-bar { width: 40px; height: 4px; border-radius: 2px; background: var(--text-20); }
+.sheet-embedded { width: 100%; }
 .sheet-head { margin: 12px 0 16px; }
 .sheet h2 { font-size: 20px; line-height: 1.2; margin: 0; }
 .sheet h2.sheet-title--prominent {
