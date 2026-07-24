@@ -19,9 +19,9 @@ import QuickSendSheet from './components/QuickSendSheet.vue'
 import ScanSheet from './components/ScanSheet.vue'
 import SplitBillSheet from './components/SplitBillSheet.vue'
 import RestoreBackupSheet from './components/RestoreBackupSheet.vue'
-import OnboardingSheet from './components/OnboardingSheet.vue'
-import BackupOnboardingSheet from './components/BackupOnboardingSheet.vue'
-import { needsOnboarding, needsBackupOnboarding } from './services/onboarding'
+import OnboardingWizard from './components/OnboardingWizard.vue'
+import { onboardingWizardShown, markOnboardingWizardShown } from './services/onboarding'
+import { onboardingWizardOpen } from './services/onboarding-wizard-state'
 import { afterRestore } from './services/restore'
 
 const router = useRouter()
@@ -29,8 +29,6 @@ const scanOpen = ref(false)
 const sendOpen = ref(false)
 const splitOpen = ref(false)
 const restoreOpen = ref(false)
-const onboardingOpen = ref(false)
-const backupOnboardingOpen = ref(false)
 const restoreOffered = ref(false)
 const dataVersion = ref(0)
 const pendingPayment = ref<ParsedPaymentRequest | null>(null)
@@ -69,19 +67,13 @@ inboxStore.load()
 useVisiblePolling(() => inboxStore.refresh(), 45_000)
 
 function anyFirstRunSheetOpen() {
-  return restoreOpen.value || onboardingOpen.value || backupOnboardingOpen.value
+  return restoreOpen.value || onboardingWizardOpen.value
 }
 
-function maybeShowOnboarding() {
-  if (needsOnboarding(profilesStore.self)) {
-    onboardingOpen.value = true
-  } else {
-    maybeShowBackupOnboarding()
-  }
-}
-
-function maybeShowBackupOnboarding() {
-  if (needsBackupOnboarding()) backupOnboardingOpen.value = true
+function maybeShowOnboardingWizard() {
+  if (onboardingWizardShown()) return
+  markOnboardingWizardShown()
+  onboardingWizardOpen.value = true
 }
 
 function tryFirstRunPrompts() {
@@ -95,7 +87,7 @@ function tryFirstRunPrompts() {
     restoreOffered.value = true
     return
   }
-  maybeShowOnboarding()
+  maybeShowOnboardingWizard()
 }
 
 async function initApp() {
@@ -105,29 +97,12 @@ async function initApp() {
   tryFirstRunPrompts()
 }
 
-function onOnboardingFinished() {
-  onboardingOpen.value = false
-  maybeShowBackupOnboarding()
-}
-
-function onBackupOnboardingComplete() {
-  backupOnboardingOpen.value = false
-}
-
-async function onBackupRestored() {
-  backupOnboardingOpen.value = false
-  await afterRestore()
-  if (router.currentRoute.value.path === '/') {
-    dataVersion.value++
-  }
-}
-
 async function continueFirstRun() {
   await bootstrapWallet()
   await profilesStore.load()
   if (profilesStore.self) inboxStore.selfAddress = profilesStore.self.address
   await nextTick()
-  maybeShowOnboarding()
+  maybeShowOnboardingWizard()
 }
 
 function onRestoreSkipped() {
@@ -305,13 +280,7 @@ async function handleIncomingPaymentLink() {
     <QuickSendSheet :open="sendOpen" :initial-payment="pendingPayment" @close="onSendClose" />
     <SplitBillSheet :open="splitOpen" @close="splitOpen = false" />
     <RestoreBackupSheet :open="restoreOpen" @skipped="onRestoreSkipped" @restored="onRestoreComplete" />
-    <OnboardingSheet :open="onboardingOpen" @close="onOnboardingFinished" @complete="onOnboardingFinished" />
-    <BackupOnboardingSheet
-      :open="backupOnboardingOpen"
-      @close="backupOnboardingOpen = false"
-      @complete="onBackupOnboardingComplete"
-      @restored="onBackupRestored"
-    />
+    <OnboardingWizard :open="onboardingWizardOpen" @close="onboardingWizardOpen = false" />
   </div>
 </template>
 

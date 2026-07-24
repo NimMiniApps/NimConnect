@@ -32,3 +32,17 @@ describe('App desktop portal gate', () => {
     expect(source).toMatch(/router\.replace\('\/'\)/)
   })
 })
+
+describe('App onboarding wizard wiring', () => {
+  it('mounts OnboardingWizard and marks it shown on first run', () => {
+    expect(source).toMatch(/OnboardingWizard/)
+    expect(source).toMatch(/onboardingWizardOpen/)
+    expect(source).toMatch(/onboardingWizardShown/)
+    expect(source).toMatch(/markOnboardingWizardShown/)
+    expect(source).toMatch(/maybeShowOnboardingWizard/)
+    expect(source).not.toMatch(/<OnboardingSheet/)
+    expect(source).not.toMatch(/<BackupOnboardingSheet/)
+    expect(source).not.toMatch(/needsOnboarding/)
+    expect(source).not.toMatch(/needsBackupOnboarding/)
+  })
+})
