@@ -6,8 +6,8 @@ import { useProfilesStore } from '../stores/profiles'
 import { markOnboardingDone } from '../services/onboarding'
 import type { ProfileType } from '../types/profile'
 
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; complete: [] }>()
+const props = defineProps<{ open: boolean; embedded?: boolean }>()
+const emit = defineEmits<{ close: []; complete: []; defer: [] }>()
 
 const store = useProfilesStore()
 const name = ref('')
@@ -36,6 +36,10 @@ watch(() => props.open, (open) => {
 })
 
 function skip() {
+  if (props.embedded) {
+    emit('defer')
+    return
+  }
   markOnboardingDone()
   emit('close')
 }
@@ -70,7 +74,7 @@ async function save() {
 </script>
 
 <template>
-  <ActionSheet :open="open" title="Set up your profile" @close="skip">
+  <ActionSheet :open="open" :embedded="embedded" title="Set up your profile" @close="skip">
     <p class="hint">Add a name so friends know who sent a request or split bill.</p>
 
     <form class="form" @submit.prevent="save">
