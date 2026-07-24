@@ -41,6 +41,10 @@ export function markOnboardingWizardShown(): void {
   try { globalThis.localStorage?.setItem(WIZARD_SHOWN_KEY, '1') } catch { /* best-effort */ }
 }
 
+export function clearOnboardingWizardShown(): void {
+  try { globalThis.localStorage?.removeItem(WIZARD_SHOWN_KEY) } catch { /* best-effort */ }
+}
+
 /** Derived from profile data alone — never from markOnboardingDone(), so a legacy
  *  profile that already has a real name reports correctly even if it never
  *  triggered the old first-run dismissal flag. */

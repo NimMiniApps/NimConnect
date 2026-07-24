@@ -11,6 +11,7 @@ import {
   backupOnboardingDone,
   onboardingWizardShown,
   markOnboardingWizardShown,
+  clearOnboardingWizardShown,
   hasFilledProfile,
 } from './onboarding'
 
@@ -75,6 +76,12 @@ describe('onboarding', () => {
     expect(onboardingWizardShown()).toBe(false)
     markOnboardingWizardShown()
     expect(onboardingWizardShown()).toBe(true)
+  })
+
+  it('wizard-shown flag can be cleared, e.g. after erasing local data', () => {
+    markOnboardingWizardShown()
+    clearOnboardingWizardShown()
+    expect(onboardingWizardShown()).toBe(false)
   })
 
   it('hasFilledProfile is false for the stub name, missing profile, or blank name', () => {

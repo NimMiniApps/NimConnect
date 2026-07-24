@@ -31,6 +31,11 @@ describe('SettingsPage polish', () => {
     expect(source).not.toMatch(/Reset app/)
   })
 
+  it('erasing local data also resets the onboarding wizard so it restarts fresh', () => {
+    expect(source).toMatch(/clearOnboardingWizardShown/)
+    expect(source).toMatch(/clearIdentitySetupState/)
+  })
+
   it('exposes license, version, build date, and git commit', () => {
     expect(source).toMatch(/MIT/)
     expect(source).toMatch(/__APP_VERSION__/)

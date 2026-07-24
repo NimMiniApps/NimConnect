@@ -7,7 +7,8 @@ import { preferredCurrency, incomingAddress } from '../services/prefs'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { FIAT_CURRENCIES } from '../services/rates'
 import { clearHistoryCache } from '../services/history'
-import { clearOnboardingDone, clearBackupOnboardingDone } from '../services/onboarding'
+import { clearOnboardingDone, clearBackupOnboardingDone, clearOnboardingWizardShown } from '../services/onboarding'
+import { clearIdentitySetupState } from '../services/identity-setup'
 import { afterRestore, enableCloudAfterRestore } from '../services/restore'
 import { resetBootstrap } from '../services/wallet-bootstrap'
 import { createEncryptedBackup, parseEncryptedBackup } from '../services/backup'
@@ -265,6 +266,8 @@ async function resetApp() {
     try { globalThis.localStorage?.removeItem('nimconnect:skipped-restore') } catch {}
     clearOnboardingDone()
     clearBackupOnboardingDone()
+    clearOnboardingWizardShown()
+    clearIdentitySetupState()
     message.value = 'All local data deleted.'
     await router.replace('/')
   } catch {
