@@ -9,6 +9,9 @@ import {
   clearBackupOnboardingDone,
   onboardingDone,
   backupOnboardingDone,
+  onboardingWizardShown,
+  markOnboardingWizardShown,
+  hasFilledProfile,
 } from './onboarding'
 
 const self = (name: string): Profile => ({
@@ -66,5 +69,24 @@ describe('onboarding', () => {
     markBackupOnboardingDone()
     expect(backupOnboardingDone()).toBe(true)
     expect(needsBackupOnboarding()).toBe(false)
+  })
+
+  it('wizard-shown flag defaults false and can be marked', () => {
+    expect(onboardingWizardShown()).toBe(false)
+    markOnboardingWizardShown()
+    expect(onboardingWizardShown()).toBe(true)
+  })
+
+  it('hasFilledProfile is false for the stub name, missing profile, or blank name', () => {
+    expect(hasFilledProfile(self('Me'))).toBe(false)
+    expect(hasFilledProfile(null)).toBe(false)
+    expect(hasFilledProfile(self(''))).toBe(false)
+  })
+
+  it('hasFilledProfile is true for a real name, independent of markOnboardingDone (legacy-user case)', () => {
+    // No markOnboardingDone() call here on purpose — this is the exact legacy scenario:
+    // a profile that already has a real name but never triggered the old dismissal flag.
+    expect(onboardingDone()).toBe(false)
+    expect(hasFilledProfile(self('Alice'))).toBe(true)
   })
 })

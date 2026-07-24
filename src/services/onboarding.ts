@@ -7,6 +7,7 @@ import {
 
 const DONE_KEY = 'nimconnect:onboarding-done'
 const BACKUP_DONE_KEY = 'nimconnect:backup-onboarding-done'
+const WIZARD_SHOWN_KEY = 'nimconnect:onboarding-wizard-shown'
 
 export function onboardingDone(): boolean {
   return globalThis.localStorage?.getItem(DONE_KEY) === '1'
@@ -30,6 +31,21 @@ export function markBackupOnboardingDone(): void {
 
 export function clearBackupOnboardingDone(): void {
   try { globalThis.localStorage?.removeItem(BACKUP_DONE_KEY) } catch { /* best-effort */ }
+}
+
+export function onboardingWizardShown(): boolean {
+  return globalThis.localStorage?.getItem(WIZARD_SHOWN_KEY) === '1'
+}
+
+export function markOnboardingWizardShown(): void {
+  try { globalThis.localStorage?.setItem(WIZARD_SHOWN_KEY, '1') } catch { /* best-effort */ }
+}
+
+/** Derived from profile data alone — never from markOnboardingDone(), so a legacy
+ *  profile that already has a real name reports correctly even if it never
+ *  triggered the old first-run dismissal flag. */
+export function hasFilledProfile(self: Profile | null | undefined): boolean {
+  return !!self && self.name.trim() !== '' && self.name !== 'Me'
 }
 
 /** True when the user still has the auto-created stub profile and hasn't finished onboarding. */
