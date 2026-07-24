@@ -7,8 +7,8 @@ import { celebrate } from '../services/delight'
 import { myAddresses } from '../services/nimiq'
 import { useProfilesStore } from '../stores/profiles'
 
-defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; claimed: [handle: string, txHash: string, claim?: HandleClaim] }>()
+defineProps<{ open: boolean; embedded?: boolean }>()
+const emit = defineEmits<{ close: []; defer: []; claimed: [handle: string, txHash: string, claim?: HandleClaim] }>()
 
 const store = useProfilesStore()
 
@@ -105,10 +105,19 @@ function close() {
   debugInfo.value = null
   emit('close')
 }
+
+function defer() {
+  handle.value = ''
+  availability.value = 'idle'
+  result.value = null
+  error.value = null
+  debugInfo.value = null
+  emit('defer')
+}
 </script>
 
 <template>
-  <ActionSheet :open="open" title="Claim your @handle" @close="close">
+  <ActionSheet :open="open" :embedded="embedded" title="Claim your @handle" @close="close">
     <template v-if="insideNimiqPay">
       <template v-if="result">
         <p class="ok">
@@ -159,6 +168,7 @@ function close() {
       </template>
     </template>
     <p v-else class="hint">Open NimConnect inside Nimiq Pay to claim a handle.</p>
+    <button v-if="embedded && !result" type="button" class="skip" @click="defer">Skip for now</button>
   </ActionSheet>
 </template>
 
@@ -197,4 +207,8 @@ function close() {
   background: var(--nimiq-gold-bg);
 }
 .primary:disabled { opacity: 0.5; }
+.skip {
+  background: none; border: none; min-height: 44px; width: 100%; margin-top: 8px;
+  font: inherit; font-weight: 600; color: var(--text-2); cursor: pointer;
+}
 </style>
