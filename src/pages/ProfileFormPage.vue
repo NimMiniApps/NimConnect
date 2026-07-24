@@ -77,6 +77,7 @@ const router = useRouter()
 const store = useProfilesStore()
 
 const editId = route.params.id as string | undefined
+const fromOnboarding = computed(() => route.query.from === 'onboarding')
 const isSelf = ref(false)
 const hasHandle = ref(false)
 const name = ref('')
@@ -720,7 +721,7 @@ async function save() {
         ...(claimedHandle.value ? { handle: claimedHandle.value } : {}),
         ...identity,
       })
-      router.replace(`/profile/${p.id}`)
+      router.replace(fromOnboarding.value ? '/' : `/profile/${p.id}`)
     }
   } catch (e) {
     error.value = (e as Error).message === 'duplicate-address'
@@ -733,7 +734,7 @@ async function save() {
 <template>
   <div class="page">
     <header class="form-header">
-      <button type="button" class="back" @click="router.back()">‹ Back</button>
+      <button type="button" class="back" @click="fromOnboarding ? router.replace('/') : router.back()">‹ Back</button>
     </header>
 
     <section class="hero" aria-live="polite">

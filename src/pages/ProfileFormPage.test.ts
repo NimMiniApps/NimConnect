@@ -54,3 +54,15 @@ describe('ProfileFormPage public-identity polish', () => {
     expect(source).toMatch(/position:\s*fixed/)
   })
 })
+
+describe('ProfileFormPage onboarding return contract', () => {
+  it('detects from=onboarding and routes Back to /', () => {
+    expect(source).toMatch(/fromOnboarding/)
+    expect(source).toMatch(/route\.query\.from === ['"]onboarding['"]/)
+    expect(source).toMatch(/fromOnboarding \? router\.replace\(['"]\/['"]\) : router\.back\(\)/)
+  })
+
+  it('redirects new-contact save to / when from=onboarding', () => {
+    expect(source).toMatch(/fromOnboarding\.value \? ['"]\/['"] : `\/profile\/\$\{p\.id\}`/)
+  })
+})
