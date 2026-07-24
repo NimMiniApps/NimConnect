@@ -5,6 +5,7 @@ import PublicStoreLinks from '../PublicStoreLinks.vue'
 import { desktopHubAddress } from '../../services/desktop-session'
 import { shortAddress } from '../../services/links'
 
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 const connected = computed(() => !!desktopHubAddress.value)
 const addressLabel = computed(() =>
   desktopHubAddress.value ? shortAddress(desktopHubAddress.value) : '',
@@ -14,7 +15,10 @@ const addressLabel = computed(() =>
 <template>
   <div class="desktop-shell" data-desktop-shell>
     <header class="desktop-shell__nav">
-      <router-link to="/" class="desktop-shell__brand">NimConnect</router-link>
+      <router-link to="/" class="desktop-shell__brand" aria-label="NimConnect home">
+        <img class="desktop-shell__brand-icon" :src="brandIconUrl" alt="" width="32" height="32" />
+        <span>NimConnect</span>
+      </router-link>
       <nav class="desktop-shell__links" aria-label="Desktop">
         <router-link to="/" class="desktop-shell__link">Home</router-link>
         <router-link to="/lookup" class="desktop-shell__link">Lookup</router-link>
@@ -93,11 +97,20 @@ const addressLabel = computed(() =>
   backdrop-filter: blur(10px);
 }
 .desktop-shell__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 20px;
   font-weight: 800;
-  color: var(--nimiq-blue);
+  color: var(--text);
   text-decoration: none;
   letter-spacing: -0.01em;
+}
+.desktop-shell__brand-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 22%;
+  flex: 0 0 auto;
 }
 .desktop-shell__links {
   display: flex;

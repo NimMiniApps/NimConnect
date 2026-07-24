@@ -1,7 +1,15 @@
-# NimConnect brand assets v2
+# NimConnect brand assets
 
-This corrected pack avoids `cover` cropping. Every export uses a contained,
-centered layout so the logo, text, icon border, and banner details are not cut off.
+The files in this directory are generated from three master artworks:
+
+- `source-icon-panel.png`
+- `source-banner.png`
+- `nimconnect-logo-full.png`
+
+Run `./assets/generate-assets.sh` from the repository root to rebuild the
+derived files. The export script keeps the complete banner artwork visible,
+removes the stray strip from the icon source, and uses a dedicated,
+large-format logo composition for social previews.
 
 ## Requested assets
 

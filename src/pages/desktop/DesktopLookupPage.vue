@@ -15,6 +15,8 @@ import {
 } from '../../services/handles'
 import { makeRequestLink } from '../../services/links'
 
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
+
 const EXAMPLES = [
   { label: '@maestro', value: '@maestro' },
   { label: '@demo', value: '@demo' },
@@ -134,7 +136,10 @@ onUnmounted(() => {
 <template>
   <div class="desktop-lookup" data-desktop-lookup-page>
     <section class="desktop-lookup__hero">
-      <p class="desktop-lookup__brand">NimConnect</p>
+      <p class="desktop-lookup__brand">
+        <img class="desktop-lookup__brand-icon" :src="brandIconUrl" alt="" width="40" height="40" />
+        <span>NimConnect</span>
+      </p>
       <h1 class="desktop-lookup__headline">Find a public profile.</h1>
       <p class="desktop-lookup__subtext">
         Find any public Nimiq identity by @handle or wallet address.
@@ -320,12 +325,21 @@ onUnmounted(() => {
 }
 
 .desktop-lookup__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--nq-gold-dark);
+}
+.desktop-lookup__brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 22%;
+  flex: 0 0 auto;
 }
 
 .desktop-lookup__headline {

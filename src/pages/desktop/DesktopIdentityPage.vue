@@ -28,6 +28,8 @@ import QrCode from '../../components/QrCode.vue'
 import TagChips from '../../components/TagChips.vue'
 import type { Profile } from '../../types/profile'
 
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
+
 const HUB_INSTALL_HINT = 'Install or open a Nimiq Hub compatible wallet'
 
 const CAPABILITIES = [
@@ -380,7 +382,10 @@ onMounted(async () => {
 <template>
   <section class="desktop-identity" data-desktop-identity>
     <header class="desktop-identity__head">
-      <p class="desktop-identity__brand">NimConnect</p>
+      <p class="desktop-identity__brand">
+        <img class="desktop-identity__brand-icon" :src="brandIconUrl" alt="" width="40" height="40" />
+        <span>NimConnect</span>
+      </p>
       <h1 class="desktop-identity__headline">My Identity</h1>
       <p v-if="!connected" class="desktop-identity__subtext">
         Manage your public identity across the Nimiq ecosystem.
@@ -743,12 +748,21 @@ onMounted(async () => {
 }
 
 .desktop-identity__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--nq-gold-dark);
+}
+.desktop-identity__brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 22%;
+  flex: 0 0 auto;
 }
 
 .desktop-identity__headline {

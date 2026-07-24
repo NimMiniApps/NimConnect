@@ -40,6 +40,9 @@ describe('DesktopShell', () => {
 
     expect(wrapper.find('[data-desktop-shell]').exists()).toBe(true)
     expect(wrapper.text()).toContain('NimConnect')
+    expect(wrapper.find('.desktop-shell__brand-icon').attributes('src')).toContain(
+      'brand/nimconnect-icon-192x192.png',
+    )
     expect(wrapper.text()).toContain('Home')
     expect(wrapper.text()).toContain('Lookup')
     expect(wrapper.text()).toContain('About')

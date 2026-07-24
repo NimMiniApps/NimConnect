@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { NIMPAY_OPEN_URL } from '../../config/host-app'
 
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
+
 const heroPoints = [
   'Permanent @handles.',
   'Public profiles.',
@@ -83,7 +85,10 @@ const developerLinks = [
 <template>
   <div class="desktop-about" data-desktop-about>
     <section class="desktop-about__hero" aria-labelledby="desktop-about-headline">
-      <p class="desktop-about__brand">NimConnect</p>
+      <p class="desktop-about__brand">
+        <img class="desktop-about__brand-icon" :src="brandIconUrl" alt="" width="40" height="40" />
+        <span>NimConnect</span>
+      </p>
       <h1 id="desktop-about-headline" class="desktop-about__headline">
         The identity portal for the Nimiq ecosystem.
       </h1>
@@ -189,12 +194,21 @@ const developerLinks = [
 }
 
 .desktop-about__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--nq-gold-dark);
+}
+.desktop-about__brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 22%;
+  flex: 0 0 auto;
 }
 
 .desktop-about__headline {

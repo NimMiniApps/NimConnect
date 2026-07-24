@@ -4,6 +4,8 @@ import QrCode from '../../components/QrCode.vue'
 import { NIMPAY_OPEN_URL } from '../../config/host-app'
 import { makeRequestLink } from '../../services/links'
 
+const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
+
 /**
  * Fictional product mockup — communicates "this is what YOUR identity
  * could look like," not a real person's profile.
@@ -48,7 +50,10 @@ const ecosystemSteps = [
 <template>
   <div class="desktop-home" data-desktop-home>
     <section class="desktop-home__hero" aria-labelledby="desktop-home-headline">
-      <p class="desktop-home__brand">NimConnect</p>
+      <p class="desktop-home__brand">
+        <img class="desktop-home__brand-icon" :src="brandIconUrl" alt="" width="40" height="40" />
+        <span>NimConnect</span>
+      </p>
 
       <div class="desktop-home__hero-grid">
         <div class="desktop-home__copy">
@@ -186,12 +191,21 @@ const ecosystemSteps = [
 }
 
 .desktop-home__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   margin: 0;
   font-size: 14px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--nq-gold-dark);
+}
+.desktop-home__brand-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 22%;
+  flex: 0 0 auto;
 }
 
 .desktop-home__hero-grid {
