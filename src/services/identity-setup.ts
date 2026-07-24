@@ -5,13 +5,15 @@ const CELEBRATION_HANDLE_KEY = 'nimconnect:identity-setup-celebration-handle'
 
 export const SNOOZE_MS = 24 * 60 * 60 * 1000
 
-export type IdentitySetupStepId = 'claim-handle' | 'first-contact' | 'share-profile'
+export type IdentitySetupStepId = 'claim-handle' | 'fill-profile' | 'setup-backup' | 'share-profile' | 'first-contact'
 
 export type IdentitySetupCelebration = 'claimed'
 
 export interface IdentitySetupInput {
   handlesEnabled: boolean
   handle: string | null
+  profileFilled: boolean
+  backupDone: boolean
   contactCount: number
 }
 
@@ -35,8 +37,10 @@ export interface IdentitySetupResult {
 
 const STEP_LABELS: Record<IdentitySetupStepId, string> = {
   'claim-handle': 'Claim your @handle',
-  'first-contact': 'Connect with your first contact',
+  'fill-profile': 'Set up your profile',
+  'setup-backup': 'Back up your wallet',
   'share-profile': 'Share your public profile',
+  'first-contact': 'Add your first contact',
 }
 
 function publicProfileShared(): boolean {
@@ -113,8 +117,10 @@ export function resolveIdentitySetup(input: IdentitySetupInput): IdentitySetupRe
   if (input.handlesEnabled) {
     steps.push({ id: 'claim-handle', label: STEP_LABELS['claim-handle'], done: hasHandle })
   }
-  steps.push({ id: 'first-contact', label: STEP_LABELS['first-contact'], done: input.contactCount > 0 })
+  steps.push({ id: 'fill-profile', label: STEP_LABELS['fill-profile'], done: input.profileFilled })
+  steps.push({ id: 'setup-backup', label: STEP_LABELS['setup-backup'], done: input.backupDone })
   steps.push({ id: 'share-profile', label: STEP_LABELS['share-profile'], done: publicProfileShared() })
+  steps.push({ id: 'first-contact', label: STEP_LABELS['first-contact'], done: input.contactCount > 0 })
 
   const firstUndone = steps.find(s => !s.done)
   const nextStep = firstUndone ? firstUndone.id : null

@@ -26,6 +26,8 @@ function stubLocalStorage() {
 const base = (over: Partial<IdentitySetupInput> = {}): IdentitySetupInput => ({
   handlesEnabled: true,
   handle: null,
+  profileFilled: false,
+  backupDone: false,
   contactCount: 0,
   ...over,
 })
@@ -36,12 +38,13 @@ describe('identity-setup', () => {
     clearIdentitySetupState()
   })
 
-  it('prioritizes claim handle when missing', () => {
+  it('orders steps claim-handle, fill-profile, setup-backup, share-profile, first-contact', () => {
     const r = resolveIdentitySetup(base())
-    expect(r.complete).toBe(false)
+    expect(r.steps.map(s => s.id)).toEqual([
+      'claim-handle', 'fill-profile', 'setup-backup', 'share-profile', 'first-contact',
+    ])
     expect(r.nextStep).toBe('claim-handle')
-    expect(r.steps.map(s => s.id)).toEqual(['claim-handle', 'first-contact', 'share-profile'])
-    expect(r.steps[0]!.done).toBe(false)
+    expect(r.complete).toBe(false)
   })
 
   it('treats empty or whitespace handle as unclaimed', () => {
@@ -49,20 +52,30 @@ describe('identity-setup', () => {
     expect(resolveIdentitySetup(base({ handle: '   ' })).nextStep).toBe('claim-handle')
   })
 
-  it('starts at first contact when handles disabled', () => {
+  it('omits claim-handle when handles are disabled', () => {
     const r = resolveIdentitySetup(base({ handlesEnabled: false }))
-    expect(r.steps.map(s => s.id)).toEqual(['first-contact', 'share-profile'])
-    expect(r.nextStep).toBe('first-contact')
+    expect(r.steps.map(s => s.id)).toEqual(['fill-profile', 'setup-backup', 'share-profile', 'first-contact'])
+    expect(r.nextStep).toBe('fill-profile')
   })
 
-  it('after handle, next is first contact then share', () => {
-    expect(resolveIdentitySetup(base({ handle: 'chuck' })).nextStep).toBe('first-contact')
-    expect(resolveIdentitySetup(base({ handle: 'chuck', contactCount: 1 })).nextStep).toBe('share-profile')
+  it('walks the remaining steps in order as each predicate flips true', () => {
+    expect(resolveIdentitySetup(base({ handle: 'chuck' })).nextStep).toBe('fill-profile')
+    expect(resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true })).nextStep).toBe('setup-backup')
+    expect(
+      resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true, backupDone: true })).nextStep,
+    ).toBe('share-profile')
+    expect(
+      resolveIdentitySetup(
+        base({ handle: 'chuck', profileFilled: true, backupDone: true, contactCount: 1 }),
+      ).nextStep,
+    ).toBe('share-profile') // share-profile still not done — separate signal
   })
 
   it('never shows when already complete', () => {
     markPublicProfileShared()
-    const r = resolveIdentitySetup(base({ handle: 'chuck', contactCount: 2 }))
+    const r = resolveIdentitySetup(
+      base({ handle: 'chuck', profileFilled: true, backupDone: true, contactCount: 2 }),
+    )
     expect(r.complete).toBe(true)
     expect(identitySetupVisible(r)).toBe(false)
   })
@@ -82,11 +95,11 @@ describe('identity-setup', () => {
 
   it('celebration phase claimed clears after share', () => {
     markHandleClaimedCelebration('chuck')
-    let r = resolveIdentitySetup(base({ handle: 'chuck' }))
+    let r = resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true, backupDone: true }))
     expect(r.celebration).toBe('claimed')
     expect(r.celebrationHandle).toBe('chuck')
     markPublicProfileShared()
-    r = resolveIdentitySetup(base({ handle: 'chuck' }))
+    r = resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true, backupDone: true }))
     expect(r.celebration).toBeNull()
     expect(r.nextStep).toBe('first-contact')
     expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(true)
@@ -99,7 +112,6 @@ describe('identity-setup', () => {
     const r = resolveIdentitySetup(base({ handle: 'chuck' }))
     expect(r.celebration).toBeNull()
     expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(false)
-    expect(r.nextStep).toBe('first-contact')
   })
 
   it('normalizes celebration handle to trimmed lowercase', () => {
