@@ -10,6 +10,8 @@ import {
   cancelSnooze,
   resolveIdentitySetup,
   noteIdentitySetupProgress,
+  dismissShareProfile,
+  dismissBackup,
   SNOOZE_MS,
   type IdentitySetupInput,
 } from './identity-setup'
@@ -38,10 +40,10 @@ describe('identity-setup', () => {
     clearIdentitySetupState()
   })
 
-  it('orders steps claim-handle, fill-profile, setup-backup, share-profile, first-contact', () => {
+  it('orders steps claim-handle, fill-profile, share-profile, first-contact, setup-backup', () => {
     const r = resolveIdentitySetup(base())
     expect(r.steps.map(s => s.id)).toEqual([
-      'claim-handle', 'fill-profile', 'setup-backup', 'share-profile', 'first-contact',
+      'claim-handle', 'fill-profile', 'share-profile', 'first-contact', 'setup-backup',
     ])
     expect(r.nextStep).toBe('claim-handle')
     expect(r.complete).toBe(false)
@@ -54,21 +56,22 @@ describe('identity-setup', () => {
 
   it('omits claim-handle when handles are disabled', () => {
     const r = resolveIdentitySetup(base({ handlesEnabled: false }))
-    expect(r.steps.map(s => s.id)).toEqual(['fill-profile', 'setup-backup', 'share-profile', 'first-contact'])
+    expect(r.steps.map(s => s.id)).toEqual(['fill-profile', 'share-profile', 'first-contact', 'setup-backup'])
     expect(r.nextStep).toBe('fill-profile')
   })
 
-  it('walks the remaining steps in order as each predicate flips true', () => {
+  it('walks the remaining steps in order as each predicate flips true, backup last', () => {
     expect(resolveIdentitySetup(base({ handle: 'chuck' })).nextStep).toBe('fill-profile')
-    expect(resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true })).nextStep).toBe('setup-backup')
+    expect(resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true })).nextStep).toBe('share-profile')
+    markPublicProfileShared()
     expect(
-      resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true, backupDone: true })).nextStep,
-    ).toBe('share-profile')
+      resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true })).nextStep,
+    ).toBe('first-contact')
     expect(
       resolveIdentitySetup(
-        base({ handle: 'chuck', profileFilled: true, backupDone: true, contactCount: 1 }),
+        base({ handle: 'chuck', profileFilled: true, contactCount: 1 }),
       ).nextStep,
-    ).toBe('share-profile') // share-profile still not done — separate signal
+    ).toBe('setup-backup') // backup is the last step, only reached once everything else is done
   })
 
   it('never shows when already complete', () => {
@@ -78,6 +81,30 @@ describe('identity-setup', () => {
     )
     expect(r.complete).toBe(true)
     expect(identitySetupVisible(r)).toBe(false)
+  })
+
+  it('dismissing share-profile counts it done permanently, without marking it actually shared', () => {
+    dismissShareProfile()
+    const r = resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true }))
+    expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(true)
+    expect(r.nextStep).toBe('first-contact')
+  })
+
+  it('dismissing backup counts it done permanently and completes the flow', () => {
+    markPublicProfileShared()
+    dismissBackup()
+    const r = resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true, contactCount: 1 }))
+    expect(r.steps.find(s => s.id === 'setup-backup')!.done).toBe(true)
+    expect(r.complete).toBe(true)
+  })
+
+  it('clearIdentitySetupState resets dismissed share and backup steps', () => {
+    dismissShareProfile()
+    dismissBackup()
+    clearIdentitySetupState()
+    const r = resolveIdentitySetup(base({ handle: 'chuck', profileFilled: true, contactCount: 1 }))
+    expect(r.steps.find(s => s.id === 'share-profile')!.done).toBe(false)
+    expect(r.steps.find(s => s.id === 'setup-backup')!.done).toBe(false)
   })
 
   it('snoozes for 24h and cancels when progress happens', () => {

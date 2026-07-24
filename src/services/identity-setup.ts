@@ -2,10 +2,12 @@ const SHARED_KEY = 'nimconnect:identity-setup-shared'
 const SNOOZE_UNTIL_KEY = 'nimconnect:identity-setup-snooze-until'
 const CELEBRATION_KEY = 'nimconnect:identity-setup-celebration'
 const CELEBRATION_HANDLE_KEY = 'nimconnect:identity-setup-celebration-handle'
+const SHARE_DISMISSED_KEY = 'nimconnect:identity-setup-share-dismissed'
+const BACKUP_DISMISSED_KEY = 'nimconnect:identity-setup-backup-dismissed'
 
 export const SNOOZE_MS = 24 * 60 * 60 * 1000
 
-export type IdentitySetupStepId = 'claim-handle' | 'fill-profile' | 'setup-backup' | 'share-profile' | 'first-contact'
+export type IdentitySetupStepId = 'claim-handle' | 'fill-profile' | 'share-profile' | 'first-contact' | 'setup-backup'
 
 export type IdentitySetupCelebration = 'claimed'
 
@@ -38,13 +40,31 @@ export interface IdentitySetupResult {
 const STEP_LABELS: Record<IdentitySetupStepId, string> = {
   'claim-handle': 'Claim your @handle',
   'fill-profile': 'Set up your profile',
-  'setup-backup': 'Back up your wallet',
+  'setup-backup': 'Back up your contacts',
   'share-profile': 'Share your public profile',
   'first-contact': 'Add your first contact',
 }
 
 function publicProfileShared(): boolean {
   return globalThis.localStorage?.getItem(SHARED_KEY) === '1'
+}
+
+function shareProfileDismissed(): boolean {
+  return globalThis.localStorage?.getItem(SHARE_DISMISSED_KEY) === '1'
+}
+
+/** Permanent — unlike deferring a step, a dismissed share-profile prompt never resurfaces. */
+export function dismissShareProfile(): void {
+  try { globalThis.localStorage?.setItem(SHARE_DISMISSED_KEY, '1') } catch { /* best-effort */ }
+}
+
+function backupDismissed(): boolean {
+  return globalThis.localStorage?.getItem(BACKUP_DISMISSED_KEY) === '1'
+}
+
+/** Permanent — unlike deferring a step, a dismissed backup prompt never resurfaces. */
+export function dismissBackup(): void {
+  try { globalThis.localStorage?.setItem(BACKUP_DISMISSED_KEY, '1') } catch { /* best-effort */ }
 }
 
 export function markPublicProfileShared(): void {
@@ -106,6 +126,8 @@ export function clearIdentitySetupState(): void {
     globalThis.localStorage?.removeItem(SNOOZE_UNTIL_KEY)
     globalThis.localStorage?.removeItem(CELEBRATION_KEY)
     globalThis.localStorage?.removeItem(CELEBRATION_HANDLE_KEY)
+    globalThis.localStorage?.removeItem(SHARE_DISMISSED_KEY)
+    globalThis.localStorage?.removeItem(BACKUP_DISMISSED_KEY)
   } catch { /* best-effort */ }
 }
 
@@ -118,9 +140,11 @@ export function resolveIdentitySetup(input: IdentitySetupInput): IdentitySetupRe
     steps.push({ id: 'claim-handle', label: STEP_LABELS['claim-handle'], done: hasHandle })
   }
   steps.push({ id: 'fill-profile', label: STEP_LABELS['fill-profile'], done: input.profileFilled })
-  steps.push({ id: 'setup-backup', label: STEP_LABELS['setup-backup'], done: input.backupDone })
-  steps.push({ id: 'share-profile', label: STEP_LABELS['share-profile'], done: publicProfileShared() })
+  steps.push({ id: 'share-profile', label: STEP_LABELS['share-profile'], done: publicProfileShared() || shareProfileDismissed() })
   steps.push({ id: 'first-contact', label: STEP_LABELS['first-contact'], done: input.contactCount > 0 })
+  // Backup runs last — backing up contacts makes little sense before any exist, and a
+  // dismissed backup prompt is permanent (see dismissBackup), so it must never block completion.
+  steps.push({ id: 'setup-backup', label: STEP_LABELS['setup-backup'], done: input.backupDone || backupDismissed() })
 
   const firstUndone = steps.find(s => !s.done)
   const nextStep = firstUndone ? firstUndone.id : null

@@ -88,4 +88,35 @@ describe('OnboardingWizard', () => {
     expect(wrapper.emitted('close')).toHaveLength(1)
     wrapper.unmount()
   })
+
+  it('skipping share-profile dismisses it permanently rather than just deferring', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    const profilePatch = handlesEnabled() ? { name: 'Alice', handle: 'alice' } : { name: 'Alice' }
+    await store.update(store.self!.id, profilePatch)
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Share your public profile')
+    await wrapper.get('.skip').trigger('click')
+    expect(localStorage.getItem('nimconnect:identity-setup-share-dismissed')).toBe('1')
+    expect(wrapper.text()).toContain('Add your first contact')
+    wrapper.unmount()
+  })
+
+  it('backup is the last step, and skipping it dismisses it permanently and closes the wizard', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    const profilePatch = handlesEnabled() ? { name: 'Alice', handle: 'alice' } : { name: 'Alice' }
+    await store.update(store.self!.id, profilePatch)
+    localStorage.setItem('nimconnect:identity-setup-shared', '1')
+    await store.add({ address: 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000', name: 'Bob' })
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Back up your contacts')
+    const skipButtons = wrapper.findAll('.item').filter(b => b.text() === 'Skip for now')
+    await skipButtons[0]!.trigger('click')
+    expect(localStorage.getItem('nimconnect:identity-setup-backup-dismissed')).toBe('1')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
 })

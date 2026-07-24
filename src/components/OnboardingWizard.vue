@@ -6,7 +6,13 @@ import OnboardingSheet from './OnboardingSheet.vue'
 import BackupOnboardingSheet from './BackupOnboardingSheet.vue'
 import ShareProfileStep from './ShareProfileStep.vue'
 import { useProfilesStore } from '../stores/profiles'
-import { resolveIdentitySetup, markHandleClaimedCelebration, type IdentitySetupInput } from '../services/identity-setup'
+import {
+  resolveIdentitySetup,
+  markHandleClaimedCelebration,
+  dismissShareProfile,
+  dismissBackup,
+  type IdentitySetupInput,
+} from '../services/identity-setup'
 import { handlesEnabled, loadMyHandle, saveMyHandle, type HandleClaim } from '../services/handles'
 import { myAddresses } from '../services/nimiq'
 import { makePublicHandleLink } from '../services/links'
@@ -91,6 +97,17 @@ function goAddContact() {
   emit('close')
   router.push('/add?from=onboarding')
 }
+
+/** Share and backup nudges are declined permanently, not deferred — see dismissShareProfile/dismissBackup. */
+function dismissShareStep() {
+  dismissShareProfile()
+  advance()
+}
+
+function dismissBackupStep() {
+  dismissBackup()
+  advance()
+}
 </script>
 
 <template>
@@ -131,19 +148,11 @@ function goAddContact() {
           @complete="advance"
           @defer="advance"
         />
-        <BackupOnboardingSheet
-          v-else-if="currentStep.id === 'setup-backup'"
-          :open="true"
-          embedded
-          @complete="advance"
-          @defer="advance"
-          @restored="onBackupRestored"
-        />
         <ShareProfileStep
           v-else-if="currentStep.id === 'share-profile'"
           :public-url="publicUrl"
           @complete="advance"
-          @defer="advance"
+          @defer="dismissShareStep"
         />
         <div v-else-if="currentStep.id === 'first-contact'" class="wizard-step">
           <h2 class="title">Add your first contact</h2>
@@ -151,6 +160,14 @@ function goAddContact() {
           <button type="button" class="primary" @click="goAddContact">Add a contact</button>
           <button type="button" class="skip" @click="advance">Skip for now</button>
         </div>
+        <BackupOnboardingSheet
+          v-else-if="currentStep.id === 'setup-backup'"
+          :open="true"
+          embedded
+          @complete="advance"
+          @defer="dismissBackupStep"
+          @restored="onBackupRestored"
+        />
       </div>
     </div>
   </div>
