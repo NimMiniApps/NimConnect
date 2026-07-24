@@ -24,5 +24,6 @@ services:
       COINGECKO_API_BASE: https://api.coingecko.com/api/v3
       ALLOWED_ORIGIN: "*"
       BACKUP_DIR: /data/backups
+      ADMIN_ADDRESSES: "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
     volumes:
       - ./data/backups:/data/backups
