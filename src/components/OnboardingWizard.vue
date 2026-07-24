@@ -13,8 +13,15 @@ import {
   dismissBackup,
   type IdentitySetupInput,
 } from '../services/identity-setup'
-import { handlesEnabled, loadMyHandle, saveMyHandle, type HandleClaim } from '../services/handles'
-import { myAddresses } from '../services/nimiq'
+import {
+  handlesEnabled,
+  loadMyHandle,
+  saveMyHandle,
+  syncPublicProfile,
+  shareSelectionForProfile,
+  type HandleClaim,
+} from '../services/handles'
+import { myAddresses, insideNimiqPay } from '../services/nimiq'
 import { makePublicHandleLink } from '../services/links'
 import { makeProfileShareLink } from '../services/profile-share'
 import { backupPassphraseSet, cloudBackupEnabled, lastLocalBackupAt } from '../services/backup-prefs'
@@ -63,6 +70,20 @@ watch(() => props.open, (open) => {
     return
   }
   currentStepIndex.value = idx
+}, { immediate: true })
+
+/**
+ * Reaching the share step publishes whatever profile fields were filled in earlier
+ * (name/bio/website/…) to the public @handle page, so the link about to be shared
+ * actually reflects them instead of a near-empty page. Mirrors ProfileFormPage's own
+ * publish call; best-effort and silent outside Nimiq Pay, same as that page.
+ */
+watch(currentStepIndex, () => {
+  const self = store.self
+  if (currentStep.value?.id !== 'share-profile' || !self || !selfHandle.value || !insideNimiqPay.value) return
+  void syncPublicProfile(self, shareSelectionForProfile(self), myAddresses(self.address)).catch(() => {
+    // best-effort — sharing still works even if the publish sync fails
+  })
 }, { immediate: true })
 
 function advance() {

@@ -14,6 +14,17 @@ import {
   markPassphraseSet,
 } from '../services/backup-prefs'
 import { handlesEnabled } from '../services/handles'
+import { insideNimiqPay } from '../services/nimiq'
+
+const mocks = vi.hoisted(() => ({
+  syncPublicProfile: vi.fn().mockResolvedValue('published'),
+  handlesEnabled: vi.fn().mockReturnValue(true),
+}))
+
+vi.mock('../services/handles', async importOriginal => {
+  const actual = await importOriginal<typeof import('../services/handles')>()
+  return { ...actual, syncPublicProfile: mocks.syncPublicProfile, handlesEnabled: mocks.handlesEnabled }
+})
 
 function stubLocalStorage() {
   const data: Record<string, string> = {}
@@ -51,6 +62,8 @@ describe('OnboardingWizard', () => {
     backupPassphraseSet.value = false
     cloudBackupEnabled.value = false
     lastLocalBackupAt.value = 0
+    insideNimiqPay.value = false
+    mocks.syncPublicProfile.mockClear()
     setActivePinia(createPinia())
     await db.profiles.clear()
     const store = useProfilesStore()
@@ -117,6 +130,33 @@ describe('OnboardingWizard', () => {
     await skipButtons[0]!.trigger('click')
     expect(localStorage.getItem('nimconnect:identity-setup-backup-dismissed')).toBe('1')
     expect(wrapper.emitted('close')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('publishes filled-in profile fields when the share step is reached, inside Nimiq Pay', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    await store.update(store.self!.id, { name: 'Alice', handle: 'alice', bio: 'Coffee enthusiast' })
+    insideNimiqPay.value = true
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Share your public profile')
+    expect(mocks.syncPublicProfile).toHaveBeenCalledTimes(1)
+    const [profile, share] = mocks.syncPublicProfile.mock.calls[0]!
+    expect(profile.name).toBe('Alice')
+    expect(share).toEqual(expect.objectContaining({ name: true, bio: true, website: false }))
+    wrapper.unmount()
+  })
+
+  it('does not attempt to publish outside Nimiq Pay', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    await store.update(store.self!.id, { name: 'Alice', handle: 'alice' })
+    insideNimiqPay.value = false
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Share your public profile')
+    expect(mocks.syncPublicProfile).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })
