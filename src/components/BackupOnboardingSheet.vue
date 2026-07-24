@@ -23,8 +23,8 @@ import { markBackupOnboardingDone } from '../services/onboarding'
 import { enableCloudAfterRestore } from '../services/restore'
 import type { EncryptedBackup } from '../types/profile'
 
-const props = defineProps<{ open: boolean }>()
-const emit = defineEmits<{ close: []; complete: []; restored: [] }>()
+const props = defineProps<{ open: boolean; embedded?: boolean }>()
+const emit = defineEmits<{ close: []; complete: []; restored: []; defer: [] }>()
 
 const store = useProfilesStore()
 const passphraseOpen = ref(false)
@@ -88,6 +88,10 @@ watch(() => props.open, (open) => {
 })
 
 function skip() {
+  if (props.embedded) {
+    emit('defer')
+    return
+  }
   markBackupOnboardingDone()
   emit('close')
 }
@@ -218,7 +222,7 @@ const passphraseTitle = computed(() => {
 </script>
 
 <template>
-  <ActionSheet :open="open" title="Back up your contacts" @close="skip">
+  <ActionSheet :open="open" :embedded="embedded" title="Back up your contacts" @close="skip">
     <p v-if="remoteCloudBackup" class="hint">
       A cloud backup already exists for this wallet. Restore it first, or replace it only if you are sure.
     </p>
