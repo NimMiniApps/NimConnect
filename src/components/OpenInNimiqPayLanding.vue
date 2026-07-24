@@ -61,7 +61,7 @@ function openContactsHint() {
   else focusLookup()
 }
 
-const iconUrl = `${import.meta.env.BASE_URL}icon.svg`
+const iconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 </script>
 
 <template>
