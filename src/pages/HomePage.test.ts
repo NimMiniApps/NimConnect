@@ -61,21 +61,20 @@ describe('HomePage identity setup guidance', () => {
     expect(indexOf('<IdentitySetupCard')).toBeGreaterThan(indexOf('</header>'))
   })
 
-  it('wires IdentitySetupCard events to identity-setup actions', () => {
-    expect(source).toMatch(/:result="identitySetup"/)
-    expect(source).toMatch(/:public-url="identityPublicUrl"/)
-    expect(source).toMatch(/:feedback="identityFeedback"/)
-    expect(source).toMatch(/@claim="claimIdentity"/)
-    expect(source).toMatch(/@add-contact="addContactFromIdentity"/)
-    expect(source).toMatch(/@share="shareIdentityProfile"/)
-    expect(source).toMatch(/@learn-more="toggleLearnMore"/)
+  it('wires IdentitySetupCard resume/dismiss to the wizard and snooze', () => {
+    expect(source).toMatch(/@resume="onboardingWizardOpen = true"/)
     expect(source).toMatch(/@dismiss="dismissIdentitySetup"/)
+    expect(source).not.toMatch(/:result="identitySetup"/)
+    expect(source).not.toMatch(/@claim="claimIdentity"/)
+    expect(source).not.toMatch(/@learn-more="toggleLearnMore"/)
   })
 
-  it('resolves identity setup from handles, self handle, and contact count', () => {
+  it('resolves identity setup from handles, profile, backup, and contacts', () => {
     expect(source).toMatch(/resolveIdentitySetup\(\{/)
     expect(source).toMatch(/handlesEnabled:\s*handlesEnabled\(\)/)
     expect(source).toMatch(/handle:\s*selfHandle\.value/)
+    expect(source).toMatch(/profileFilled:\s*hasFilledProfile\(/)
+    expect(source).toMatch(/backupDone:/)
     expect(source).toMatch(/contactCount:\s*profilesStore\.contacts\.length/)
   })
 
@@ -90,7 +89,6 @@ describe('HomePage identity setup guidance', () => {
     expect(dismissFn, 'expected dismissIdentitySetup').toBeTruthy()
     expect(dismissFn![1]).toMatch(/clearCelebration\(\)/)
     expect(dismissFn![1]).toMatch(/snoozeIdentitySetup\(/)
-    expect(dismissFn![1]).toMatch(/showLearnMore\.value = false/)
     expect(dismissFn![1]).toMatch(/identitySetupVersion\.value\+\+/)
   })
 
@@ -132,23 +130,5 @@ describe('HomePage identity setup guidance', () => {
     const hasHandleCtas = block![1]!
     expect(hasHandleCtas).toMatch(/primary-action[\s\S]*?Add contact/)
     expect(hasHandleCtas).toMatch(/Share public profile/)
-  })
-
-  it('clears learn-more when the next step leaves claim-handle', () => {
-    expect(source).toMatch(/identitySetup\.value\.nextStep/)
-    expect(source).toMatch(/step !== 'claim-handle'/)
-    expect(source).toMatch(/showLearnMore\.value = false/)
-  })
-
-  it('keeps the learn-more copy short, positive about @handle, and under the identity card', () => {
-    expect(indexOf('identity-learn-more')).toBeGreaterThan(indexOf('@dismiss="dismissIdentitySetup"'))
-    const match = source.match(/<p v-if="showLearnMore" class="identity-learn-more">([\s\S]*?)<\/p>/)
-    expect(match, 'expected a showLearnMore paragraph').toBeTruthy()
-    const copy = match![1]!.trim()
-    expect(copy.length).toBeLessThan(160)
-    expect(copy).toMatch(/@handle/)
-    expect(copy).toMatch(/friends?/i)
-    expect(copy).toMatch(/pay|open/i)
-    expect(copy).not.toMatch(/skip/i)
   })
 })

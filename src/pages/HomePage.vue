@@ -28,6 +28,9 @@ import {
   clearCelebration,
   type IdentitySetupResult,
 } from '../services/identity-setup'
+import { onboardingWizardOpen } from '../services/onboarding-wizard-state'
+import { backupPassphraseSet, cloudBackupEnabled, lastLocalBackupAt } from '../services/backup-prefs'
+import { hasFilledProfile } from '../services/onboarding'
 import EmptyState from '../components/EmptyState.vue'
 import Identicon from '../components/Identicon.vue'
 import type { Bucket } from '../types/profile'
@@ -68,7 +71,6 @@ const incomingLoading = ref(false)
 const incomingError = ref(false)
 const rates = ref<NimRates | null>(null)
 const selfHandle = ref<string | null>(null)
-const showLearnMore = ref(false)
 const justShared = ref(false)
 /** Bumped when identity-setup localStorage changes so computed state re-reads. */
 const identitySetupVersion = ref(0)
@@ -125,6 +127,8 @@ const identitySetup = computed<IdentitySetupResult>(() => {
   return resolveIdentitySetup({
     handlesEnabled: handlesEnabled(),
     handle: selfHandle.value,
+    profileFilled: hasFilledProfile(profilesStore.self),
+    backupDone: backupPassphraseSet.value || cloudBackupEnabled.value || lastLocalBackupAt.value > 0,
     contactCount: profilesStore.contacts.length,
   })
 })
@@ -138,10 +142,6 @@ const identityPublicUrl = computed(() =>
   selfHandle.value ? makePublicHandleLink(selfHandle.value) : undefined,
 )
 
-const identityFeedback = computed(() =>
-  justShared.value ? '✓ Public profile shared' : undefined,
-)
-
 watch(() => profilesStore.contacts.length, (count, prev) => {
   if ((prev ?? 0) === 0 && count > 0) noteIdentitySetupProgress()
 })
@@ -150,16 +150,8 @@ watch(selfHandle, (handle, prev) => {
   if (!prev && handle) noteIdentitySetupProgress()
 })
 
-watch(() => identitySetup.value.nextStep, (step) => {
-  if (step !== 'claim-handle') showLearnMore.value = false
-})
-
 function claimIdentity() {
   router.push({ path: '/me', query: { sheet: 'claim' } })
-}
-
-function addContactFromIdentity() {
-  router.push('/add')
 }
 
 async function shareIdentityProfile() {
@@ -171,14 +163,9 @@ async function shareIdentityProfile() {
   setTimeout(() => (justShared.value = false), 2000)
 }
 
-function toggleLearnMore() {
-  showLearnMore.value = !showLearnMore.value
-}
-
 function dismissIdentitySetup() {
   clearCelebration()
   snoozeIdentitySetup(Date.now())
-  showLearnMore.value = false
   identitySetupVersion.value++
 }
 
@@ -416,18 +403,9 @@ async function loadSenderAliases() {
 
     <IdentitySetupCard
       v-if="identityCardVisible"
-      :result="identitySetup"
-      :public-url="identityPublicUrl"
-      :feedback="identityFeedback"
-      @claim="claimIdentity"
-      @add-contact="addContactFromIdentity"
-      @share="shareIdentityProfile"
-      @learn-more="toggleLearnMore"
+      @resume="onboardingWizardOpen = true"
       @dismiss="dismissIdentitySetup"
     />
-    <p v-if="showLearnMore" class="identity-learn-more">
-      Your @handle is your public identity on Nimiq — friends can open it to pay or message you, no wallet address needed.
-    </p>
 
     <EmptyState
       v-if="freshUser && !identityCardVisible"
@@ -980,15 +958,6 @@ async function loadSenderAliases() {
   font-size: 13px;
 }
 .notice.inset { margin: 0; }
-.identity-learn-more {
-  margin: -4px 0 16px;
-  padding: 10px 12px;
-  border-radius: var(--radius);
-  background: var(--text-6);
-  color: var(--text-2);
-  font-size: 13px;
-  line-height: 1.45;
-}
 .unknown-head { margin-top: 16px; margin-bottom: 10px; }
 .show-more { margin-top: 10px; align-self: flex-start; }
 .invoice-list { display: flex; flex-direction: column; gap: 10px; }
