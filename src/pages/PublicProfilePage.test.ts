@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   resolveHandleEnriched: vi.fn(),
   fetchPublicProfile: vi.fn(),
   checkHandle: vi.fn(),
+  handleForAddress: vi.fn(),
+  replace: vi.fn(),
   route: {
     params: { handle: 'ada' },
     query: {},
@@ -16,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => mocks.route,
+  useRouter: () => ({ replace: mocks.replace }),
 }))
 
 vi.mock('../services/handles', async importOriginal => {
@@ -25,6 +28,7 @@ vi.mock('../services/handles', async importOriginal => {
     resolveHandleEnriched: mocks.resolveHandleEnriched,
     fetchPublicProfile: mocks.fetchPublicProfile,
     checkHandle: mocks.checkHandle,
+    handleForAddress: mocks.handleForAddress,
   }
 })
 
@@ -48,6 +52,14 @@ describe('PublicProfilePage', () => {
     mocks.resolveHandleEnriched.mockReset()
     mocks.fetchPublicProfile.mockReset()
     mocks.checkHandle.mockReset()
+    mocks.handleForAddress.mockReset()
+    mocks.replace.mockReset()
+    mocks.replace.mockImplementation(async (to: string | { path: string; query?: Record<string, unknown> }) => {
+      const path = typeof to === 'string' ? to : to.path
+      const next = path.replace(/^\/u\//, '')
+      mocks.route.params.handle = next
+      if (typeof to !== 'string' && to.query) mocks.route.query = to.query
+    })
   })
 
   it('places a resolved public handle in the shared public surface', async () => {
@@ -99,6 +111,39 @@ describe('PublicProfilePage', () => {
     expect(wrapper.text()).toContain('@ada is free')
     expect(wrapper.get('[data-public-panel]').text()).toContain('Claim it in NimConnect')
     expect(wrapper.get('[data-public-panel] a[href="/"]').text()).toContain('Claim it in NimConnect')
+  })
+
+  it('redirects /u/<address> to /u/<handle> when the address has a claim', async () => {
+    mocks.route.params.handle = address
+    mocks.handleForAddress.mockResolvedValue({
+      handle: 'ada', address, tx_hash: 'claim-tx', block_height: 1, tx_index: 0,
+    })
+    mocks.resolveHandleEnriched.mockResolvedValue({
+      handle: 'ada', address, tx_hash: 'claim-tx', block_height: 1, tx_index: 0,
+    })
+    mocks.fetchPublicProfile.mockResolvedValue({ updatedAt: 1, profile: null })
+
+    const wrapper = await mountPage()
+
+    expect(mocks.handleForAddress).toHaveBeenCalledWith(address)
+    expect(mocks.replace).toHaveBeenCalledWith({ path: '/u/ada', query: {} })
+    expect(mocks.resolveHandleEnriched).toHaveBeenCalledWith('ada')
+    expect(wrapper.text()).toContain('@ada')
+    expect(wrapper.text()).not.toMatch(/@nq26/i)
+    expect(wrapper.get('[data-public-panel]').text()).toMatch(/Handle verified on the Nimiq chain/i)
+  })
+
+  it('does not treat a wallet address as a free @handle when no claim exists', async () => {
+    mocks.route.params.handle = address
+    mocks.handleForAddress.mockResolvedValue(null)
+
+    const wrapper = await mountPage()
+
+    expect(mocks.replace).not.toHaveBeenCalled()
+    expect(mocks.resolveHandleEnriched).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('No public @handle for this address')
+    expect(wrapper.text()).not.toMatch(/@nq26/i)
+    expect(wrapper.text()).not.toContain('is free')
   })
 })
 

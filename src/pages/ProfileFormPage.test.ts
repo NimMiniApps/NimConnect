@@ -51,7 +51,8 @@ describe('ProfileFormPage public-identity polish', () => {
     expect(source).toMatch(/isDirty/)
     expect(source).toMatch(/SHOW_MORE_KEY|profile-form-show-more/)
     expect(source).toMatch(/writeShowMorePref|readShowMorePref/)
-    expect(source).toMatch(/position:\s*fixed/)
+    expect(source).toMatch(/position:\s*sticky/)
+    expect(source).toMatch(/margin-top:\s*auto/)
   })
 })
 

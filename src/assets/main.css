@@ -60,7 +60,9 @@
   --border: var(--text-10);
   --radius: var(--nimiq-radius-card);
   --shadow: var(--nimiq-shadow-card);
-  --nav-h: 64px;
+  --nav-h: 48px;
+  --nav-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px) - 8px);
+  --bottom-chrome-h: calc(var(--nav-h) + var(--nav-safe-bottom));
 }
 
 @media (prefers-color-scheme: dark) {
@@ -69,6 +71,7 @@
     --card: #1f2348;
     --text: #f4f4f5;
     --text-2: rgba(244, 244, 245, 0.6);
+    --text-40: rgba(244, 244, 245, 0.4);
     --border: rgba(244, 244, 245, 0.12);
     --shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
   }

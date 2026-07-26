@@ -19,11 +19,17 @@ import { insideNimiqPay } from '../services/nimiq'
 const mocks = vi.hoisted(() => ({
   syncPublicProfile: vi.fn().mockResolvedValue('published'),
   handlesEnabled: vi.fn().mockReturnValue(true),
+  cloudBackupExists: vi.fn().mockResolvedValue(false),
 }))
 
 vi.mock('../services/handles', async importOriginal => {
   const actual = await importOriginal<typeof import('../services/handles')>()
   return { ...actual, syncPublicProfile: mocks.syncPublicProfile, handlesEnabled: mocks.handlesEnabled }
+})
+
+vi.mock('../services/cloud-backup', async importOriginal => {
+  const actual = await importOriginal<typeof import('../services/cloud-backup')>()
+  return { ...actual, cloudBackupAvailable: () => true, cloudBackupExists: mocks.cloudBackupExists }
 })
 
 function stubLocalStorage() {
@@ -64,6 +70,8 @@ describe('OnboardingWizard', () => {
     lastLocalBackupAt.value = 0
     insideNimiqPay.value = false
     mocks.syncPublicProfile.mockClear()
+    mocks.cloudBackupExists.mockClear()
+    mocks.cloudBackupExists.mockResolvedValue(false)
     setActivePinia(createPinia())
     await db.profiles.clear()
     const store = useProfilesStore()
@@ -133,12 +141,52 @@ describe('OnboardingWizard', () => {
     wrapper.unmount()
   })
 
+  it('jumps straight to the backup step when a cloud backup already exists for this address', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    insideNimiqPay.value = true
+    mocks.cloudBackupExists.mockResolvedValue(true)
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(mocks.cloudBackupExists).toHaveBeenCalledWith('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    expect(wrapper.text()).toContain('Back up your contacts')
+    wrapper.unmount()
+  })
+
+  it('does not jump to the backup step when no cloud backup exists for this address', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    insideNimiqPay.value = true
+    mocks.cloudBackupExists.mockResolvedValue(false)
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain('Claim your @handle')
+    wrapper.unmount()
+  })
+
+  it('does not jump to the backup step when the user already chose "Start fresh"', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    insideNimiqPay.value = true
+    mocks.cloudBackupExists.mockResolvedValue(true)
+    localStorage.setItem('nimconnect:skipped-restore', '1')
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(mocks.cloudBackupExists).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('Claim your @handle')
+    wrapper.unmount()
+  })
+
   it('publishes filled-in profile fields when the share step is reached, inside Nimiq Pay', async () => {
     const store = useProfilesStore()
     await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
     await store.update(store.self!.id, { name: 'Alice', handle: 'alice', bio: 'Coffee enthusiast' })
     insideNimiqPay.value = true
     const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Share your public profile')
     expect(mocks.syncPublicProfile).toHaveBeenCalledTimes(1)

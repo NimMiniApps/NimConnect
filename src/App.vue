@@ -247,33 +247,37 @@ async function handleIncomingPaymentLink() {
   />
 
   <div v-else class="app">
-    <p v-if="!insideNimiqPay" class="host-banner" role="status">
-      Limited browser mode — wallet features need
-      <a :href="NIMPAY_OPEN_URL" class="banner-link">Nimiq Pay</a>.
-    </p>
+    <div class="app-main">
+      <p v-if="!insideNimiqPay" class="host-banner" role="status">
+        Limited browser mode — wallet features need
+        <a :href="NIMPAY_OPEN_URL" class="banner-link">Nimiq Pay</a>.
+      </p>
 
-    <router-view v-slot="{ Component }">
-      <transition name="page" mode="out-in">
-        <component :is="Component" :key="`${$route.path}-${dataVersion}`" />
-      </transition>
-    </router-view>
+      <router-view v-slot="{ Component }">
+        <transition name="page" mode="out-in">
+          <component :is="Component" :key="`${$route.path}-${dataVersion}`" />
+        </transition>
+      </router-view>
+    </div>
 
     <nav class="bottom-nav">
-      <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
-        <span class="nav-icon">🏠<span v-if="inboxStore.badgeCount" class="nav-badge">{{ inboxStore.badgeCount }}</span></span><span>Home</span>
-      </router-link>
-      <router-link to="/contacts" class="nav-item" :class="{ active: $route.path === '/contacts' }">
-        <span class="nav-icon">👥</span><span>Contacts</span>
-      </router-link>
-      <button type="button" class="nav-item nav-scan" aria-label="Scan QR code" @click="scanOpen = true">
-        <span class="scan-icon">▣</span><span>Scan</span>
-      </button>
-      <button type="button" class="nav-item nav-button" @click="splitOpen = true">
-        <span class="nav-icon">🍕</span><span>Split</span>
-      </button>
-      <router-link to="/me" class="nav-item" :class="{ active: $route.path === '/me' || $route.path === '/settings' }">
-        <span class="nav-icon">🪪</span><span>Profile</span>
-      </router-link>
+      <div class="bottom-nav__row">
+        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
+          <span class="nav-icon">🏠<span v-if="inboxStore.badgeCount" class="nav-badge">{{ inboxStore.badgeCount }}</span></span><span>Home</span>
+        </router-link>
+        <router-link to="/contacts" class="nav-item" :class="{ active: $route.path === '/contacts' }">
+          <span class="nav-icon">👥</span><span>Contacts</span>
+        </router-link>
+        <button type="button" class="nav-item nav-scan" aria-label="Scan QR code" @click="scanOpen = true">
+          <span class="scan-icon">▣</span><span>Scan</span>
+        </button>
+        <button type="button" class="nav-item nav-button" @click="splitOpen = true">
+          <span class="nav-icon">🍕</span><span>Split</span>
+        </button>
+        <router-link to="/me" class="nav-item" :class="{ active: $route.path === '/me' || $route.path === '/settings' }">
+          <span class="nav-icon">🪪</span><span>Profile</span>
+        </router-link>
+      </div>
     </nav>
 
     <ScanSheet :open="scanOpen" @close="scanOpen = false" @pay="onScanPay" />
@@ -288,9 +292,40 @@ async function handleIncomingPaymentLink() {
 .app {
   max-width: 560px;
   margin: 0 auto;
-  min-height: 100dvh;
-  padding-bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
-  overflow-x: hidden;
+  /*
+   * Flex shell pinned to the *visible* WebView height (--app-height from
+   * visualViewport/innerHeight). CSS svh/dvh is often taller than the
+   * in-app browser viewport, which clips the bottom nav under the home bar.
+   */
+  height: var(--app-height, 100svh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /*
+   * Real iPhone inset is ~34px; shave 8px so labels sit closer to the
+   * home indicator without covering it. Floor 12px when WKWebView reports 0.
+   */
+  --nav-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px) - 8px);
+  --bottom-chrome-h: calc(var(--nav-h) + var(--nav-safe-bottom));
+}
+.app-main {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: clip;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  /* Room for the raised Scan control that overhangs into the scroll area */
+  padding-bottom: 12px;
+}
+/* Router transition wrapper — stretch so pages can pin footers above the nav */
+.app-main :deep(> *) {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 .host-banner {
   margin: 0;
@@ -306,19 +341,20 @@ async function handleIncomingPaymentLink() {
   font-weight: 800;
 }
 .bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100dvw, 560px);
-  max-width: 560px;
-  height: calc(var(--nav-h) + env(safe-area-inset-bottom));
-  padding-bottom: env(safe-area-inset-bottom);
-  display: flex;
-  align-items: stretch;
+  flex: 0 0 auto;
+  position: relative;
+  width: 100%;
+  /* Height = icon row + safe padding (no fixed height — avoids border-box shrink) */
+  padding-bottom: var(--nav-safe-bottom);
   background: var(--card);
   border-top: 1px solid var(--border);
   box-shadow: 0 -4px 28px rgba(0, 0, 0, 0.08);
+  z-index: 40;
+}
+.bottom-nav__row {
+  height: var(--nav-h);
+  display: flex;
+  align-items: stretch;
 }
 .nav-item {
   flex: 1;
@@ -327,13 +363,13 @@ async function handleIncomingPaymentLink() {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  font-size: 11px;
+  gap: 1px;
+  font-size: 10px;
   font-weight: 600;
   color: var(--text-2);
   text-decoration: none;
-  min-height: 44px;
-  padding: 0 2px;
+  min-height: 0;
+  padding: 4px 2px 2px;
 }
 .nav-item.active { color: var(--nq-gold-dark); }
 .nav-icon { position: relative; font-size: 20px; line-height: 1; }
@@ -360,9 +396,9 @@ async function handleIncomingPaymentLink() {
   color: var(--nq-gold-dark);
 }
 .scan-icon {
-  width: 44px;
-  height: 44px;
-  margin-top: -18px;
+  width: 40px;
+  height: 40px;
+  margin-top: -14px;
   border-radius: var(--nimiq-radius-pill);
   display: flex;
   align-items: center;

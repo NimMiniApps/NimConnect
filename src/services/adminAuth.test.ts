@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const chooseHubAddress = vi.fn()
 const hubSignMessage = vi.fn()
+const getDesktopHubAddress = vi.fn()
 
 vi.mock('./hub', () => ({ chooseHubAddress, hubSignMessage }))
+vi.mock('./desktop-session', () => ({ getDesktopHubAddress }))
 
 const address = 'NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD'
 
@@ -20,6 +22,8 @@ describe('adminAuth', () => {
     vi.resetModules()
     chooseHubAddress.mockReset()
     hubSignMessage.mockReset()
+    getDesktopHubAddress.mockReset()
+    getDesktopHubAddress.mockReturnValue(null)
     globalThis.localStorage?.clear()
     vi.useRealTimers()
   })
@@ -34,6 +38,7 @@ describe('adminAuth', () => {
     await login()
 
     const ts = Math.floor(new Date('2026-07-22T12:00:00Z').getTime() / 1000)
+    expect(chooseHubAddress).toHaveBeenCalled()
     expect(hubSignMessage).toHaveBeenCalledWith(
       `nimconnect-admin-login:v1:${address.replace(/\s+/g, '')}:${ts}`,
       address,
@@ -43,6 +48,25 @@ describe('adminAuth', () => {
       expect.objectContaining({ method: 'POST' }),
     )
     expect(getSessionToken()).toBe('tok-1')
+    vi.useRealTimers()
+  })
+
+  it('login reuses the connected desktop Hub address and skips chooseHubAddress', async () => {
+    vi.setSystemTime(new Date('2026-07-22T12:00:00Z'))
+    getDesktopHubAddress.mockReturnValue(address)
+    hubSignMessage.mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    mockFetchOnce(200, { token: 'tok-reuse', expires_at: 1785000000 })
+
+    const { login, getSessionToken } = await import('./adminAuth')
+    await login()
+
+    expect(chooseHubAddress).not.toHaveBeenCalled()
+    const ts = Math.floor(new Date('2026-07-22T12:00:00Z').getTime() / 1000)
+    expect(hubSignMessage).toHaveBeenCalledWith(
+      `nimconnect-admin-login:v1:${address.replace(/\s+/g, '')}:${ts}`,
+      address,
+    )
+    expect(getSessionToken()).toBe('tok-reuse')
     vi.useRealTimers()
   })
 

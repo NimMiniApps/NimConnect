@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import Identicon from '../components/Identicon.vue'
 import PublicAddressCopy from '../components/PublicAddressCopy.vue'
 import PublicSurface from '../components/PublicSurface.vue'
@@ -9,6 +9,8 @@ import {
   resolveHandleEnriched,
   fetchPublicProfile,
   checkHandle,
+  handleForAddress,
+  parsePublicLookupQuery,
   claimOwnerAddress,
   NIMFEED_CATALOG_ADDRESS,
   type HandleClaim,
@@ -24,19 +26,22 @@ import {
 } from '../services/links'
 
 const route = useRoute()
+const router = useRouter()
 const state = ref<'loading' | 'ready' | 'notfound' | 'error'>('loading')
 /** Why resolve missed - drives copy on the not-found card. */
-const notFoundKind = ref<'unclaimed' | 'indexing' | 'pending'>('unclaimed')
+const notFoundKind = ref<'unclaimed' | 'indexing' | 'pending' | 'no-handle'>('unclaimed')
 const claim = ref<HandleClaim | null>(null)
 const profile = ref<PublicProfile | null>(null)
 let retryTimer: ReturnType<typeof setInterval> | undefined
 
-const handle = computed(() => String(route.params.handle ?? '').toLowerCase())
+const routeHandle = computed(() => String(route.params.handle ?? '').toLowerCase())
+/** Prefer the resolved claim so /u/<address> never paints `@nq…` after lookup. */
+const handle = computed(() => (claim.value?.handle ?? routeHandle.value).toLowerCase())
 const claimTxQuery = computed(() => {
   const raw = route.query.tx
   return typeof raw === 'string' ? raw.trim() : ''
 })
-const handleLabel = computed(() => `@${handle.value}`)
+const handleLabel = computed(() => (handle.value ? `@${handle.value}` : ''))
 const publishedName = computed(() => profile.value?.display_name?.trim() ?? '')
 const hasDistinctDisplayName = computed(() => {
   const name = publishedName.value
@@ -62,14 +67,33 @@ const safeWebsite = computed(() => {
   }
 })
 
+/** Canonicalize /u/<address> → /u/<handle> before resolve/display. */
+async function canonicalizeAddressParam(): Promise<'handle' | 'no-handle' | 'not-address'> {
+  const parsed = parsePublicLookupQuery(String(route.params.handle ?? ''))
+  if (parsed.kind !== 'address') return 'not-address'
+  const byAddr = await handleForAddress(parsed.address)
+  if (!byAddr?.handle) return 'no-handle'
+  await router.replace({ path: `/u/${byAddr.handle}`, query: route.query })
+  return 'handle'
+}
+
 async function loadProfile() {
-  const resolved = await resolveHandleEnriched(handle.value)
+  const addressLookup = await canonicalizeAddressParam()
+  if (addressLookup === 'no-handle') {
+    notFoundKind.value = 'no-handle'
+    state.value = 'notfound'
+    return false
+  }
+
+  // Read params after any address→handle replace (don't use a cached computed).
+  const handleKey = String(route.params.handle ?? '').toLowerCase()
+  const resolved = await resolveHandleEnriched(handleKey)
   if (!resolved) {
     if (claimTxQuery.value) {
       notFoundKind.value = 'pending'
     } else {
       try {
-        const check = await checkHandle(handle.value)
+        const check = await checkHandle(handleKey)
         notFoundKind.value = check.available ? 'unclaimed' : 'indexing'
       } catch {
         notFoundKind.value = 'unclaimed'
@@ -172,6 +196,14 @@ async function refresh() {
           <p class="status__lead">
             This handle is claimed on chain but NimConnect hasn't indexed it yet. Try again shortly.
           </p>
+          <a class="status__link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
+            Browse claims on the NimFeed registry →
+          </a>
+        </template>
+        <template v-else-if="notFoundKind === 'no-handle'">
+          <h1 class="status__title">No public @handle</h1>
+          <p class="status__lead">No public @handle for this address.</p>
+          <router-link class="status__link" to="/">Claim one in NimConnect →</router-link>
           <a class="status__link" :href="registryExplorer" target="_blank" rel="noopener noreferrer">
             Browse claims on the NimFeed registry →
           </a>

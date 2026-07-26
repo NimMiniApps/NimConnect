@@ -1,4 +1,5 @@
 import { apiUrl } from './api'
+import { getDesktopHubAddress } from './desktop-session'
 import { chooseHubAddress, hubSignMessage } from './hub'
 
 const SESSION_KEY = 'nimconnect:admin-session'
@@ -55,9 +56,10 @@ export function getSessionToken(): string | null {
   return stored.token
 }
 
-/** Hub sign-in flow → POST /api/admin/login → stores the returned session. */
+/** Hub sign-in flow → POST /api/admin/login → stores the returned session.
+ *  Reuses an already-connected desktop Hub address so Connect is not asked twice. */
 export async function login(): Promise<void> {
-  const address = await chooseHubAddress()
+  const address = getDesktopHubAddress() ?? await chooseHubAddress()
   const timestamp = Math.floor(Date.now() / 1000)
   const challenge = adminLoginChallenge(address, timestamp)
   const { publicKey, signature } = await hubSignMessage(challenge, address)

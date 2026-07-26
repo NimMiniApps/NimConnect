@@ -1199,8 +1199,10 @@ async function save() {
 
 <style scoped>
 .page {
-  padding: 12px 16px 0;
-  padding-bottom: calc(88px + env(safe-area-inset-bottom));
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 16px;
 }
 .form-header { display: flex; align-items: center; margin-bottom: 4px; }
 .back {
@@ -1229,7 +1231,7 @@ async function save() {
 }
 .hero-meta.mono { font-family: var(--nimiq-font-family-mono); }
 
-.form { display: flex; flex-direction: column; gap: 16px; }
+.form { flex: 1; display: flex; flex-direction: column; gap: 16px; min-height: 0; }
 .essentials, .more {
   display: flex; flex-direction: column; gap: 14px;
   padding: 16px; background: var(--card); border-radius: var(--radius);
@@ -1471,9 +1473,9 @@ async function save() {
     opacity var(--attr-duration) var(--nimiq-ease);
 }
 .type-chip.muted:not(.active) {
-  opacity: 0.55;
   font-weight: 600;
-  color: var(--text-40, var(--text-2));
+  color: var(--text-2);
+  border-style: dashed;
 }
 .type-chip.active {
   background: var(--nimiq-blue-bg); color: var(--nimiq-white); border-color: transparent; opacity: 1;
@@ -1524,17 +1526,13 @@ async function save() {
 .note { color: var(--nq-green); font-size: 13px; font-weight: 600; margin: 0; }
 
 .save-bar {
-  position: fixed;
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(100dvw, 560px);
-  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom));
-  padding: 12px 16px;
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  padding: 12px 0 0;
   background: linear-gradient(to top, var(--bg) 72%, transparent);
-  z-index: 40;
-  pointer-events: none;
+  z-index: 50;
 }
-.save-bar > * { pointer-events: auto; }
 .save-btn {
   width: 100%;
   transition:

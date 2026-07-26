@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   login: vi.fn(),
   fetchStats: vi.fn(),
   getSessionToken: vi.fn(),
+  getDesktopHubAddress: vi.fn(),
 }))
 
 vi.mock('../services/adminAuth', async importOriginal => {
@@ -17,6 +18,10 @@ vi.mock('../services/adminAuth', async importOriginal => {
     getSessionToken: mocks.getSessionToken,
   }
 })
+
+vi.mock('../services/desktop-session', () => ({
+  getDesktopHubAddress: () => mocks.getDesktopHubAddress(),
+}))
 
 const summary = {
   unique_wallets: 12,
@@ -32,6 +37,8 @@ describe('AdminStatsPage', () => {
     mocks.login.mockReset()
     mocks.fetchStats.mockReset()
     mocks.getSessionToken.mockReset()
+    mocks.getDesktopHubAddress.mockReset()
+    mocks.getDesktopHubAddress.mockReturnValue(null)
   })
 
   it('shows a connect prompt when there is no session', async () => {
@@ -39,7 +46,16 @@ describe('AdminStatsPage', () => {
     const wrapper = mount(AdminStatsPage)
     await flushPromises()
     expect(wrapper.find('[data-connect]').exists()).toBe(true)
+    expect(wrapper.find('[data-connect]').text()).toBe('Connect wallet')
     expect(mocks.fetchStats).not.toHaveBeenCalled()
+  })
+
+  it('asks only for a signature when a desktop Hub address is already connected', async () => {
+    mocks.getSessionToken.mockReturnValue(null)
+    mocks.getDesktopHubAddress.mockReturnValue('NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD')
+    const wrapper = mount(AdminStatsPage)
+    await flushPromises()
+    expect(wrapper.find('[data-connect]').text()).toBe('Sign to view stats')
   })
 
   it('loads and renders stats when a session exists', async () => {

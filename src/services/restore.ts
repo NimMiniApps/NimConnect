@@ -6,7 +6,8 @@ import { useInboxStore } from '../stores/inbox'
 import { useBucketsStore } from '../stores/buckets'
 import { cloudBackupEnabled, markCloudSync, markPassphraseSet } from './backup-prefs'
 import { setBackupSession } from './cloud-backup'
-import { markOnboardingDone, markBackupOnboardingDone } from './onboarding'
+import { markOnboardingDone, markBackupOnboardingDone, markOnboardingWizardShown } from './onboarding'
+import { dismissShareProfile } from './identity-setup'
 
 /** Bumped after restore so mounted pages reload store data from Dexie. */
 export const dataRefreshEpoch = ref(0)
@@ -26,6 +27,15 @@ export async function afterRestore(): Promise<void> {
   const inbox = useInboxStore()
   const buckets = useBucketsStore()
 
+  // Set before any reload: App.vue watches profilesStore.self and reactively opens
+  // the onboarding wizard the instant it changes, which profiles.reload() below
+  // triggers immediately — these flags must already be in place or that watcher
+  // races ahead of us and opens the wizard mid-restore.
+  markOnboardingDone()
+  markBackupOnboardingDone()
+  markOnboardingWizardShown()
+  dismissShareProfile()
+
   await profiles.reload()
   await invoices.reload()
   await inbox.reload()
@@ -36,8 +46,6 @@ export async function afterRestore(): Promise<void> {
     await inbox.refresh(profiles.self.address)
   }
 
-  markOnboardingDone()
-  markBackupOnboardingDone()
   dataRefreshEpoch.value++
 
   if (router.currentRoute.value.path !== '/') {

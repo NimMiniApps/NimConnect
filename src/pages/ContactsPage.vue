@@ -79,12 +79,19 @@ function pendingCount(address: string): number {
       </section>
     </template>
 
-    <router-link to="/add" class="fab" aria-label="Add contact">＋</router-link>
+    <div class="fab-anchor">
+      <router-link to="/add" class="fab" aria-label="Add contact">＋</router-link>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.page { padding: 16px 16px 88px; }
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+}
 .header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 12px; }
 .section { margin-top: 18px; }
 .section-title {
@@ -95,10 +102,14 @@ function pendingCount(address: string): number {
   margin: 0 0 6px 4px;
 }
 .list { overflow: hidden; padding: 2px 0; }
+.fab-anchor {
+  position: sticky;
+  bottom: 16px;
+  align-self: flex-end;
+  margin-top: auto;
+  z-index: 50;
+}
 .fab {
-  position: fixed;
-  right: max(16px, calc(50% - 264px));
-  bottom: calc(var(--nav-h) + env(safe-area-inset-bottom) + 16px);
   width: 56px;
   height: 56px;
   border-radius: var(--nimiq-radius-pill);

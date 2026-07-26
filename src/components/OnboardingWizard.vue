@@ -21,10 +21,11 @@ import {
   shareSelectionForProfile,
   type HandleClaim,
 } from '../services/handles'
-import { myAddresses, insideNimiqPay } from '../services/nimiq'
+import { myAddresses, insideNimiqPay, getMyAddress } from '../services/nimiq'
 import { makePublicHandleLink } from '../services/links'
 import { makeProfileShareLink } from '../services/profile-share'
 import { backupPassphraseSet, cloudBackupEnabled, lastLocalBackupAt } from '../services/backup-prefs'
+import { cloudBackupAvailable, cloudBackupExists } from '../services/cloud-backup'
 import { afterRestore } from '../services/restore'
 import { hasFilledProfile } from '../services/onboarding'
 
@@ -56,13 +57,36 @@ function firstIncompleteIndex(): number {
   return idx === -1 ? steps.value.length : idx
 }
 
-watch(() => props.open, (open) => {
+/**
+ * A server-side backup for this address means the user is returning, not starting fresh —
+ * send them straight to the backup step (which offers "Restore from cloud") instead of
+ * making them click through claim-handle/fill-profile/etc first.
+ */
+async function restoreStepIndex(): Promise<number> {
+  const alreadyLocal = backupPassphraseSet.value || cloudBackupEnabled.value || lastLocalBackupAt.value > 0
+  const skippedRestore = globalThis.localStorage?.getItem('nimconnect:skipped-restore') === '1'
+  if (alreadyLocal || skippedRestore || !cloudBackupAvailable() || !insideNimiqPay.value) return -1
+  try {
+    const address = store.self?.address ?? await getMyAddress()
+    if (!address || !(await cloudBackupExists(address))) return -1
+  } catch {
+    return -1
+  }
+  return steps.value.findIndex(s => s.id === 'setup-backup')
+}
+
+watch(() => props.open, async (open) => {
   if (!open) return
   const self = store.self
   selfHandle.value = self?.handle ?? null
   if (handlesEnabled() && self) {
     const cached = loadMyHandle(myAddresses(self.address))
     if (cached?.handle) selfHandle.value = cached.handle
+  }
+  const restoreIdx = await restoreStepIndex()
+  if (restoreIdx !== -1) {
+    currentStepIndex.value = restoreIdx
+    return
   }
   const idx = firstIncompleteIndex()
   if (idx >= steps.value.length) {
@@ -102,7 +126,7 @@ function requestExit() {
   emit('close')
 }
 
-function onHandleClaimed(handle: string, txHash: string, claim?: HandleClaim) {
+function onHandleClaimed(handle: string, _txHash: string, claim?: HandleClaim) {
   if (store.self && claim) saveMyHandle(myAddresses(store.self.address), claim)
   selfHandle.value = handle
   markHandleClaimedCelebration(handle)

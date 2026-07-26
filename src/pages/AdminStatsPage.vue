@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { AdminSessionExpiredError, fetchStats, getSessionToken, login, type StatsSummary } from '../services/adminAuth'
+import { getDesktopHubAddress } from '../services/desktop-session'
 
 type ViewState = 'connect' | 'loading' | 'loaded' | 'error'
 
 const state = ref<ViewState>('connect')
 const summary = ref<StatsSummary | null>(null)
+const connectLabel = computed(() =>
+  getDesktopHubAddress() ? 'Sign to view stats' : 'Connect wallet',
+)
 
 async function load() {
   state.value = 'loading'
@@ -44,7 +48,7 @@ onMounted(() => {
     </header>
 
     <div v-if="state === 'connect'" class="hint">
-      <button type="button" class="nq-button" data-connect @click="onConnect">Connect wallet</button>
+      <button type="button" class="nq-button" data-connect @click="onConnect">{{ connectLabel }}</button>
     </div>
 
     <p v-else-if="state === 'loading'" class="hint">Loading…</p>
