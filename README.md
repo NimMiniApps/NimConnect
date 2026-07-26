@@ -34,6 +34,24 @@ NimConnect answers four questions:
 Public identity and private relationship are separate on purpose. You choose what
 appears on your public page; notes, private tags, and contact history stay local.
 
+## Demo videos
+
+<p align="center">
+  <a href="https://www.youtube.com/shorts/n5f2ka7I8GI">
+    <img src="https://img.youtube.com/vi/n5f2ka7I8GI/maxresdefault.jpg" alt="Claim your @handle across Nimiq apps" width="360" />
+  </a>
+  <a href="https://youtu.be/vFwWc2TUGXw">
+    <img src="https://img.youtube.com/vi/vFwWc2TUGXw/maxresdefault.jpg" alt="Explore more NimConnect features" width="360" />
+  </a>
+</p>
+
+<p align="center">
+  <a href="https://www.youtube.com/shorts/n5f2ka7I8GI">Claim your @handle across Nimiq apps</a> ·
+  <a href="https://youtu.be/vFwWc2TUGXw">Explore more NimConnect features</a>
+</p>
+
+The previews link directly to YouTube, so they work in GitHub's README renderer.
+
 ## Features
 
 ### Identity
