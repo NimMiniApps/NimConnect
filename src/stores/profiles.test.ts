@@ -36,6 +36,13 @@ describe('profiles store', () => {
     await expect(store.add({ address: ADDR_A.toLowerCase(), name: 'Alice 2' })).rejects.toThrow('duplicate-address')
   })
 
+  it('rejects adding a contact with the self profile\'s own address, distinctly from a duplicate contact', async () => {
+    const store = useProfilesStore()
+    await store.load()
+    await store.ensureSelf(ADDR_A)
+    await expect(store.add({ address: ADDR_A, name: 'Me again' })).rejects.toThrow('self-address')
+  })
+
   it('updates, toggles favorite, touches interaction, removes', async () => {
     const store = useProfilesStore()
     await store.load()

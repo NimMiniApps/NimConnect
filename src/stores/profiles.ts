@@ -77,7 +77,8 @@ export const useProfilesStore = defineStore('profiles', () => {
 
   async function add(input: NewProfile): Promise<Profile> {
     const address = normalize(input.address)
-    if (profiles.value.some(p => p.address === address)) throw new Error('duplicate-address')
+    const existing = profiles.value.find(p => p.address === address)
+    if (existing) throw new Error(existing.isSelf ? 'self-address' : 'duplicate-address')
     const now = Date.now()
     const profile: Profile = {
       id: uuid(),

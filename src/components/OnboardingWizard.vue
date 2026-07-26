@@ -17,6 +17,7 @@ import {
   handlesEnabled,
   loadMyHandle,
   saveMyHandle,
+  findMyHandle,
   syncPublicProfile,
   shareSelectionForProfile,
   type HandleClaim,
@@ -80,8 +81,21 @@ watch(() => props.open, async (open) => {
   const self = store.self
   selfHandle.value = self?.handle ?? null
   if (handlesEnabled() && self) {
-    const cached = loadMyHandle(myAddresses(self.address))
+    const wallets = myAddresses(self.address)
+    const cached = loadMyHandle(wallets)
     if (cached?.handle) selfHandle.value = cached.handle
+    // Local cache only knows about handles claimed from this device — a handle
+    // claimed elsewhere needs the registry lookup, or the wizard wrongly offers
+    // to claim one that already exists. Same lookup HomePage does for its banner.
+    try {
+      const claim = await findMyHandle(wallets)
+      if (claim) {
+        selfHandle.value = claim.handle
+        saveMyHandle(wallets, claim)
+      }
+    } catch {
+      // registry unreachable — fall back to cached/local handle state
+    }
   }
   const restoreIdx = await restoreStepIndex()
   if (restoreIdx !== -1) {

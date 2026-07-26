@@ -724,9 +724,12 @@ async function save() {
       router.replace(fromOnboarding.value ? '/' : `/profile/${p.id}`)
     }
   } catch (e) {
-    error.value = (e as Error).message === 'duplicate-address'
-      ? 'You already have a contact with this address.'
-      : 'Please enter a valid Nimiq address (NQ…).'
+    const message = (e as Error).message
+    error.value = message === 'self-address'
+      ? "That's your own address — no need to add yourself as a contact."
+      : message === 'duplicate-address'
+        ? 'You already have a contact with this address.'
+        : 'Please enter a valid Nimiq address (NQ…).'
   }
 }
 </script>

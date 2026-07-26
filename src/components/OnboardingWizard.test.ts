@@ -20,11 +20,17 @@ const mocks = vi.hoisted(() => ({
   syncPublicProfile: vi.fn().mockResolvedValue('published'),
   handlesEnabled: vi.fn().mockReturnValue(true),
   cloudBackupExists: vi.fn().mockResolvedValue(false),
+  findMyHandle: vi.fn().mockResolvedValue(null),
 }))
 
 vi.mock('../services/handles', async importOriginal => {
   const actual = await importOriginal<typeof import('../services/handles')>()
-  return { ...actual, syncPublicProfile: mocks.syncPublicProfile, handlesEnabled: mocks.handlesEnabled }
+  return {
+    ...actual,
+    syncPublicProfile: mocks.syncPublicProfile,
+    handlesEnabled: mocks.handlesEnabled,
+    findMyHandle: mocks.findMyHandle,
+  }
 })
 
 vi.mock('../services/cloud-backup', async importOriginal => {
@@ -72,6 +78,8 @@ describe('OnboardingWizard', () => {
     mocks.syncPublicProfile.mockClear()
     mocks.cloudBackupExists.mockClear()
     mocks.cloudBackupExists.mockResolvedValue(false)
+    mocks.findMyHandle.mockClear()
+    mocks.findMyHandle.mockResolvedValue(null)
     setActivePinia(createPinia())
     await db.profiles.clear()
     const store = useProfilesStore()
@@ -82,6 +90,19 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toMatch(/STEP 1 OF \d/)
+    wrapper.unmount()
+  })
+
+  it('skips claim-handle when the registry already has a handle for this wallet, even with no local cache', async () => {
+    const store = useProfilesStore()
+    await store.ensureSelf('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
+    mocks.findMyHandle.mockResolvedValue({
+      handle: 'demo', address: store.self!.address, tx_hash: 'abc', block_height: 1, tx_index: 0,
+    })
+    const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).not.toContain('Claim your @handle')
     wrapper.unmount()
   })
 
@@ -117,6 +138,7 @@ describe('OnboardingWizard', () => {
     await store.update(store.self!.id, profilePatch)
     const wrapper = await mountWizard()
     await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Share your public profile')
     await wrapper.get('.skip').trigger('click')
     expect(localStorage.getItem('nimconnect:identity-setup-share-dismissed')).toBe('1')
@@ -132,6 +154,7 @@ describe('OnboardingWizard', () => {
     localStorage.setItem('nimconnect:identity-setup-shared', '1')
     await store.add({ address: 'NQ07 0000 0000 0000 0000 0000 0000 0000 0000', name: 'Bob' })
     const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Back up your contacts')
     const skipButtons = wrapper.findAll('.item').filter(b => b.text() === 'Skip for now')
@@ -149,6 +172,7 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
     expect(mocks.cloudBackupExists).toHaveBeenCalledWith('NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF')
     expect(wrapper.text()).toContain('Back up your contacts')
     wrapper.unmount()
@@ -160,6 +184,7 @@ describe('OnboardingWizard', () => {
     insideNimiqPay.value = true
     mocks.cloudBackupExists.mockResolvedValue(false)
     const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Claim your @handle')
@@ -175,6 +200,7 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
     expect(mocks.cloudBackupExists).not.toHaveBeenCalled()
     expect(wrapper.text()).toContain('Claim your @handle')
     wrapper.unmount()
@@ -186,6 +212,7 @@ describe('OnboardingWizard', () => {
     await store.update(store.self!.id, { name: 'Alice', handle: 'alice', bio: 'Coffee enthusiast' })
     insideNimiqPay.value = true
     const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Share your public profile')
@@ -202,6 +229,7 @@ describe('OnboardingWizard', () => {
     await store.update(store.self!.id, { name: 'Alice', handle: 'alice' })
     insideNimiqPay.value = false
     const wrapper = await mountWizard()
+    await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
     expect(wrapper.text()).toContain('Share your public profile')
     expect(mocks.syncPublicProfile).not.toHaveBeenCalled()
