@@ -163,6 +163,7 @@ function defer() {
           :disabled="claiming || availability === 'taken' || availability === 'reserved' || !isValidHandle(handle.trim().toLowerCase())"
           @click="doClaim"
         >
+          <span v-if="claiming" class="spinner" aria-hidden="true" />
           {{ claiming ? 'Waiting for confirmation…' : 'Claim with a dust transaction' }}
         </button>
       </template>
@@ -205,8 +206,19 @@ function defer() {
   width: 100%; height: 48px; border: none; border-radius: var(--nimiq-radius-pill); cursor: pointer;
   font-weight: 700; font-size: 16px; color: var(--nimiq-white); margin-top: 12px;
   background: var(--nimiq-gold-bg);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
 }
 .primary:disabled { opacity: 0.5; }
+.spinner {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--nimiq-white) 35%, transparent);
+  border-top-color: var(--nimiq-white);
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; }
+}
 .skip {
   background: none; border: none; min-height: 44px; width: 100%; margin-top: 8px;
   font: inherit; font-weight: 600; color: var(--text-2); cursor: pointer;

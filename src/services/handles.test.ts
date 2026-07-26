@@ -15,6 +15,7 @@ import {
   publishProfile,
   unpublishProfile,
   claimHandleViaHub,
+  claimHandle,
   type HandleClaim,
 } from './handles'
 import type { Profile } from '../types/profile'
@@ -22,6 +23,12 @@ import type { Profile } from '../types/profile'
 const claimHandleWithHub = vi.fn()
 vi.mock('./hub', () => ({
   claimHandleWithHub: (...args: unknown[]) => claimHandleWithHub(...args),
+}))
+
+const sendNim = vi.fn()
+vi.mock('./nimiq', async importOriginal => ({
+  ...(await importOriginal<typeof import('./nimiq')>()),
+  sendNim: (...args: unknown[]) => sendNim(...args),
 }))
 
 const profile: Profile = {
@@ -200,5 +207,48 @@ describe('claimHandleViaHub', () => {
   it('rejects invalid handles without touching the Hub', async () => {
     await expect(claimHandleViaHub('AB', 'NQ01 TEST')).rejects.toThrow('Invalid handle')
     expect(claimHandleWithHub).not.toHaveBeenCalled()
+  })
+})
+
+describe('claimHandle', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+    sendNim.mockReset()
+  })
+
+  it('claims via a Nimiq Pay tx and reports indexed status', async () => {
+    sendNim.mockResolvedValue('pay-tx-1')
+    const claim: HandleClaim = {
+      handle: 'chuck', address: 'NQ01 TEST', tx_hash: 'pay-tx-1', block_height: 1, tx_index: 0,
+    }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: 'indexed', claim }) }))
+
+    const result = await claimHandle('chuck')
+
+    expect(sendNim).toHaveBeenCalled()
+    expect(result).toEqual({ status: 'indexed', txHash: 'pay-tx-1', claim })
+  })
+
+  it('reports the claim as pending, not failed, when the on-chain tx succeeds but the indexer POST throws (network error)', async () => {
+    sendNim.mockResolvedValue('pay-tx-2')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+
+    const result = await claimHandle('chuck')
+
+    expect(result).toEqual({ status: 'pending', txHash: 'pay-tx-2' })
+  })
+
+  it('reports the claim as pending when the indexer responds with an HTTP error', async () => {
+    sendNim.mockResolvedValue('pay-tx-3')
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+
+    const result = await claimHandle('chuck')
+
+    expect(result).toEqual({ status: 'pending', txHash: 'pay-tx-3' })
+  })
+
+  it('rejects invalid handles without sending a transaction', async () => {
+    await expect(claimHandle('AB')).rejects.toThrow('Invalid handle')
+    expect(sendNim).not.toHaveBeenCalled()
   })
 })

@@ -432,19 +432,27 @@ export async function claimHandle(
   // (the default for user messages) doubles it past the 64-byte tx data limit
   // for usernames longer than 10 chars.
   const txHash = await sendNim(REGISTRY_ADDRESS, CLAIM_AMOUNT_NIM, makeClaimPayload(handle), { raw: true })
-  const res = await fetch(apiUrl('/api/handles/claims'), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tx_hash: txHash }),
-  })
-  if (!res.ok) return { status: 'pending', txHash }
-  const body = await res.json()
-  const claim = body.claim as HandleClaim | undefined
-  if (claim && wallets.length) saveMyHandle(wallets, claim)
-  return {
-    status: body.status === 'indexed' ? 'indexed' : 'pending',
-    txHash,
-    claim,
+  // The on-chain tx above is the real claim — this POST is only a fast-path so the
+  // indexer doesn't have to wait for its next chain scan. A network failure here
+  // must not surface as a claim failure (the tx already went through); the indexer
+  // will pick it up on its own.
+  try {
+    const res = await fetch(apiUrl('/api/handles/claims'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tx_hash: txHash }),
+    })
+    if (!res.ok) return { status: 'pending', txHash }
+    const body = await res.json()
+    const claim = body.claim as HandleClaim | undefined
+    if (claim && wallets.length) saveMyHandle(wallets, claim)
+    return {
+      status: body.status === 'indexed' ? 'indexed' : 'pending',
+      txHash,
+      claim,
+    }
+  } catch {
+    return { status: 'pending', txHash }
   }
 }
 
