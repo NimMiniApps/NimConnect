@@ -2,8 +2,10 @@ package main
 
 import (
 	"log"
+	"math"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -12,6 +14,20 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// parseActivationHeight parses RELEASE_ACTIVATION_HEIGHT. Empty or invalid
+// input fails closed (math.MaxUint64: no release is ever honored), rather
+// than defaulting to always active.
+func parseActivationHeight(v string) uint64 {
+	if v == "" {
+		return math.MaxUint64
+	}
+	h, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return math.MaxUint64
+	}
+	return h
 }
 
 func main() {
@@ -53,7 +69,8 @@ func main() {
 	if registryAddress != "off" {
 		rpc := NewNimiqRPC(httpClient, getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com"))
 		reserved := loadReservedHandles(getEnv("RESERVED_HANDLES_FILE", "/data/reserved-handles.json"))
-		registry := NewHandleRegistry(getEnv("HANDLES_FILE", "/data/handles.json"), reserved)
+		releaseActivationHeight := parseActivationHeight(getEnv("RELEASE_ACTIVATION_HEIGHT", ""))
+		registry := NewHandleRegistry(getEnv("HANDLES_FILE", "/data/handles.json"), reserved, releaseActivationHeight)
 		profiles := NewProfileStore(getEnv("PROFILES_DIR", "/data/profiles"))
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))

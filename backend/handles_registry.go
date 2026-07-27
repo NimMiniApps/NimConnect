@@ -23,13 +23,19 @@ type HandleRegistry struct {
 	reserved map[string]bool
 	// HTLCCreator resolves an HTLC contract address to the account that
 	// created it (set by the syncer; nil = attribute to the raw sender).
-	HTLCCreator func(address string) string
-	mu          sync.RWMutex
-	handles     map[string]HandleClaim
+	HTLCCreator             func(address string) string
+	releaseActivationHeight uint64
+	mu                      sync.RWMutex
+	handles                 map[string]HandleClaim
 }
 
-func NewHandleRegistry(path string, reserved map[string]bool) *HandleRegistry {
-	r := &HandleRegistry{path: path, reserved: reserved, handles: map[string]HandleClaim{}}
+func NewHandleRegistry(path string, reserved map[string]bool, releaseActivationHeight uint64) *HandleRegistry {
+	r := &HandleRegistry{
+		path:                    path,
+		reserved:                reserved,
+		releaseActivationHeight: releaseActivationHeight,
+		handles:                 map[string]HandleClaim{},
+	}
 	if data, err := readFileIfExists(path); err == nil && data != nil {
 		var stored map[string]HandleClaim
 		if json.Unmarshal(data, &stored) == nil && stored != nil {
@@ -40,9 +46,12 @@ func NewHandleRegistry(path string, reserved map[string]bool) *HandleRegistry {
 }
 
 // Rebuild replaces the registry from the registry address's full inbound tx
-// list, applying claims in chain order (earliest wins; no release semantics
-// in the shared NimFeed protocol). Resolution follows the chain unfiltered —
-// the reserved list only gates NimConnect's own claim UI (see Available).
+// list, applying claims and releases in chain order: a claim assigns a handle
+// only when it is currently unowned; a release frees it only when sent by the
+// currently resolved owner, and only at or after releaseActivationHeight.
+// Releases before that height remain unknown data, preventing existing
+// transactions from being retroactively reinterpreted. Resolution follows the
+// chain unfiltered — the reserved list only gates NimConnect's claim UI.
 // ponytail: full-history rebuild each sweep; the NimFeed catalog address also
 // carries posts/follows, so switch to cursor-paged incremental sync once the
 // sweep gets slow (>~10k txs).
@@ -62,10 +71,22 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 		if action == nil {
 			continue
 		}
+		signer := normalizeAddress(claimantAddress(tx, r.HTLCCreator))
+
+		if action.IsRelease {
+			if tx.BlockNumber < r.releaseActivationHeight {
+				continue
+			}
+			if owner, taken := next[action.Handle]; taken && compactAddress(owner.Address) == compactAddress(signer) {
+				delete(next, action.Handle)
+			}
+			continue
+		}
+
 		if _, taken := next[action.Handle]; !taken {
 			next[action.Handle] = HandleClaim{
 				Handle:      action.Handle,
-				Address:     normalizeAddress(claimantAddress(tx, r.HTLCCreator)),
+				Address:     signer,
 				TxHash:      tx.Hash,
 				BlockHeight: tx.BlockNumber,
 				TxIndex:     tx.TransactionIndex,

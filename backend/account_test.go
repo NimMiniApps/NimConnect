@@ -73,7 +73,7 @@ func hexOfString(s string) string {
 }
 
 func testSweepAttributesToOwner(t *testing.T, pruned bool) {
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "h.json"), nil)
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "h.json"), nil, 0)
 	syncer := NewHandleSyncer(htlcChainRPC(t, pruned), registry, testCatalog)
 	if err := syncer.Sweep(); err != nil {
 		t.Fatal(err)

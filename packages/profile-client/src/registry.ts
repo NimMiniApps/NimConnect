@@ -7,6 +7,7 @@ const CLAIM_MAGIC0 = 0x4e
 const CLAIM_MAGIC1 = 0x46
 const CLAIM_VERSION = 0x01
 const CLAIM_TYPE_PROFILE = 0x01
+const CLAIM_TYPE_RELEASE = 0x07
 const CLAIM_TEXT_PREFIX = 'NFH:'
 
 /** Nimiq account type: 0 basic, 1 vesting, 2 HTLC. Nimiq Pay routes claims
@@ -50,24 +51,28 @@ function isHexDigitsString(s: string): boolean {
   return s.length > 0 && s.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(s)
 }
 
-function parseClaimPayload(payload: Uint8Array): { handle: string } | null {
+function parseClaimPayload(payload: Uint8Array): ParsedRegistryAction | null {
   if (
     payload.length < 4 ||
     payload[0] !== CLAIM_MAGIC0 ||
     payload[1] !== CLAIM_MAGIC1 ||
-    payload[2] !== CLAIM_VERSION ||
-    payload[3] !== CLAIM_TYPE_PROFILE
+    payload[2] !== CLAIM_VERSION
   ) {
     return null
   }
+  let isRelease: boolean
+  if (payload[3] === CLAIM_TYPE_PROFILE) isRelease = false
+  else if (payload[3] === CLAIM_TYPE_RELEASE) isRelease = true
+  else return null
+
   let rest = payload.slice(4)
   const zeroIdx = rest.indexOf(0)
   if (zeroIdx >= 0) rest = rest.slice(0, zeroIdx)
   const handle = bytesToAscii(rest)
-  return isValidHandle(handle) ? { handle } : null
+  return isValidHandle(handle) ? { handle, isRelease } : null
 }
 
-function parseClaimDataFromRaw(raw: Uint8Array): { handle: string } | null {
+function parseClaimDataFromRaw(raw: Uint8Array): ParsedRegistryAction | null {
   const text = bytesToAscii(raw)
   if (text.startsWith(CLAIM_TEXT_PREFIX)) {
     const inner = hexToBytes(text.slice(CLAIM_TEXT_PREFIX.length))
@@ -77,13 +82,18 @@ function parseClaimDataFromRaw(raw: Uint8Array): { handle: string } | null {
 }
 
 /**
- * Parses a transaction's hex data field into a claimed handle, or null if
- * it's not a claim (e.g. a post/follow on the same shared registry address).
+ * Parses a transaction's hex data field into a claim or release action, or
+ * null if it's neither (e.g. a post/follow on the shared registry address).
  * Accepts the raw binary form (Nimiq Hub), the "NFH:" text envelope (Nimiq
  * Pay), and Nimiq Pay's double-hex-encoded variant. Mirrors
  * backend/handles.go's parseClaimData byte-for-byte.
  */
-export function parseClaimTxData(dataHex: string): { handle: string } | null {
+export interface ParsedRegistryAction {
+  handle: string
+  isRelease: boolean
+}
+
+export function parseClaimTxData(dataHex: string): ParsedRegistryAction | null {
   const raw = hexToBytes(dataHex)
   if (!raw) return null
   const direct = parseClaimDataFromRaw(raw)
@@ -134,6 +144,11 @@ export interface ResolveHandleRegistryOptions {
    * it returns null.
    */
   resolveHtlcOwner?: (contractAddress: string) => string | null | Promise<string | null>
+  /**
+   * A release is honored only at or after this height. Defaults to Infinity,
+   * so release payloads remain inert until callers explicitly opt in.
+   */
+  releaseActivationHeight?: number
 }
 
 /**
@@ -151,6 +166,7 @@ export async function resolveHandleRegistry(
   txs: RegistryTx[],
   options: ResolveHandleRegistryOptions = {},
 ): Promise<Map<string, ResolvedHandleClaim>> {
+  const releaseActivationHeight = options.releaseActivationHeight ?? Infinity
   const ordered = [...txs].sort((a, b) =>
     a.blockHeight !== b.blockHeight ? a.blockHeight - b.blockHeight : a.txIndex - b.txIndex,
   )
@@ -158,10 +174,22 @@ export async function resolveHandleRegistry(
   const htlcOwnerCache = new Map<string, string | null>()
   for (const tx of ordered) {
     const action = parseClaimTxData(tx.data)
-    if (!action || registry.has(action.handle)) continue
+    if (!action) continue
+    const signer = await claimantAddress(tx, options.resolveHtlcOwner, htlcOwnerCache)
+
+    if (action.isRelease) {
+      if (tx.blockHeight < releaseActivationHeight) continue
+      const owner = registry.get(action.handle)
+      if (owner && compactAddress(owner.address) === compactAddress(signer)) {
+        registry.delete(action.handle)
+      }
+      continue
+    }
+
+    if (registry.has(action.handle)) continue
     registry.set(action.handle, {
       handle: action.handle,
-      address: await claimantAddress(tx, options.resolveHtlcOwner, htlcOwnerCache),
+      address: signer,
       txHash: tx.hash,
       blockHeight: tx.blockHeight,
       txIndex: tx.txIndex,

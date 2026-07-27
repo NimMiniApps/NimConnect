@@ -29,7 +29,7 @@ func TestSweepRebuildsRegistry(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{})
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 
 	if err := syncer.Sweep(); err != nil {
@@ -45,7 +45,7 @@ func TestSweepIsRateLimited(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{})
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 
 	syncer.Sweep()

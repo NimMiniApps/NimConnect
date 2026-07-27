@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { buildHandleClaimPayload, isValidHandle, HANDLE_REGISTRY_ADDRESS } from './claim.js'
+import {
+  buildHandleClaimPayload,
+  buildHandleReleasePayload,
+  isValidHandle,
+  HANDLE_REGISTRY_ADDRESS,
+} from './claim.js'
 
 describe('isValidHandle', () => {
   it('accepts 3-31 char lowercase/digit/underscore handles', () => {
@@ -45,5 +50,32 @@ describe('buildHandleClaimPayload', () => {
     expect(Array.from(extraDataBytes.slice(0, 4))).toEqual([0x4e, 0x46, 0x01, 0x01])
     const handle = String.fromCharCode(...extraDataBytes.slice(4))
     expect(handle).toBe('chuck')
+  })
+})
+
+describe('buildHandleReleasePayload', () => {
+  it('targets the shared registry address', () => {
+    const { recipient } = buildHandleReleasePayload('chuck')
+    expect(recipient).toBe(HANDLE_REGISTRY_ADDRESS)
+  })
+
+  it('encodes "NF" + version 0x01 + type 0x07 + handle bytes as the NFH: hex envelope', () => {
+    const { extraData } = buildHandleReleasePayload('chuck')
+    expect(extraData.startsWith('NFH:')).toBe(true)
+
+    const payloadHex = extraData.slice('NFH:'.length)
+    const bytes = payloadHex.match(/../g)!.map((b) => parseInt(b, 16))
+    expect(bytes.slice(0, 4)).toEqual([0x4e, 0x46, 0x01, 0x07])
+    const handle = String.fromCharCode(...bytes.slice(4))
+    expect(handle).toBe('chuck')
+  })
+
+  it('throws on an invalid handle', () => {
+    expect(() => buildHandleReleasePayload('AB')).toThrow(/invalid handle/)
+  })
+
+  it('fits Nimiq Pay\'s 64-char text-transaction limit for the longest supported handle', () => {
+    const { extraData } = buildHandleReleasePayload('x'.repeat(26))
+    expect(extraData.length).toBeLessThanOrEqual(64)
   })
 })

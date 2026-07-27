@@ -87,6 +87,8 @@ export interface FetchHandleRegistryOptions {
   maxTx?: number
   /** Override HTLC-owner resolution instead of the built-in RPC-backed lookup. */
   resolveHtlcOwner?: ResolveHandleRegistryOptions['resolveHtlcOwner']
+  /** Forwarded to resolveHandleRegistry; defaults to Infinity (releases remain inert). */
+  releaseActivationHeight?: ResolveHandleRegistryOptions['releaseActivationHeight']
 }
 
 /**
@@ -120,5 +122,6 @@ export async function fetchHandleRegistry(
 
   return resolveHandleRegistry(txs, {
     resolveHtlcOwner: options.resolveHtlcOwner ?? ((contractAddress) => resolveHtlcOwnerViaRpc(rpcUrl, contractAddress)),
+    releaseActivationHeight: options.releaseActivationHeight,
   })
 }

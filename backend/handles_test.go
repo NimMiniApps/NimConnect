@@ -34,6 +34,45 @@ func nimfeedClaim(username, displayName string) []byte {
 	return payload
 }
 
+// nimfeedRelease builds the raw binary RELEASE payload: "NF" 0x01 0x07 handle.
+func nimfeedRelease(handle string) []byte {
+	return append([]byte{0x4e, 0x46, 0x01, 0x07}, []byte(handle)...)
+}
+
+func TestParseClaimData_Release(t *testing.T) {
+	hexOf := func(b []byte) string { return hex.EncodeToString(b) }
+
+	action := parseClaimData(hexOf(nimfeedRelease("chuck")))
+	if action == nil || action.Handle != "chuck" || !action.IsRelease {
+		t.Fatalf("expected release action for chuck, got %+v", action)
+	}
+
+	// A claim payload must still parse as a non-release action.
+	action = parseClaimData(hexOf(nimfeedClaim("chuck", "")))
+	if action == nil || action.IsRelease {
+		t.Fatalf("expected claim (non-release) action, got %+v", action)
+	}
+
+	// The NFH text envelope form works for releases too.
+	action = parseClaimData(hexOf([]byte("NFH:" + hexOf(nimfeedRelease("chuck")))))
+	if action == nil || action.Handle != "chuck" || !action.IsRelease {
+		t.Fatalf("expected release via NFH envelope, got %+v", action)
+	}
+
+	// Our own makeReleasePayload round-trips.
+	action = parseClaimData(hexOf([]byte(makeReleasePayload("a_1"))))
+	if action == nil || action.Handle != "a_1" || !action.IsRelease {
+		t.Fatalf("expected release round-trip, got %+v", action)
+	}
+}
+
+func TestReleasePayloadFitsNimiqPayTextLimit(t *testing.T) {
+	longest := makeReleasePayload(strings.Repeat("x", 26))
+	if len(longest) > 64 {
+		t.Errorf("release payload %q is %d chars, exceeds Nimiq Pay 64-char text limit", longest, len(longest))
+	}
+}
+
 func TestParseClaimData(t *testing.T) {
 	hexOf := func(b []byte) string { return hex.EncodeToString(b) }
 
@@ -57,16 +96,16 @@ func TestParseClaimData(t *testing.T) {
 	}
 
 	rejected := []string{
-		"",                          // empty
-		"zz-not-hex",                // not hex
-		hexOf([]byte("hello")),      // unrelated payload
-		hexOf([]byte{0x4e, 0x46}),   // truncated header
+		"",                        // empty
+		"zz-not-hex",              // not hex
+		hexOf([]byte("hello")),    // unrelated payload
+		hexOf([]byte{0x4e, 0x46}), // truncated header
 		hexOf([]byte{0x4e, 0x46, 0x02, 0x01, 'c', 'h', 'u', 'c', 'k'}), // unknown version
 		hexOf([]byte{0x4e, 0x46, 0x01, 0x02, 'c', 'h', 'u', 'c', 'k'}), // POST_INLINE, not a claim
-		hexOf(nimfeedClaim("Chuck", "")),  // bad casing
-		hexOf(nimfeedClaim("ab", "")),     // too short
-		hexOf([]byte("NFH:zznothex")),     // envelope with bad inner hex
-		hexOf([]byte("NCC:v1:claim:old")), // our retired text format
+		hexOf(nimfeedClaim("Chuck", "")),                               // bad casing
+		hexOf(nimfeedClaim("ab", "")),                                  // too short
+		hexOf([]byte("NFH:zznothex")),                                  // envelope with bad inner hex
+		hexOf([]byte("NCC:v1:claim:old")),                              // our retired text format
 	}
 	for _, data := range rejected {
 		if got := parseClaimData(data); got != nil {

@@ -28,7 +28,7 @@ func handlesTestMux(t *testing.T, registry *HandleRegistry, profiles *ProfileSto
 
 func seededRegistry(t *testing.T) *HandleRegistry {
 	t.Helper()
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true})
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true}, 0)
 	r.Rebuild([]rpcTx{{
 		Hash: "t1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY",
 		Data: hex.EncodeToString([]byte(makeClaimPayload("chuck"))), BlockNumber: 5,

@@ -14,9 +14,72 @@ func claimTx(hash, sender, handle string, block, index uint64) rpcTx {
 	}
 }
 
+func releaseTx(hash, sender, handle string, block, index uint64) rpcTx {
+	return rpcTx{
+		Hash: hash, Sender: sender, Recipient: "NQ77 REGISTRY",
+		Data:        hex.EncodeToString([]byte(makeReleasePayload(handle))),
+		BlockNumber: block, TransactionIndex: index,
+	}
+}
+
+func TestRebuild_ReleaseThenReclaim(t *testing.T) {
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
+	err := r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
+		releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0),
+		claimTx("t3", "NQ22 NEWOWNER", "chuck", 300, 0),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim, ok := r.Resolve("chuck")
+	if !ok || compactAddress(claim.Address) != "NQ22NEWOWNER" || claim.TxHash != "t3" {
+		t.Fatalf("expected new owner after release+reclaim: %+v ok=%v", claim, ok)
+	}
+}
+
+func TestRebuild_ReleaseFromNonOwnerIsNoOp(t *testing.T) {
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
+	r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
+		releaseTx("t2", "NQ99 IMPOSTOR", "chuck", 200, 0),
+		claimTx("t3", "NQ22 SNIPER", "chuck", 300, 0),
+	})
+	claim, ok := r.Resolve("chuck")
+	if !ok || compactAddress(claim.Address) != "NQ11OWNER" {
+		t.Fatalf("release from a non-owner must not free the handle: %+v ok=%v", claim, ok)
+	}
+}
+
+func TestRebuild_ReleaseBeforeActivationHeightIgnored(t *testing.T) {
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 1000)
+	r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
+		releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0),
+		claimTx("t3", "NQ22 SNIPER", "chuck", 300, 0),
+	})
+	claim, ok := r.Resolve("chuck")
+	if !ok || compactAddress(claim.Address) != "NQ11OWNER" {
+		t.Fatalf("pre-activation release must be ignored like unknown data: %+v ok=%v", claim, ok)
+	}
+}
+
+func TestRebuild_ReleaseAtActivationHeightIsHonored(t *testing.T) {
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 200)
+	r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
+		releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0),
+		claimTx("t3", "NQ22 NEWOWNER", "chuck", 300, 0),
+	})
+	claim, ok := r.Resolve("chuck")
+	if !ok || compactAddress(claim.Address) != "NQ22NEWOWNER" {
+		t.Fatalf("release at the activation height must be honored: %+v ok=%v", claim, ok)
+	}
+}
+
 func newTestRegistry(t *testing.T) *HandleRegistry {
 	t.Helper()
-	return NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true})
+	return NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true}, 0)
 }
 
 func TestRebuildEarliestClaimWins(t *testing.T) {
@@ -115,10 +178,10 @@ func TestResolveAddress_MultipleClaimsSameAddress_EarliestWins(t *testing.T) {
 
 func TestRegistryPersistsAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "handles.json")
-	r := NewHandleRegistry(path, map[string]bool{})
+	r := NewHandleRegistry(path, map[string]bool{}, 0)
 	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)})
 
-	reloaded := NewHandleRegistry(path, map[string]bool{})
+	reloaded := NewHandleRegistry(path, map[string]bool{}, 0)
 	if _, ok := reloaded.Resolve("chuck"); !ok {
 		t.Fatal("registry should load persisted state")
 	}

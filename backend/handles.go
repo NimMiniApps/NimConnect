@@ -28,6 +28,7 @@ var claimMagic = []byte{0x4e, 0x46} // "NF"
 const (
 	claimVersion     = 0x01
 	claimTypeProfile = 0x01
+	claimTypeRelease = 0x07
 	claimTextPrefix  = "NFH:"
 )
 
@@ -39,7 +40,8 @@ var handleRe = regexp.MustCompile(`^[a-z0-9_]{3,31}$`)
 func isValidHandle(h string) bool { return handleRe.MatchString(h) }
 
 type claimAction struct {
-	Handle string
+	Handle    string
+	IsRelease bool
 }
 
 // makeClaimPayload builds the Nimiq Pay text envelope for a username-only
@@ -50,14 +52,31 @@ func makeClaimPayload(handle string) string {
 	return claimTextPrefix + hex.EncodeToString(payload)
 }
 
-// parseClaimPayload decodes a binary PROFILE_CLAIM payload.
+// makeReleasePayload builds the Nimiq Pay text envelope for giving up a
+// handle. Same shape as makeClaimPayload — no target address — so it fits
+// the same 26-char Nimiq Pay budget.
+func makeReleasePayload(handle string) string {
+	payload := append(append([]byte{}, claimMagic...), claimVersion, claimTypeRelease)
+	payload = append(payload, []byte(handle)...)
+	return claimTextPrefix + hex.EncodeToString(payload)
+}
+
+// parseClaimPayload decodes a binary PROFILE_CLAIM or RELEASE payload.
 func parseClaimPayload(payload []byte) *claimAction {
-	if len(payload) < 4 || !bytes.HasPrefix(payload, claimMagic) ||
-		payload[2] != claimVersion || payload[3] != claimTypeProfile {
+	if len(payload) < 4 || !bytes.HasPrefix(payload, claimMagic) || payload[2] != claimVersion {
+		return nil
+	}
+	var isRelease bool
+	switch payload[3] {
+	case claimTypeProfile:
+		isRelease = false
+	case claimTypeRelease:
+		isRelease = true
+	default:
 		return nil
 	}
 	rest := payload[4:]
-	// Username runs to the 0x00 separator (display name follows) or payload end.
+	// Username runs to the 0x00 separator (display name follows, claims only) or payload end.
 	if i := bytes.IndexByte(rest, 0); i >= 0 {
 		rest = rest[:i]
 	}
@@ -65,7 +84,7 @@ func parseClaimPayload(payload []byte) *claimAction {
 	if !isValidHandle(handle) {
 		return nil
 	}
-	return &claimAction{Handle: handle}
+	return &claimAction{Handle: handle, IsRelease: isRelease}
 }
 
 // parseClaimDataFromRaw tries binary and NFH text-envelope forms on decoded bytes.
