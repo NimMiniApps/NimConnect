@@ -5,364 +5,719 @@
 
 ## Revision note
 
-The first version of this spec was reviewed and found not implementation-ready:
-`RELEASE = 0x02` collided with NimFeed's existing `POST_INLINE` type, the
-trade flow could cost the buyer their money on a snipe, and the pre-signed
-claim / mempool-reveal / Nimiq Pay assumptions didn't hold against the actual
-protocol and wallet capabilities. All of that is corrected below. See
-"Revision history" at the bottom for what changed and why.
+This revision replaces the earlier HTLC settlement design with
+NimConnect-controlled custodial escrow. The change is deliberate:
+
+- Neither the public Hub API nor the Nimiq Pay Mini App SDK currently exposes
+  the complete HTLC proof-signing surface the earlier design required.
+- A client-held trade key would make the client part of the trusted settlement
+  path, which is not acceptable for this marketplace.
+- The existing 64-byte transaction-data limit rules out a general
+  `TRANSFER(handle, buyerAddress)` payload for the supported handle lengths.
+
+The marketplace therefore keeps the existing small `RELEASE` followed by
+`CLAIM` protocol and makes the NimConnect server the authoritative financial
+middleman. The buyer and seller do not trust each other, but both explicitly
+trust NimConnect to hold the buyer's funds temporarily, observe the canonical
+registry result, and execute exactly one payout or refund.
 
 ## Problem
 
 Handles claimed on the shared on-chain registry (`HANDLE_REGISTRY_ADDRESS`,
-`packages/profile-client/src/registry.ts`) are permanent: `resolveHandleRegistry`
-picks the earliest claim per handle and there is no way to give one up or move
-it to another owner. Users who want to trade a handle currently have no
-mechanism to do so, on-chain or otherwise.
+`packages/profile-client/src/registry.ts`) are permanent:
+`resolveHandleRegistry` picks the earliest claim per handle and there is no way
+to give one up. Users who want to trade a handle currently have no protocol
+mechanism or protected payment flow.
 
-The registry is shared protocol, not NimConnect-only — NimFeed reads the same
-on-chain data and is the origin of the type-byte namespace (`NimFeed/src/protocol/constants.js`).
-Any change to what counts as a valid claim/release must be defined once, in
-that shared namespace, and honored by every reader.
+The registry is shared protocol, not NimConnect-only. NimFeed reads the same
+on-chain data and owns the existing type-byte namespace
+(`NimFeed/src/protocol/constants.js`). Every reader must interpret claim and
+release events identically, including historical events.
 
 ## Goals
 
-- Let a handle's current owner give it up and let someone else claim it,
-  enforced by the shared on-chain protocol so every reader (NimConnect,
-  NimFeed) agrees on the result — including historical data, which must not
-  be retroactively reinterpreted.
-- Let a buyer and seller trade a handle for a fixed NIM price without either
-  trusting the other with funds directly, and without NimConnect's backend
-  ever holding custody of either party's NIM.
-- Never let a failed trade (snipe, timeout, backend outage) cost the buyer
-  their money. A failed trade may cost the seller the handle without payment
-  — that risk is inherent to a non-atomic protocol and must be disclosed, not
-  hidden.
-- Let NimConnect collect a fee per completed trade.
-- Ship an MVP against wallet surfaces that actually support it today.
+- Add a shared `RELEASE` event that lets the current owner give up a handle
+  without exceeding the existing Nimiq Pay transaction-data limit.
+- Support fixed-price handle sales using wallet operations available in both
+  Hub and the Nimiq Pay Mini App SDK today.
+- Make the NimConnect server authoritative for order state, escrow accounting,
+  chain verification, payout, and refund. Client-reported state is never
+  trusted.
+- Pay the seller only after the exact buyer is the macro-finalized registry
+  winner.
+- Refund the buyer's full escrowed sale price if the trade fails. NimConnect
+  absorbs the outbound refund transaction fee and collects no marketplace fee
+  on a failed trade.
+- Collect a marketplace fee only on a completed trade.
+- Preserve an append-only, auditable record of every financial and marketplace
+  state transition.
 
 ## Non-goals
 
-- Auctions or negotiated offers — listings are fixed-price only.
-- Eliminating the sniping window between a handle's release and the buyer's
-  re-claim (accepted risk, redistributed so it only ever costs the seller,
-  never the buyer — see Trade flow).
-- True atomicity between payment and release. Nimiq's account types are
-  Basic, HTLC, Vesting, and Staking; HTLC's only conditions are a
-  hash-preimage reveal or a timeout, and Nimiq has no general contract
-  scripting to make one transaction's validity depend on a second,
-  independently-signed transaction. This is a hard protocol ceiling, not a
-  gap this design tries to close.
-- Nimiq Pay (mobile mini-app) support in the MVP — see Wallet surface below.
-- Migrating or grandfathering existing claims — this only affects trades made
-  through the marketplace going forward, and only after the activation height.
+- Non-custodial settlement. NimConnect deliberately holds buyer funds during an
+  active trade.
+- Auctions, negotiated offers, or partial payments. Listings are fixed-price
+  and must be funded by one exact payment.
+- True atomicity between handle ownership and payment. `RELEASE` and `CLAIM`
+  are separate transactions, and Nimiq has no general contract scripting that
+  can make their outcome atomic with a server payout.
+- Eliminating the public sniping window after `RELEASE`. A failed or sniped
+  trade refunds the buyer, but the seller can still lose the handle without
+  payment. This is an explicit seller risk.
+- A general `TRANSFER` event. Embedding the buyer's address does not fit the
+  64-byte Nimiq Pay text-transaction limit for the supported handle lengths.
+- Treating `validityStartHeight` as a timelock or an ordering primitive. It is
+  used only to keep a signed transaction fresh.
 
-## Protocol change: `RELEASE` claim type
+## Protocol change: `RELEASE`
 
 `0x02` is already `POST_INLINE` in the shared type namespace
-(`NimFeed/src/protocol/constants.js:4`; confirmed as rejected-as-non-claim in
-`backend/handles_test.go`'s existing test cases). Using it for release would
-make NimConnect read a release where NimFeed reads a malformed post — an
-immediate protocol fork. The next unused byte in that namespace is `0x07`
-(`PROFILE_CLAIM=0x01, POST_INLINE=0x02, POST_START=0x03, POST_CHUNK=0x04,
-FOLLOW=0x05, UNFOLLOW=0x06`). This spec allocates:
-
-```
-RELEASE = 0x07
-```
-
-as a value NimFeed's constants module must also define, so both readers
-agree on the byte before either ships code that acts on it.
-
-Payload shape is identical to an existing claim:
+(`NimFeed/src/protocol/constants.js:4`). Reusing it would make NimConnect read a
+release where NimFeed reads a post. The next unused shared byte is `0x07`:
 
 ```text
-raw binary (Nimiq Hub):    "NF" 0x01 0x07 <handle>
-text envelope (Nimiq Pay): "NFH:" + hex of the binary payload
+PROFILE_CLAIM = 0x01
+POST_INLINE   = 0x02
+POST_START    = 0x03
+POST_CHUNK    = 0x04
+FOLLOW        = 0x05
+UNFOLLOW      = 0x06
+RELEASE       = 0x07
 ```
 
-No target address is embedded — this keeps the payload exactly as small as
-today's claim, fitting Nimiq Pay's 64-char text-transaction limit for the
-same handle lengths (up to 26 chars) that claiming already supports. An
-earlier version of this design considered embedding the buyer's address
-directly (a true `TRANSFER` type), which would make the handoff atomic and
-immune to sniping, but at 4 + 2×(24+len) hex chars it only fits Pay's 64-char
-cap for handles ≤6 characters — unacceptable for a marketplace meant to work
-for any handle.
+The payload shape is identical in size to an existing profile claim:
 
-**Activation height.** Because `0x07` was previously an unrecognized type
-(silently ignored by every existing parser), any transaction already on
-chain that happens to decode to `magic + version + 0x07 + <valid handle>` —
-however unlikely — must not be retroactively treated as a release once this
-ships. The registry rebuild only honors `RELEASE` transactions at or after a
-fixed activation block height, chosen and hardcoded at deploy time in both
-NimConnect's and NimFeed's rebuild logic. Transactions before that height
-with type `0x07` continue to be ignored as unknown, exactly as today.
+```text
+raw binary (Hub):          "NF" 0x01 0x07 <handle>
+text envelope (Nimiq Pay): "NFH:" + hex(raw payload)
+```
 
-A `RELEASE` transaction must be signed by the handle's current owner. When
-the registry rebuild encounters a valid, post-activation `RELEASE` from the
-current owner, it removes that handle from the registry as of that
-`(blockHeight, txIndex)`. Any `CLAIM` after that point follows the existing
-earliest-wins rule, exactly as if the handle had never been claimed.
+No buyer address or marketplace order ID is embedded. This preserves support
+for the same handles that already fit the Nimiq Pay claim envelope. A transfer
+payload containing a 20-byte buyer address would require
+`4 + 2 * (4 + handleBytes + 20) = 52 + 2 * handleBytes` text characters. It
+would fit the 64-character envelope only for handles of six bytes or fewer and
+is therefore not a usable general protocol.
 
-## Cross-reader migration (NimFeed)
+### Activation height
 
-NimFeed currently stores only claims, primary-keyed `[username+address]`
-(`NimFeed/src/db/schema.js`), and always resolves the earliest one
-(`NimFeed/src/db/queries.js`'s `getWinningClaim`). That key silently
-overwrites history: if owner A claims, releases, and later reclaims the same
-username, the later claim event replaces the earlier row and the release in
-between is lost from the claims table — a separate `profile_releases` table
-alongside it doesn't fix this, since ownership resolution still needs the
-full interleaved order of claims and releases to be correct, not just the
-existence of a release somewhere.
+`0x07` was previously unknown and ignored. Existing history must not be
+retroactively reinterpreted if an old transaction happens to contain bytes
+that look like a release.
 
-Adopting `RELEASE` requires, on NimFeed's side:
+NimConnect and NimFeed must share a fixed activation block height:
 
-- An **append-only event log**, one row per on-chain event (claim or
-  release), keyed by transaction identity/order (`tx_hash`, or
-  `[block_height+tx_index]`) — never by `[username+address]`, so no event is
-  overwritten regardless of how many times a username is claimed and released.
-- A resolver that replays that log chronologically as a small state machine
-  per username: a `CLAIM` assigns ownership only if the username is currently
-  unowned; a `RELEASE` clears ownership only if sent by the address that
-  currently owns it; anything else is a no-op, recorded but not applied. This
-  also resolves the previous circularity — "release validity depends on
-  current owner" is exactly what replaying prior events from the start
-  determines, not something checked against a snapshot.
-- A full rescan once deployed, replaying existing history through the new
-  state machine rather than only applying it to new transactions.
-- Coordinated deployment: both NimConnect and NimFeed must ship with the same
-  activation height before either starts honoring `RELEASE`, or the two
-  systems disagree about current ownership during the gap.
+- `RELEASE` before the activation height remains an ignored unknown event.
+- `RELEASE` at or after the activation height participates in registry replay.
+- Both readers must deploy the same constant before either enables marketplace
+  release actions.
 
-This is a real migration, not a mirrored-constants change — budget it as
-its own piece of work in NimFeed, not a side effect of the NimConnect spec.
+### Registry semantics
 
-## Wallet surface: currently blocking, not just an MVP restriction
+Registry history is replayed in `(blockHeight, transactionIndex)` order:
 
-Neither wallet surface NimConnect can call today supports constructing or
-signing an HTLC redemption proof — this affects Hub, not only Nimiq Pay.
+- `CLAIM(handle)` assigns the handle only when it is currently unowned.
+- `RELEASE(handle)` clears the handle only when its resolved signer is the
+  current owner.
+- Any other claim or release is retained in history but is a no-op.
 
-- The Nimiq Pay mini-app provider (`@nimiq/mini-app-sdk/dist/provider.d.ts`)
-  exposes only basic sends and staking operations. No HTLC methods at all.
-- Hub's generic `signTransaction` route (Keyguard's `SignTransaction.js`)
-  *can* infer `senderType: HTLC` when the sender is a recognized HTLC
-  contract — so Hub isn't blind to the account type. But that route always
-  produces a bare `SignatureProof`, never the `RegularTransfer` or
-  `TimeoutResolve` proof envelope an outgoing HTLC transaction actually
-  requires. `@nimiq/core`'s generic `Transaction.sign()` documents the same
-  gap directly: *"HTLC redemption is not supported and will throw."* The
-  precise limitation is proof construction, not sender-type recognition.
-- Hub only builds those proof envelopes in its specialized swap/refund views
-  (e.g. `RefundSwapSuccess.vue`), which back `SetupSwapRequest`/
-  `RefundSwapRequest` — how Nimiq Pay's existing swap-routed claims redeem
-  HTLCs today. Both are absent from Hub's third-party RPC whitelist
-  (`RpcApi.ts`), so NimConnect cannot call them from an ordinary origin.
+After a valid release, the first valid subsequent claim wins. Marketplace
+status, escrow status, or a server-issued trade ID has no effect on this
+on-chain rule.
 
-NimConnect holds no private keys itself (`src/services/hub.ts` only ever
-delegates to Hub's checkout/sign flows) — there is no in-app fallback that
-signs a raw HTLC proof locally without a supporting wallet API.
+Nimiq Pay can route a transaction through an HTLC account. Every reader and the
+marketplace verifier must compare the resolved controlling wallet
+(`owner_address`), not blindly compare the raw transaction sender.
 
-**This is a hard external dependency, not a scoping choice.** The HTLC-based
-trade flow in this spec cannot be built against any wallet surface available
-today. Before implementation can start, one of the following needs to be
-true:
-- Hub/Keyguard adds public support for HTLC regular-transfer and
-  timeout-resolve signing, or
-- NimConnect gets a trusted-origin exception for the existing swap-restricted
-  methods, or
-- the design falls back to the backend-held custodial escrow considered
-  earlier in this process (buyer pays a NimConnect-controlled address
-  directly; backend forwards to the seller after confirming `RELEASE`). That
-  variant only needs ordinary basic sends, which both Hub and Pay already
-  support — at the cost of the backend actually custodying buyer funds
-  during a trade, which is the trade-off this design was built to avoid.
+## Cross-reader migration
 
-This spec does not resolve that choice — it should stay in Draft until an
-answer comes back on the wallet-capability question.
+NimFeed currently stores claims keyed by `[username+address]` and resolves the
+earliest one. That representation cannot retain an interleaved sequence such
+as owner A claiming, releasing, and later reclaiming the same handle.
+
+Adopting `RELEASE` requires:
+
+- An append-only event log containing every claim and release, keyed by
+  transaction identity/order rather than username and address.
+- Chronological replay using the registry state machine above.
+- A full historical rescan through the new resolver.
+- Shared fixtures proving NimConnect, `packages/profile-client`, and NimFeed
+  produce the same owner for the same ordered event stream.
+- Coordinated activation using the same activation height.
+
+This is a real NimFeed schema and resolver migration, not merely a mirrored
+constant.
+
+## Marketplace architecture
+
+### Authoritative server
+
+The backend is the source of truth for listings, reservations, trades,
+deadlines, financial liabilities, and settlement operations. The frontend may
+request an action and present wallet results, but the server independently
+verifies all signatures and on-chain transactions.
+
+Client choreography is not the registry truth. Once an exact escrow deposit has
+been observed for an active trade, any protocol-valid release by the expected
+seller and any subsequent protocol-valid claim by the bound buyer are
+recognized from canonical history, even if the deposit or registry events are
+still awaiting macro finality or were broadcast outside the expected UI.
+Otherwise a participant could deliberately use a different client, produce the
+real on-chain outcome, and still try to trigger a refund.
+
+The marketplace consists of:
+
+- A marketplace API and persisted trade state machine.
+- A pooled NimConnect-controlled NIM escrow wallet.
+- An escrow-address watcher separate from `HandleSyncer`.
+- The registry watcher/resolver extended with `RELEASE`.
+- An idempotent settlement worker for payouts and refunds.
+- Notifications for buyer readiness, release, claim, settlement, and failure.
+
+`HandleSyncer` only watches the registry address. Escrow deposits go to a
+different NimConnect address and require their own watcher.
+
+### Pooled escrow and deposit reference
+
+All buyers pay one server-controlled escrow address. Each trade receives a
+cryptographically random 16-byte reference encoded in a short, versioned data
+field, for example:
+
+```text
+NME1:<22-character base64url trade reference>
+```
+
+This is 27 ASCII bytes and fits comfortably in the 64-byte basic-transaction
+data field. It is used only on the escrow payment; it does not change the
+registry `RELEASE` or `CLAIM` payload.
+
+A deposit is accepted only when:
+
+- Its reference maps to one live trade.
+- Its amount equals the snapshotted listing price in Luna exactly.
+- Its resolved payer is the buyer bound to that trade, including HTLC-routed
+  sender attribution where applicable.
+- It has not already been assigned to another trade.
+- It is macro-finalized.
+
+Wrong-reference, duplicate, partial, underpaid, overpaid, expired, or otherwise
+unattributable deposits never advance a trade. They enter manual review rather
+than triggering automatic refunds that could be abused with dust transactions.
+
+### Signed marketplace intents
+
+Listings and purchase orders are authenticated separately from their on-chain
+transactions.
+
+The seller signs a domain-separated listing intent containing at least the
+handle, seller address, price in Luna, fee, expiry, nonce, and protocol version.
+The buyer signs a purchase intent containing at least the trade ID, buyer and
+refund address, snapshotted price, expiry, nonce, and protocol version.
+
+The server verifies each signature and verifies that its public key resolves to
+the claimed wallet address. A message signature authorizes only the marketplace
+intent; it is never treated as an on-chain transaction signature.
+
+For the MVP:
+
+- Seller payout goes to the resolved wallet that owned the handle when the
+  listing was accepted.
+- Buyer refund goes to the wallet bound by the signed purchase intent.
+- A different payout or refund address is not accepted.
+
+## Wallet transaction choreography
+
+### Hub and Nimiq Pay have different signing behavior
+
+Hub's public `signTransaction` returns a serialized signed transaction without
+broadcasting it. NimConnect can submit exact fields for approval, receive the
+result, verify it, persist it, and broadcast it through the backend.
+
+The Nimiq Pay Mini App SDK exposes `sendBasicTransactionWithData`, which signs
+and broadcasts in one wallet-approved action and returns a transaction hash. It
+does not expose transaction sign-only. Its arbitrary-message signature cannot
+be converted into a transaction proof.
+
+The server supports both paths:
+
+- **Hub:** verify the returned serialized transaction against the server-issued
+  intent before persisting or broadcasting it.
+- **Nimiq Pay:** ignore client claims of success and independently locate and
+  verify the resulting on-chain transaction against the server-issued intent.
+
+Intent matching decides whether the backend will broadcast a returned
+transaction or accept a client callback as evidence. It does not override
+canonical registry semantics. The registry watcher still recognizes an
+otherwise valid release or buyer claim sent through another client.
+
+### `validityStartHeight` is freshness, not sequencing
+
+Nimiq currently considers a transaction valid at block `h` when:
+
+```text
+h >= validityStartHeight - BLOCKS_PER_BATCH
+h <  validityStartHeight + TRANSACTION_VALIDITY_WINDOW_BLOCKS
+```
+
+With the current policy that is a 60-block early tolerance and a 7,200-block
+window. A future `validityStartHeight` is therefore not a strict "do not include
+before" condition and cannot make `RELEASE` and `CLAIM` atomic or guarantee
+their order.
+
+For each release or claim, the server obtains the current height from its own
+consensus-established RPC, creates a fresh intent, and accepts only a returned
+transaction whose network, sender, registry recipient, value, fee, data, flags,
+and validity height match that intent. If it expires, the server requests a new
+wallet approval; it never edits or reuses an expired signature.
+
+The server does not ask the buyer to pre-sign `CLAIM` before a release is
+confirmed. The client receives its own signed transaction and could broadcast
+it independently, so pre-signing cannot be treated as server-exclusive control.
 
 ## Trade flow
 
-Funds move directly between the buyer and seller through Hashed Time-Locked
-Contracts (HTLC) — NimConnect's backend never custodies NIM, but it does
-custody a short-lived secret and controls transaction timing, so it is best
-understood as a **trusted, non-custodial coordinator**: the buyer and seller
-don't trust each other, but both trust the backend to sequence events
-correctly and stay available.
+### 1. List
 
-Two timers matter and must stay clearly separated:
+The seller submits a signed fixed-price listing. The server:
 
-- **HTLC timeout** (e.g. 48h): the on-chain, protocol-enforced deadline after
-  which the buyer can reclaim funds unconditionally. This is the outer bound
-  and never changes once the HTLCs are funded.
-- **Trade deadline** (e.g. 90 minutes, comfortably inside Nimiq's
-  `TRANSACTION_VALIDITY_WINDOW_BLOCKS`, ~2h): a marketplace-level, backend-
-  enforced window for the seller to release and the buyer to respond. It
-  exists entirely to keep signed transactions fresh; missing it fails the
-  trade but does **not** by itself return funds — the buyer still waits out
-  the HTLC timeout to reclaim, same as any other failed trade.
+- Resolves the current registry owner and requires it to match the seller.
+- Rejects a second active listing for the same handle.
+- Stores price and fee as integer Luna.
+- Requires `price > fee >= 0`, a positive seller payout, and configured minimum
+  and maximum trade values.
+- Snapshots the current winning claim transaction as the ownership epoch.
+- Clearly discloses that a snipe or absent buyer can cost the seller the handle
+  without payment.
 
-Steps:
+### 2. Reserve
 
-1. **List.** Seller lists an owned handle with a fixed NIM price.
-2. **Commit to buy.** The buyer's Hub-connected client generates a random
-   secret `s` and computes `H = hash(s)`. It builds two HTLC transactions,
-   both hash-locked on `H`, both refundable to the buyer after the HTLC
-   timeout:
-   - `HTLC_seller`: amount = `price - fee`, recipient = seller.
-   - `HTLC_fee`: amount = `fee`, recipient = NimConnect's fee address.
+The first valid buyer reservation wins an atomic database race. Only one trade
+may be active for a listing.
 
-   The buyer does **not** pre-sign a claim transaction — Nimiq transactions
-   are only valid for `TRANSACTION_VALIDITY_WINDOW_BLOCKS` (~2h) past their
-   `validityStartHeight`, and a pre-signed claim would go stale long before a
-   48h trade could resolve. Instead the buyer's client stays reachable
-   (push/in-app prompt) for the trade deadline.
-3. **Backend confirms funding.** `HandleSyncer` (`backend/handles_sync.go`)
-   only fetches transactions involving the registry address — it can't see
-   HTLC funding, which lands on a per-listing contract address. This needs a
-   **separate escrow watcher**, one per active listing, that: polls each
-   listing's `HTLC_seller`/`HTLC_fee` contract addresses (same "poll
-   confirmed history" approach as `HandleSyncer`, no mempool watching added
-   here either); validates the funding transactions match the listing's
-   exact price split and hash root, not merely "some payment arrived";
-   rejects or flags partial funding (only one of the two HTLCs funded, or
-   funded for the wrong amount); and rejects a second buyer's funding attempt
-   once a listing is already funded, so two buyers can't race to fund the
-   same listing concurrently. The listing is marked funded, and the trade
-   deadline starts, only once both HTLCs are validated and macro-finalized.
-4. **Seller releases.** The seller signs and sends `RELEASE` for the handle.
-   The backend's sweep picks it up once **confirmed** — not from the mempool,
-   which can drop or reorder a transaction before it lands.
-5. **Buyer claims.** On seeing a confirmed `RELEASE`, the backend prompts the
-   buyer (who must respond within the trade deadline) to sign and broadcast a
-   fresh `CLAIM` with a current `validityStartHeight`. The backend then waits
-   for that `CLAIM` to confirm **and** for the registry rebuild to resolve the
-   buyer as the actual winner (i.e. no one else's claim landed first for this
-   release epoch).
-6. **Settle only on a macro-finalized win.** A micro-block inclusion is
-   reversible until the next macro block finalizes it — Nimiq's own finality
-   model. Revealing `s` is irreversible, so the backend must wait for the
-   buyer's claim to be part of a *macro-finalized* registry state (not merely
-   "confirmed" in a micro block) before disclosing anything. Only then does
-   it hand `s` to the seller (who redeems `HTLC_seller` themselves) and
-   redeem `HTLC_fee` itself. If the buyer was sniped — someone else's claim
-   wins the handle first — the backend never reveals `s`. Both HTLCs sit
-   unredeemed until the HTLC timeout. **The buyer never loses money to a
-   snipe; the seller loses the handle without payment.** This must be
-   disclosed to sellers before they list. The same macro-finality bar applies
-   to step 3's funding confirmation, not only to the winning claim.
-7. **Trade-deadline miss.** If the seller doesn't release, or the buyer
-   doesn't respond to claim, within the trade deadline, the trade is marked
-   failed. No further backend action is taken; the buyer's funds sit in the
-   HTLCs until the (separate, longer) HTLC timeout elapses. No fee is ever
-   collected on a trade that didn't settle.
-8. **Reclaiming after timeout is not automatic — it needs the buyer's
-   signature.** A `TimeoutResolve` proof must be signed by the HTLC's
-   original sender (`core-rs-albatross`'s `htlc_contract.rs`: the check is
-   `signature_proof_sender.is_signed_by(&self.sender)`). Nothing executes
-   this for the buyer without their key. In practice: the buyer's client
-   detects the elapsed timeout and prompts them to sign and broadcast the
-   reclaim — "automatic" here means "the client surfaces the prompt without
-   the buyer having to remember," not "requires no action." If the buyer
-   never returns to sign it, the funds remain protocol-recoverable by them
-   indefinitely, but nobody else can trigger the reclaim on their behalf.
+The server revalidates seller ownership, creates the random escrow reference,
+snapshots all amounts and addresses, and gives the buyer a short funding
+deadline. An unfunded reservation may expire without an on-chain action.
 
-## Trust surface
+### 3. Fund escrow
 
-- **Backend never holds NIM.** Funds sit in buyer-funded HTLC contracts;
-  redemption requires the recipient's own key plus the preimage.
-- **Backend does hold a short-lived secret and controls trade sequencing.**
-  It must not disclose `s` until the buyer's `CLAIM` is a *confirmed
-  registry winner*, not merely broadcast. Revealing `s` any earlier lets the
-  seller redeem `HTLC_seller` without the handle ever changing hands. This is
-  the single invariant the whole trust model rests on, and it depends on the
-  backend staying available and honest through step 6 — the design does not
-  make this trustless, only non-custodial of funds.
-- **Sniping window** between a confirmed `RELEASE` and the buyer's `CLAIM`
-  confirming as winner: real and unmitigated beyond prompting the buyer
-  immediately. Cost of a snipe falls entirely on the seller (lost handle,
-  no payment), never on the buyer.
-- **Seller must be online** to redeem `HTLC_seller` after the backend relays
-  `s`. Not blocking (the HTLC's own timeout is well past the trade window),
-  but worth a reminder notification.
-- **Buyer must be reachable within the trade deadline** to sign a fresh claim
-  after the seller releases. Missing it fails the trade (funds still safe,
-  just tied up until the HTLC timeout).
+The buyer signs the purchase intent and sends exactly the listed price to the
+escrow wallet with the trade reference.
+
+- Hub uses an ordinary checkout/payment with the reference as `extraData`.
+- Nimiq Pay uses `sendBasicTransactionWithData`.
+
+The escrow watcher verifies the deposit independently. The trade moves to
+`FUNDED` only after macro finality. Until then it remains provisional and the
+seller is never asked to release.
+
+The buyer's original inbound network fee is not part of escrow and cannot be
+refunded. "Full refund" means the full sale price received into escrow.
+
+### 4. Establish claim readiness
+
+Before enabling the seller's release action, the server requires:
+
+- A funded, macro-finalized escrow liability.
+- The seller still being the current owner for the snapshotted ownership epoch.
+- A healthy registry watcher, escrow watcher, database, signer, and refund
+  reserve.
+- The buyer being actively connected and explicitly acknowledging readiness to
+  claim.
+
+Readiness reduces the seller's risk but is not a guarantee: the buyer can still
+disconnect or refuse after release.
+
+### 5. Release
+
+The server issues a fresh, exact `RELEASE` transaction intent to the seller.
+
+- With Hub, the server verifies and broadcasts the signed result.
+- With Nimiq Pay, the wallet broadcasts and the server independently verifies
+  the chain transaction.
+
+A confirmed release immediately advances the trade to `AWAITING_CLAIM` and
+triggers the buyer notification. The release remains provisional until macro
+finality, and no money moves yet.
+
+If the expected seller independently broadcasts a protocol-valid release after
+the trade's exact deposit has been observed, the watcher records and follows
+that release even if funding is still finalizing. The server cannot pretend the
+release did not happen merely because it did not use the issued intent. Payout
+still waits for macro-finalized funding and ownership.
+
+### 6. Claim
+
+Only after the release is confirmed does the server issue a fresh, exact
+`CLAIM` intent to the bound buyer.
+
+- With Hub, the server verifies and broadcasts the signed result.
+- With Nimiq Pay, the wallet broadcasts and the server independently verifies
+  it.
+
+The server checks the resolved controlling wallet rather than only the raw
+transaction sender. A claim from any other wallet is a competing public claim,
+not fulfillment of the marketplace trade.
+
+Conversely, any protocol-valid claim by the bound buyer after the recognized
+release fulfills the ownership side of the trade, even if the buyer sent it
+outside the marketplace UI. If that buyer becomes the macro-finalized winner,
+the seller must be paid; refunding the buyer would give them both the handle and
+the sale price.
+
+### 7. Resolve
+
+The server replays canonical registry history through the shared resolver. It
+does not settle from a transaction hash, client callback, mempool observation,
+or a single reversible micro-block.
+
+Settlement becomes eligible only when:
+
+- The release and winning claim are in canonical history.
+- The release belongs to the expected ownership epoch.
+- The exact bound buyer is the resolved owner.
+- That registry state is macro-finalized.
+
+The release and claim do not have to be the exact transaction hashes returned
+through the intended wallet flow. They must satisfy the shared protocol, occur
+in the correct release epoch, and resolve to the expected seller and buyer.
+
+If a reorganization removes or reorders provisional events, the trade rolls
+back to the matching earlier state and the server re-prompts while its deadline
+and transaction validity allow.
+
+### 8. Pay or refund
+
+If the buyer is the macro-finalized winner, the settlement worker sends:
+
+```text
+seller payout = sale price - marketplace fee
+```
+
+The marketplace fee is recognized only after the payout is submitted. The
+outbound payout network fee is an operating cost paid from the marketplace fee
+or operating reserve; it is never silently deducted from the seller's quoted
+payout.
+
+The buyer receives a full-principal refund and the seller receives no payment
+when:
+
+- The seller never produces a valid release before the deadline.
+- The buyer never produces a valid claim before the post-release deadline.
+- A different claimant wins.
+- The expected release or claim is invalidated and cannot be retried in time.
+- An operational safety gate fails after funding and the seller has not yet
+  released.
+
+NimConnect absorbs the refund transaction fee and collects no marketplace fee.
+The buyer's original inbound network fee remains spent.
+
+## Deadlines and cancellation
+
+The marketplace uses short server deadlines, all comfortably within Nimiq's
+transaction validity window:
+
+- Reservation/funding deadline.
+- Seller release deadline after macro-finalized funding.
+- Buyer claim deadline after confirmed release.
+
+Exact durations are configuration, not protocol constants, and are snapshotted
+on each trade.
+
+Before a valid release is observed, either party may cancel. If escrow was
+funded, cancellation queues a full-principal refund.
+
+After a valid release is observed, cancellation is impossible because the
+seller may already have lost the handle. The trade must reach either:
+
+- `SETTLED`, if the exact buyer wins; or
+- `REFUNDED`, if the buyer does not win.
+
+A released handle is never automatically relisted.
+
+## Persisted state and accounting
+
+At minimum, persist:
+
+### `marketplace_listings`
+
+- Listing ID and protocol version.
+- Handle and snapshotted ownership-epoch transaction.
+- Seller/payout address.
+- Price and fee in Luna.
+- Signed listing intent and nonce.
+- Status and timestamps.
+
+### `marketplace_trades`
+
+- Trade ID and unique escrow reference.
+- Listing ID, handle, buyer/refund address, and seller/payout address.
+- Price, fee, payout amount, and all snapshotted deadlines.
+- State and monotonic state-version number.
+- Deposit, release, claim, payout, and refund transaction hashes.
+- Canonical block height/index and macro-finality evidence for relevant events.
+- Signed purchase intent.
+
+### `escrow_ledger`
+
+An append-only double-entry ledger recording deposits, buyer liabilities,
+seller payables, marketplace fees, network-fee expenses, payouts, refunds, and
+manual adjustments. Existing rows are never edited or deleted; corrections use
+compensating entries.
+
+### `settlement_operations`
+
+One durable operation per attempted payout or refund, containing the
+deterministic operation ID, intended transaction fields, serialized signed
+transaction, transaction hash, broadcast state, retry state, and timestamps.
+
+Database constraints enforce:
+
+- One active listing per handle.
+- One active trade per listing.
+- One deposit assignment per transaction hash.
+- Unique escrow references.
+- At most one terminal financial result per trade: payout or refund, never both.
+
+## Trade state machine
+
+The persisted state machine is:
+
+```text
+LISTED
+  -> RESERVED
+  -> AWAITING_DEPOSIT
+  -> DEPOSIT_FINALIZING
+  -> FUNDED
+  -> AWAITING_RELEASE
+  -> RELEASE_CONFIRMING
+  -> AWAITING_CLAIM
+  -> CLAIM_CONFIRMING
+  -> SETTLEMENT_PENDING
+  -> SETTLED
+
+Any pre-release failure after funding:
+  -> REFUND_PENDING -> REFUNDED
+
+Any post-release failure:
+  -> FAILED_AFTER_RELEASE -> REFUND_PENDING -> REFUNDED
+
+Ambiguous money or chain state:
+  -> MANUAL_REVIEW
+```
+
+Every transition uses a database transaction and compares the expected current
+state/version. Duplicate jobs, callbacks, watcher results, or retries are
+idempotent no-ops.
+
+The diagram shows the intended UI sequence, not an assumption that clients
+obey it. Watchers may record an out-of-band release or claim from any
+nonterminal state after an exact deposit is observed. Settlement then evaluates
+all funding and ownership prerequisites from canonical history rather than
+discarding the event because it arrived "too early" for the UI state.
+
+## Custody and trust surface
+
+### What users trust NimConnect to do
+
+- Keep escrow funds solvent and available.
+- Never pay before the exact buyer is macro-finalized as owner.
+- Refund the full escrow principal when the trade fails.
+- Protect the custody signing key.
+- Remain available through release, claim, payout, and refund.
+- Operate the registry resolver correctly.
+
+A compromised or malicious backend can steal, freeze, or misdirect escrowed
+funds. The product must describe the flow as custodial escrow, not trustless or
+non-custodial.
+
+### What the server does not trust
+
+The server does not trust:
+
+- A client-supplied transaction hash or status.
+- A client-supplied sender, owner, amount, fee, height, or finality claim.
+- A signed transaction until every field is decoded and matched to the stored
+  intent.
+- A registry API snapshot without canonical replay.
+- A micro-block inclusion as final settlement.
+
+The inverse is also enforced: a canonical protocol-valid event is not ignored
+merely because a client omitted its callback or used a different wallet UI.
+
+### Seller risk
+
+The public interval between release and claim cannot be eliminated with this
+protocol. A competing claimant can win, or the buyer can disappear after the
+seller releases. In either case the buyer is refunded and the seller receives
+no payment, but the seller may have permanently lost the handle.
+
+The UI must disclose this before listing and again before release.
+
+## Custody controls
+
+Before mainnet operation:
+
+- Run escrow signing in an isolated service with an encrypted key and no
+  private-key material in the application database, logs, traces, or error
+  reports.
+- Restrict the signer to persisted, server-validated payout/refund operations
+  and enforce per-transaction and daily limits.
+- Rate-limit reservations, cancellations, failed trades, and refunds per wallet
+  and per handle. Apply cooldowns and a minimum trade value so colluding
+  buyer/seller accounts cannot repeatedly force NimConnect to pay refund fees.
+- Persist the signed outgoing transaction and its hash before broadcast. A
+  crash may rebroadcast the identical transaction but must never construct a
+  second payment.
+- Maintain an operating NIM reserve large enough to pay full-principal refunds
+  plus outbound transaction fees.
+- Continuously reconcile:
+
+  ```text
+  spendable escrow balance
+    >= outstanding buyer liabilities
+     + queued seller payouts
+     + queued refund fees
+  ```
+
+- Pause new reservations and disable seller release if reconciliation fails,
+  the signer is unavailable, the registry watcher is stale, or refund capacity
+  is insufficient.
+- Provide an emergency pause that blocks new trades and releases while still
+  allowing verified refunds.
+- Test key recovery and settlement recovery before accepting real funds.
 
 ## Error handling
 
-- `RELEASE` from a non-owner, or before the activation height, is ignored by
-  the registry rebuild, same as any other malformed or unauthorized claim
-  data today.
-- If the buyer's `CLAIM` fails to confirm as the registry winner (snipe or
-  broadcast failure), the backend takes no further action; the buyer's HTLC
-  timeout path is unaffected and requires no backend involvement to execute.
-- If the backend crashes between observing a confirmed `RELEASE` and
-  relaying `s`, it must recover `s` from persisted state and resume from
-  "waiting for buyer's claim to confirm as winner" on restart — `s` is never
-  derivable from anything else once generated, so it must be durably stored
-  the moment the buyer submits it, before any HTLC is even funded.
-- A listing whose seller no longer owns the handle at purchase time (e.g. it
-  was released or transferred outside the marketplace) is invalidated before
-  the buyer funds anything.
+- **Wrong or missing deposit reference:** quarantine for manual review; do not
+  start a trade.
+- **Wrong amount or payer:** quarantine; do not combine partial payments in the
+  MVP.
+- **Duplicate deposit callback or watcher result:** no-op after the first
+  durable assignment.
+- **Late deposit after reservation expiry:** manual review and verified refund;
+  never revive the old trade automatically.
+- **Seller ownership changed before release:** invalidate the trade and refund
+  the buyer.
+- **Seller silent before release:** refund the buyer and optionally return the
+  listing to `LISTED`.
+- **Buyer silent after release:** refund the buyer; terminate the listing
+  because the seller may no longer own the handle. Before refunding, replay
+  canonical history once more to prove the bound buyer did not claim through a
+  different path.
+- **Competing claim wins:** refund the buyer; never pay the seller or collect a
+  marketplace fee.
+- **Release or claim reorganization:** roll back provisional registry state; do
+  not roll back a macro-finalized settlement assumption because settlement is
+  never executed before macro finality.
+- **Payout/refund broadcast uncertainty:** query by the persisted transaction
+  hash and rebroadcast the identical bytes when safe; never create a replacement
+  operation without manual reconciliation.
+- **Backend restart:** resume from persisted state and durable settlement
+  operations. No correctness-critical state exists only in memory.
+- **Signer, database, watcher, or RPC unhealthy:** block new release actions.
+  If release has not occurred, queue refunds; if release already occurred,
+  recover service and resolve the canonical winner before any financial action.
 
 ## Tests
 
-- `RELEASE` claim payload builds and parses byte-for-byte with type `0x07`,
-  mirrored between `backend/handles.go` and `packages/profile-client`.
-- A `0x07` payload before the activation height is ignored, not treated as a
-  release; the same payload at or after activation is honored.
-- Registry rebuild: a valid post-activation `RELEASE` from the current owner
-  frees the handle as of its `(blockHeight, txIndex)`; a `RELEASE` from any
-  other sender is ignored; a `CLAIM` after a valid `RELEASE` wins the handle
-  fresh.
-- `RELEASE` payload fits Nimiq Pay's 64-char text-transaction limit for the
-  same handle lengths the existing `CLAIM` supports.
-- HTLC construction: `HTLC_seller` and `HTLC_fee` share the same hash root,
-  sum to the listing price, and are both refundable to the buyer after the
-  same HTLC timeout.
-- Backend relay: `s` is only released after the buyer's `CLAIM` is confirmed
-  as registry winner, never on a merely-broadcast or mempool-observed
-  transaction; relay and `HTLC_fee` self-redemption both use persisted `s`
-  and survive a backend restart at any point in the flow.
-- Snipe path: a competing claim confirming before the buyer's leaves `s`
-  unrevealed; both HTLCs remain refundable to the buyer only, never
-  redeemable by the seller or the fee address.
-- Trade-deadline miss (seller silent, or buyer unreachable after release)
-  fails the trade without collecting a fee; funds remain recoverable only via
-  the HTLC timeout.
-- A listing is invalidated if the seller no longer owns the handle at
-  purchase time.
+### Shared protocol
+
+- `RELEASE` builds and parses byte-for-byte as type `0x07` in backend,
+  `packages/profile-client`, and NimFeed fixtures.
+- Pre-activation `0x07` is ignored and the same payload at/after activation is
+  honored.
+- A release from the current owner clears the handle; a release from any other
+  wallet is a recorded no-op.
+- Claim/release/reclaim sequences replay identically across every reader.
+- HTLC-routed registry transactions resolve to their controlling wallet.
+- The full supported handle range fits the Nimiq Pay release envelope.
+
+### Wallet behavior
+
+- Hub returns a signed release/claim transaction without broadcasting; the
+  server rejects any field that differs from its intent.
+- Nimiq Pay direct-send results are accepted only after independent on-chain
+  verification.
+- A valid out-of-band seller release advances a funded trade, and a valid
+  out-of-band claim by the bound buyer counts as fulfillment.
+- A buyer who becomes the macro-finalized owner through another client causes
+  exactly one seller payout and is never also refunded.
+- Message signatures cannot be submitted as transaction proofs.
+- Validity-height tests cover the 60-block early tolerance, 7,200-block window,
+  expiry, and fresh re-signing. No test treats validity height as strict
+  sequencing.
+- The buyer is never asked to sign a claim before a release is confirmed.
+
+### Escrow and state
+
+- Exact deposits advance only after macro finality.
+- Wrong reference, amount, payer, duplicate, or late deposits enter manual
+  review and never fund a trade.
+- Two buyers racing for one listing produce one reservation.
+- Duplicate callbacks and jobs cannot skip or repeat a transition.
+- Seller cancellation before release creates one full-principal refund.
+- Seller silence creates one full-principal refund.
+- Buyer silence after release creates one full-principal refund and no payout.
+- A competing claimant winning creates one full-principal refund, no seller
+  payout, and no marketplace fee.
+- The exact buyer winning becomes payable only after macro finality.
+- A reorganization before macro finality rolls provisional state back without
+  releasing funds.
+
+### Settlement and accounting
+
+- Payout and refund are mutually exclusive for every trade.
+- Crashes before signing, after signing, and after broadcast recover without a
+  duplicate transfer.
+- A successful payout sends the quoted seller amount and records the fee and
+  network expense separately.
+- Every failed trade refunds the full escrow principal; NimConnect pays the
+  outbound fee.
+- Ledger liabilities reconcile to on-chain escrow balances.
+- Insufficient refund reserve, stale watchers, or an unavailable signer disables
+  release.
+
+## Rollout
+
+1. Implement and test shared `RELEASE` parsing/replay in NimConnect,
+   `packages/profile-client`, and NimFeed.
+2. Deploy the NimFeed append-only event migration and full rescan with release
+   handling still gated by the future activation height.
+3. Implement the escrow wallet, ledger, watcher, settlement worker, solvency
+   checks, and emergency pause.
+4. Exercise successful, canceled, silent-buyer, silent-seller, snipe, reorg,
+   crash-recovery, and wrong-deposit flows on Nimiq testnet using both Hub and
+   Nimiq Pay.
+5. Perform a custody-key recovery drill and ledger/on-chain reconciliation.
+6. Deploy both readers with the same activation height.
+7. Start mainnet with low per-trade and aggregate escrow limits and manual
+   operational review.
+8. Raise limits only after observed payout/refund and recovery behavior matches
+   the ledger.
+
+## Implementation gates
+
+The spec remains Draft until all of the following are decided and documented:
+
+- Marketplace fee and maximum network-fee policy.
+- Reservation, release, and claim deadline defaults.
+- Escrow key storage, recovery, and signer deployment.
+- Maximum per-trade and aggregate escrow exposure.
+- Manual-review and unexpected-deposit recovery procedure.
+- Shared activation height and coordinated NimFeed deployment.
+- Exact macro-finality evidence exposed by the production RPC/indexer.
 
 ## Revision history
 
-- **2026-07-27 (second revision):** Corrected the wallet-surface finding from
-  "Nimiq Pay can't do it, use Hub" to "neither Hub nor Pay can construct or
-  sign an HTLC redemption proof today" — this is now flagged as a blocking
-  external dependency, not an MVP scoping choice, with a custodial fallback
-  named explicitly as the only currently-buildable alternative. Fixed the
-  reveal/funding threshold from "confirmed" to macro-block-finalized (micro
-  blocks are reversible; revealing `s` is not). Corrected "buyer reclaims
-  automatically" — a `TimeoutResolve` proof requires the buyer's own
-  signature; nothing executes it for them. Replaced the NimFeed
-  claims-plus-releases-table plan with an append-only event log and a
-  chronological resolver, since the existing `[username+address]`-keyed
-  table silently overwrites history on a reclaim and the earlier plan was
-  circular (release validity checked against a snapshot that replay is
-  supposed to produce). Added a dedicated escrow-funding watcher, since
-  `HandleSyncer` only sees the registry address, not per-listing HTLC
-  contracts, and it needs to guard against partial funding and concurrent
-  buyers.
-
-- **2026-07-27 (first revision):** Reallocated `RELEASE` from `0x02` (collided
-  with NimFeed's `POST_INLINE`) to `0x07`, added an activation height to
-  prevent retroactive reinterpretation of historical data, added the NimFeed
-  migration section, dropped the pre-signed buyer claim in favor of an
-  on-demand fresh signature (transaction validity is ~2h, incompatible with a
-  48h trade window), separated the HTLC timeout from a shorter trade
-  deadline, restricted the MVP to Hub (the installed Nimiq Pay provider
-  can't build or redeem HTLCs), and fixed the reveal condition so `s` is only
-  ever disclosed after the buyer's claim is a *confirmed registry winner* —
-  closing the path where a snipe could previously still cost the buyer their
-  money.
+- **2026-07-27 (custodial rewrite):** Replaced HTLC settlement with pooled
+  server escrow; retained 64-byte-compatible `RELEASE`/`CLAIM`; added signed
+  marketplace intents, authoritative server verification, Hub sign-only versus
+  Nimiq Pay sign-and-send behavior, validity-height limits, macro-final payout,
+  full-principal server-funded refunds, an explicit trade/ledger state machine,
+  custody controls, and operational rollout gates.
+- **2026-07-27 (HTLC review revisions):** Corrected the shared type collision,
+  activation semantics, NimFeed replay migration, macro-finality threshold,
+  transaction validity assumptions, HTLC wallet limitations, refund behavior,
+  and buyer-versus-seller snipe losses in the earlier non-custodial proposal.
+- **2026-07-27 (initial draft):** Proposed fixed-price handle trades using a new
+  release event and HTLC settlement.
