@@ -77,3 +77,35 @@ func TestRPCErrorSurfaces(t *testing.T) {
 		t.Fatal("expected error from RPC error response")
 	}
 }
+
+func TestGetLastMacroBlockNumber(t *testing.T) {
+	srv := fakeRPC(t, map[string]string{
+		"getLastMacroBlock": `{"number": 4200}`,
+	})
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL)
+	got, err := rpc.GetLastMacroBlockNumber()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 4200 {
+		t.Fatalf("want 4200, got %d", got)
+	}
+}
+
+func TestSendBasicTransactionWithData(t *testing.T) {
+	srv := fakeRPC(t, map[string]string{
+		"sendBasicTransactionWithData": `"deadbeef"`,
+	})
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL)
+	hash, err := rpc.SendBasicTransactionWithData("NQ11 ESCROW", "NQ22 SELLER", 950, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != "deadbeef" {
+		t.Fatalf("want deadbeef, got %q", hash)
+	}
+}

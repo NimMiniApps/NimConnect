@@ -32,6 +32,7 @@ type rpcTx struct {
 	To               string `json:"to"`
 	Data             string `json:"data"`
 	RecipientData    string `json:"recipientData"`
+	Value            uint64 `json:"value"`
 	BlockNumber      uint64 `json:"blockNumber"`
 	TransactionIndex uint64 `json:"transactionIndex"`
 	// Account types: 0 basic, 1 vesting, 2 HTLC contract. Nimiq Pay routes
@@ -111,4 +112,27 @@ func (c *NimiqRPC) GetTransactionByHash(hash string) (*rpcTx, error) {
 		return nil, err
 	}
 	return &tx, nil
+}
+
+// GetLastMacroBlockNumber returns the most recently macro-finalized block
+// height. Transactions at or below this height are final.
+func (c *NimiqRPC) GetLastMacroBlockNumber() (uint64, error) {
+	var block struct {
+		Number uint64 `json:"number"`
+	}
+	if err := c.call("getLastMacroBlock", []any{}, &block); err != nil {
+		return 0, err
+	}
+	return block.Number, nil
+}
+
+// SendBasicTransactionWithData asks the connected node to sign and broadcast
+// a transaction from sender. It must only be used with the dedicated,
+// access-restricted escrow signing node which has that key unlocked.
+func (c *NimiqRPC) SendBasicTransactionWithData(sender, recipient string, valueLuna uint64, dataHex string) (string, error) {
+	var hash string
+	if err := c.call("sendBasicTransactionWithData", []any{sender, recipient, dataHex, valueLuna, 0, nil}, &hash); err != nil {
+		return "", err
+	}
+	return hash, nil
 }
