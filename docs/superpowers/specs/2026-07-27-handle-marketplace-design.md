@@ -146,15 +146,19 @@ signing an HTLC redemption proof — this affects Hub, not only Nimiq Pay.
 
 - The Nimiq Pay mini-app provider (`@nimiq/mini-app-sdk/dist/provider.d.ts`)
   exposes only basic sends and staking operations. No HTLC methods at all.
-- Nimiq Hub's public `signTransaction` (`@nimiq/hub-api`'s
-  `SignTransactionRequest`) takes a basic sender/recipient/value/data shape —
-  no `senderType`, preimage, or HTLC proof input. `@nimiq/core`'s generic
-  `Transaction.sign()` is explicit: *"HTLC redemption is not supported and
-  will throw."*
-- Hub does have `SetupSwapRequest`/`RefundSwapRequest`, which is how Nimiq
-  Pay's existing swap-routed claims redeem HTLCs today — but those are
-  restricted to Nimiq's own trusted origins, not callable by a third-party
-  app like NimConnect.
+- Hub's generic `signTransaction` route (Keyguard's `SignTransaction.js`)
+  *can* infer `senderType: HTLC` when the sender is a recognized HTLC
+  contract — so Hub isn't blind to the account type. But that route always
+  produces a bare `SignatureProof`, never the `RegularTransfer` or
+  `TimeoutResolve` proof envelope an outgoing HTLC transaction actually
+  requires. `@nimiq/core`'s generic `Transaction.sign()` documents the same
+  gap directly: *"HTLC redemption is not supported and will throw."* The
+  precise limitation is proof construction, not sender-type recognition.
+- Hub only builds those proof envelopes in its specialized swap/refund views
+  (e.g. `RefundSwapSuccess.vue`), which back `SetupSwapRequest`/
+  `RefundSwapRequest` — how Nimiq Pay's existing swap-routed claims redeem
+  HTLCs today. Both are absent from Hub's third-party RPC whitelist
+  (`RpcApi.ts`), so NimConnect cannot call them from an ordinary origin.
 
 NimConnect holds no private keys itself (`src/services/hub.ts` only ever
 delegates to Hub's checkout/sign flows) — there is no in-app fallback that
