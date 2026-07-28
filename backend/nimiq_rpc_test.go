@@ -109,3 +109,19 @@ func TestSendBasicTransactionWithData(t *testing.T) {
 		t.Fatalf("want deadbeef, got %q", hash)
 	}
 }
+
+func TestSendRawTransaction(t *testing.T) {
+	srv := fakeRPC(t, map[string]string{
+		"sendRawTransaction": `"cafebabe"`,
+	})
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL)
+	hash, err := rpc.SendRawTransaction("deadbeef")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != "cafebabe" {
+		t.Fatalf("want cafebabe, got %q", hash)
+	}
+}

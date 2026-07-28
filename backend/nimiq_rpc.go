@@ -91,7 +91,9 @@ func (c *NimiqRPC) call(method string, params []any, out any) error {
 	// whenever present (metadata is ignored).
 	var probe map[string]json.RawMessage
 	if json.Unmarshal(envelope.Result, &probe) == nil {
-		if data, ok := probe["data"]; ok {
+		// A transaction itself also has a data field. Only unwrap the PoS
+		// gateway envelope, which includes metadata alongside its data payload.
+		if data, ok := probe["data"]; ok && probe["metadata"] != nil {
 			return json.Unmarshal(data, out)
 		}
 	}
@@ -132,6 +134,17 @@ func (c *NimiqRPC) GetLastMacroBlockNumber() (uint64, error) {
 func (c *NimiqRPC) SendBasicTransactionWithData(sender, recipient string, valueLuna uint64, dataHex string) (string, error) {
 	var hash string
 	if err := c.call("sendBasicTransactionWithData", []any{sender, recipient, dataHex, valueLuna, 0, nil}, &hash); err != nil {
+		return "", err
+	}
+	return hash, nil
+}
+
+// SendRawTransaction broadcasts an already-signed, serialized transaction.
+// It is used for the Hub choreography path, where the wallet signs but does
+// not broadcast.
+func (c *NimiqRPC) SendRawTransaction(rawHex string) (string, error) {
+	var hash string
+	if err := c.call("sendRawTransaction", []any{rawHex}, &hash); err != nil {
 		return "", err
 	}
 	return hash, nil

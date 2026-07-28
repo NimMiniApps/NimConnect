@@ -10,6 +10,8 @@ export interface FetchHandleRegistryOptions {
     maxTx?: number;
     /** Override HTLC-owner resolution instead of the built-in RPC-backed lookup. */
     resolveHtlcOwner?: ResolveHandleRegistryOptions['resolveHtlcOwner'];
+    /** Forwarded to resolveHandleRegistry; defaults to Infinity (releases remain inert). */
+    releaseActivationHeight?: ResolveHandleRegistryOptions['releaseActivationHeight'];
 }
 /**
  * Fetches the registry address's transaction history from a Nimiq RPC and

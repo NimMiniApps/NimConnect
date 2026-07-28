@@ -81,5 +81,6 @@ export async function fetchHandleRegistry(options = {}) {
     }));
     return resolveHandleRegistry(txs, {
         resolveHtlcOwner: options.resolveHtlcOwner ?? ((contractAddress) => resolveHtlcOwnerViaRpc(rpcUrl, contractAddress)),
+        releaseActivationHeight: options.releaseActivationHeight,
     });
 }

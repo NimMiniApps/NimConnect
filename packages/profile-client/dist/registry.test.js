@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildHandleClaimPayload } from './claim.js';
+import { buildHandleClaimPayload, buildHandleReleasePayload } from './claim.js';
 import { parseClaimTxData, resolveHandleRegistry, resolveHandleByAddress, isHandleAvailable, ownerFromHtlcCreationData, HTLC_ACCOUNT_TYPE, } from './registry.js';
 // The tx `data` field on chain is the hex-encoded raw bytes of the "NFH:..."
 // text envelope — mirrors backend/handles_registry_test.go's claimTx helper.
@@ -8,14 +8,29 @@ function claimTx(hash, sender, handle, blockHeight, txIndex) {
     const data = Array.from(extraData, (c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
     return { hash, sender, data, blockHeight, txIndex };
 }
+function releaseTx(hash, sender, handle, blockHeight, txIndex) {
+    const { extraData } = buildHandleReleasePayload(handle);
+    const data = Array.from(extraData, (c) => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+    return { hash, sender, data, blockHeight, txIndex };
+}
 describe('parseClaimTxData', () => {
     it('parses the NFH text-envelope form', () => {
         const tx = claimTx('t1', 'NQ11 X', 'chuck', 1, 0);
-        expect(parseClaimTxData(tx.data)).toEqual({ handle: 'chuck' });
+        expect(parseClaimTxData(tx.data)).toEqual({ handle: 'chuck', isRelease: false });
     });
     it('returns null for unrelated tx data', () => {
         expect(parseClaimTxData('deadbeef')).toBeNull();
         expect(parseClaimTxData('not hex')).toBeNull();
+    });
+});
+describe('parseClaimTxData — release', () => {
+    it('parses a release payload and marks isRelease true', () => {
+        const tx = releaseTx('t1', 'NQ11 X', 'chuck', 1, 0);
+        expect(parseClaimTxData(tx.data)).toEqual({ handle: 'chuck', isRelease: true });
+    });
+    it('marks a claim payload isRelease false', () => {
+        const tx = claimTx('t1', 'NQ11 X', 'chuck', 1, 0);
+        expect(parseClaimTxData(tx.data)).toEqual({ handle: 'chuck', isRelease: false });
     });
 });
 describe('resolveHandleRegistry', () => {
@@ -47,6 +62,40 @@ describe('resolveHandleRegistry', () => {
             { hash: 'junk', sender: 'NQ44', data: 'zznothex', blockHeight: 1, txIndex: 0 },
         ]);
         expect(registry.size).toBe(0);
+    });
+});
+describe('resolveHandleRegistry — release and reclaim', () => {
+    it('a release from the current owner frees the handle for the next claim', async () => {
+        const registry = await resolveHandleRegistry([
+            claimTx('t1', 'NQ11 OWNER', 'chuck', 5, 0),
+            releaseTx('t2', 'NQ11 OWNER', 'chuck', 200, 0),
+            claimTx('t3', 'NQ22 NEWOWNER', 'chuck', 300, 0),
+        ], { releaseActivationHeight: 100 });
+        expect(registry.get('chuck')).toMatchObject({ address: 'NQ22 NEWOWNER', txHash: 't3' });
+    });
+    it('a release from a non-owner is a no-op', async () => {
+        const registry = await resolveHandleRegistry([
+            claimTx('t1', 'NQ11 OWNER', 'chuck', 5, 0),
+            releaseTx('t2', 'NQ99 IMPOSTOR', 'chuck', 200, 0),
+            claimTx('t3', 'NQ22 SNIPER', 'chuck', 300, 0),
+        ], { releaseActivationHeight: 100 });
+        expect(registry.get('chuck')?.address).toBe('NQ11 OWNER');
+    });
+    it('a release before the activation height is ignored like unknown data', async () => {
+        const registry = await resolveHandleRegistry([
+            claimTx('t1', 'NQ11 OWNER', 'chuck', 5, 0),
+            releaseTx('t2', 'NQ11 OWNER', 'chuck', 200, 0),
+            claimTx('t3', 'NQ22 SNIPER', 'chuck', 300, 0),
+        ], { releaseActivationHeight: 1000 });
+        expect(registry.get('chuck')?.address).toBe('NQ11 OWNER');
+    });
+    it('defaults releaseActivationHeight to Infinity — releases are inert unless explicitly enabled', async () => {
+        const registry = await resolveHandleRegistry([
+            claimTx('t1', 'NQ11 OWNER', 'chuck', 5, 0),
+            releaseTx('t2', 'NQ11 OWNER', 'chuck', 200, 0),
+            claimTx('t3', 'NQ22 SNIPER', 'chuck', 300, 0),
+        ]);
+        expect(registry.get('chuck')?.address).toBe('NQ11 OWNER');
     });
 });
 describe('resolveHandleByAddress', () => {

@@ -3,9 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const chooseAddress = vi.fn()
 const checkout = vi.fn()
 const signMessage = vi.fn()
+const signTransaction = vi.fn()
 
 vi.mock('@nimiq/hub-api', () => ({
-  default: vi.fn().mockImplementation(() => ({ chooseAddress, checkout, signMessage })),
+  default: vi.fn().mockImplementation(() => ({ chooseAddress, checkout, signMessage, signTransaction })),
 }))
 
 describe('hub service', () => {
@@ -14,6 +15,7 @@ describe('hub service', () => {
     chooseAddress.mockReset()
     checkout.mockReset()
     signMessage.mockReset()
+    signTransaction.mockReset()
   })
 
   it('chooseHubAddress returns the selected address', async () => {
@@ -54,6 +56,42 @@ describe('hub service', () => {
         value: 0,
         extraData,
         sender: 'NQ01 TEST',
+      }),
+    )
+  })
+
+  it('hubSignReleaseTransaction signs without broadcasting and returns raw hex + hash', async () => {
+    signTransaction.mockResolvedValue({ serializedTx: 'deadbeef', hash: 'release-hash' })
+    const { hubSignReleaseTransaction } = await import('./hub')
+
+    await expect(hubSignReleaseTransaction('chuck', 'NQ01 TEST', 42)).resolves.toEqual({
+      rawHex: 'deadbeef',
+      hash: 'release-hash',
+    })
+    expect(signTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appName: 'NimConnect',
+        sender: 'NQ01 TEST',
+        value: 0,
+        validityStartHeight: 42,
+      }),
+    )
+  })
+
+  it('hubSignClaimTransaction signs without broadcasting and returns raw hex + hash', async () => {
+    signTransaction.mockResolvedValue({ serializedTx: 'cafebabe', hash: 'claim-hash' })
+    const { hubSignClaimTransaction } = await import('./hub')
+
+    await expect(hubSignClaimTransaction('chuck', 'NQ01 TEST', 42)).resolves.toEqual({
+      rawHex: 'cafebabe',
+      hash: 'claim-hash',
+    })
+    expect(signTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appName: 'NimConnect',
+        sender: 'NQ01 TEST',
+        value: 0,
+        validityStartHeight: 42,
       }),
     )
   })

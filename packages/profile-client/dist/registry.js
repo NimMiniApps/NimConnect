@@ -6,6 +6,7 @@ const CLAIM_MAGIC0 = 0x4e;
 const CLAIM_MAGIC1 = 0x46;
 const CLAIM_VERSION = 0x01;
 const CLAIM_TYPE_PROFILE = 0x01;
+const CLAIM_TYPE_RELEASE = 0x07;
 const CLAIM_TEXT_PREFIX = 'NFH:';
 /** Nimiq account type: 0 basic, 1 vesting, 2 HTLC. Nimiq Pay routes claims
  * through swap HTLCs, so a Pay-originated claim tx's sender is often an
@@ -30,16 +31,22 @@ function parseClaimPayload(payload) {
     if (payload.length < 4 ||
         payload[0] !== CLAIM_MAGIC0 ||
         payload[1] !== CLAIM_MAGIC1 ||
-        payload[2] !== CLAIM_VERSION ||
-        payload[3] !== CLAIM_TYPE_PROFILE) {
+        payload[2] !== CLAIM_VERSION) {
         return null;
     }
+    let isRelease;
+    if (payload[3] === CLAIM_TYPE_PROFILE)
+        isRelease = false;
+    else if (payload[3] === CLAIM_TYPE_RELEASE)
+        isRelease = true;
+    else
+        return null;
     let rest = payload.slice(4);
     const zeroIdx = rest.indexOf(0);
     if (zeroIdx >= 0)
         rest = rest.slice(0, zeroIdx);
     const handle = bytesToAscii(rest);
-    return isValidHandle(handle) ? { handle } : null;
+    return isValidHandle(handle) ? { handle, isRelease } : null;
 }
 function parseClaimDataFromRaw(raw) {
     const text = bytesToAscii(raw);
@@ -49,13 +56,6 @@ function parseClaimDataFromRaw(raw) {
     }
     return parseClaimPayload(raw);
 }
-/**
- * Parses a transaction's hex data field into a claimed handle, or null if
- * it's not a claim (e.g. a post/follow on the same shared registry address).
- * Accepts the raw binary form (Nimiq Hub), the "NFH:" text envelope (Nimiq
- * Pay), and Nimiq Pay's double-hex-encoded variant. Mirrors
- * backend/handles.go's parseClaimData byte-for-byte.
- */
 export function parseClaimTxData(dataHex) {
     const raw = hexToBytes(dataHex);
     if (!raw)
@@ -104,16 +104,29 @@ async function claimantAddress(tx, resolveHtlcOwner, cache) {
  * the user (see backend/handles.go's claimantAddress).
  */
 export async function resolveHandleRegistry(txs, options = {}) {
+    const releaseActivationHeight = options.releaseActivationHeight ?? Infinity;
     const ordered = [...txs].sort((a, b) => a.blockHeight !== b.blockHeight ? a.blockHeight - b.blockHeight : a.txIndex - b.txIndex);
     const registry = new Map();
     const htlcOwnerCache = new Map();
     for (const tx of ordered) {
         const action = parseClaimTxData(tx.data);
-        if (!action || registry.has(action.handle))
+        if (!action)
+            continue;
+        const signer = await claimantAddress(tx, options.resolveHtlcOwner, htlcOwnerCache);
+        if (action.isRelease) {
+            if (tx.blockHeight < releaseActivationHeight)
+                continue;
+            const owner = registry.get(action.handle);
+            if (owner && compactAddress(owner.address) === compactAddress(signer)) {
+                registry.delete(action.handle);
+            }
+            continue;
+        }
+        if (registry.has(action.handle))
             continue;
         registry.set(action.handle, {
             handle: action.handle,
-            address: await claimantAddress(tx, options.resolveHtlcOwner, htlcOwnerCache),
+            address: signer,
             txHash: tx.hash,
             blockHeight: tx.blockHeight,
             txIndex: tx.txIndex,

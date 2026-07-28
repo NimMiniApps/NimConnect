@@ -127,3 +127,29 @@ func TestMarketplaceStore_PersistsAcrossRestart(t *testing.T) {
 		t.Fatalf("expected persisted trade to reload, got %+v ok=%v", got, ok)
 	}
 }
+
+func TestConsumeNonce_RejectsReuse(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	if err := s.ConsumeNonce("abc"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ConsumeNonce("abc"); err == nil {
+		t.Fatal("expected an error reusing a nonce")
+	}
+	if err := s.ConsumeNonce("def"); err != nil {
+		t.Fatal("a different nonce must still succeed")
+	}
+}
+
+func TestConsumeNonce_PersistsAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "marketplace.json")
+	s := NewMarketplaceStore(path)
+	if err := s.ConsumeNonce("abc"); err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded := NewMarketplaceStore(path)
+	if err := reloaded.ConsumeNonce("abc"); err == nil {
+		t.Fatal("expected the reloaded store to still reject a previously used nonce")
+	}
+}

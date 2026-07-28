@@ -9,6 +9,7 @@ export const HANDLE_REGISTRY_ADDRESS = 'NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 
 const CLAIM_MAGIC = [0x4e, 0x46];
 const CLAIM_VERSION = 0x01;
 const CLAIM_TYPE_PROFILE = 0x01;
+const CLAIM_TYPE_RELEASE = 0x07;
 const CLAIM_TEXT_PREFIX = 'NFH:';
 /** Mirrors NimFeed's normalizeUsername (3-31 chars, [a-z0-9_]). */
 const HANDLE_RE = /^[a-z0-9_]{3,31}$/;
@@ -32,6 +33,29 @@ export function buildHandleClaimPayload(handle) {
         ...CLAIM_MAGIC,
         CLAIM_VERSION,
         CLAIM_TYPE_PROFILE,
+        ...Array.from(handle, (c) => c.charCodeAt(0)),
+    ];
+    const extraDataBytes = new Uint8Array(bytes);
+    const payloadHex = bytes.map((b) => b.toString(16).padStart(2, '0')).join('');
+    return {
+        recipient: HANDLE_REGISTRY_ADDRESS,
+        extraData: CLAIM_TEXT_PREFIX + payloadHex,
+        extraDataBytes,
+    };
+}
+/**
+ * Builds the transaction payload for giving up a @handle you currently own.
+ * Only a transaction signed by the handle's resolved owner is honored by the
+ * registry once release handling has been activated.
+ */
+export function buildHandleReleasePayload(handle) {
+    if (!isValidHandle(handle)) {
+        throw new Error(`invalid handle: ${handle}`);
+    }
+    const bytes = [
+        ...CLAIM_MAGIC,
+        CLAIM_VERSION,
+        CLAIM_TYPE_RELEASE,
         ...Array.from(handle, (c) => c.charCodeAt(0)),
     ];
     const extraDataBytes = new Uint8Array(bytes);

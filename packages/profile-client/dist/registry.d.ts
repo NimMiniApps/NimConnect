@@ -21,15 +21,17 @@ export interface ResolvedHandleClaim {
     txIndex: number;
 }
 /**
- * Parses a transaction's hex data field into a claimed handle, or null if
- * it's not a claim (e.g. a post/follow on the same shared registry address).
+ * Parses a transaction's hex data field into a claim or release action, or
+ * null if it's neither (e.g. a post/follow on the shared registry address).
  * Accepts the raw binary form (Nimiq Hub), the "NFH:" text envelope (Nimiq
  * Pay), and Nimiq Pay's double-hex-encoded variant. Mirrors
  * backend/handles.go's parseClaimData byte-for-byte.
  */
-export declare function parseClaimTxData(dataHex: string): {
+export interface ParsedRegistryAction {
     handle: string;
-} | null;
+    isRelease: boolean;
+}
+export declare function parseClaimTxData(dataHex: string): ParsedRegistryAction | null;
 /**
  * Decodes an HTLC contract's real owner from its creation transaction's data
  * field (owner address is the first 20 bytes). Use this to build
@@ -51,6 +53,11 @@ export interface ResolveHandleRegistryOptions {
      * it returns null.
      */
     resolveHtlcOwner?: (contractAddress: string) => string | null | Promise<string | null>;
+    /**
+     * A release is honored only at or after this height. Defaults to Infinity,
+     * so release payloads remain inert until callers explicitly opt in.
+     */
+    releaseActivationHeight?: number;
 }
 /**
  * Resolves the shared on-chain handle registry from a raw list of

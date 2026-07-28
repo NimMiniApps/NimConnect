@@ -1,5 +1,5 @@
 import HubApi from '@nimiq/hub-api'
-import { buildHandleClaimPayload } from '@nimconnect/profile-client'
+import { buildHandleClaimPayload, buildHandleReleasePayload } from '@nimconnect/profile-client'
 
 const APP_NAME = 'NimConnect'
 const HUB_URL = import.meta.env.VITE_NIMIQ_HUB_URL ?? 'https://hub.nimiq.com'
@@ -54,4 +54,41 @@ export async function claimHandleWithHub(
 ): Promise<{ txHash: string }> {
   const { recipient, extraDataBytes } = buildHandleClaimPayload(handle)
   return hubCheckoutClaim({ recipient, extraData: extraDataBytes, sender })
+}
+
+async function hubSignTransaction(opts: {
+  recipient: string
+  extraData: Uint8Array
+  sender: string
+  validityStartHeight: number
+}): Promise<{ rawHex: string; hash: string }> {
+  const signed = await getHub().signTransaction({
+    appName: APP_NAME,
+    sender: opts.sender,
+    recipient: opts.recipient,
+    value: 0,
+    extraData: opts.extraData,
+    validityStartHeight: opts.validityStartHeight,
+  })
+  return { rawHex: signed.serializedTx, hash: signed.hash }
+}
+
+/** Signs (but does not send) the transaction that releases an owned handle. */
+export async function hubSignReleaseTransaction(
+  handle: string,
+  sender: string,
+  validityStartHeight: number,
+): Promise<{ rawHex: string; hash: string }> {
+  const { recipient, extraDataBytes } = buildHandleReleasePayload(handle)
+  return hubSignTransaction({ recipient, extraData: extraDataBytes, sender, validityStartHeight })
+}
+
+/** Signs (but does not send) the transaction that claims a released handle. */
+export async function hubSignClaimTransaction(
+  handle: string,
+  sender: string,
+  validityStartHeight: number,
+): Promise<{ rawHex: string; hash: string }> {
+  const { recipient, extraDataBytes } = buildHandleClaimPayload(handle)
+  return hubSignTransaction({ recipient, extraData: extraDataBytes, sender, validityStartHeight })
 }

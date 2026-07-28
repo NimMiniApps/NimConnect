@@ -17,11 +17,13 @@ type MarketplaceStore struct {
 	listings map[string]MarketplaceListing
 	trades   map[string]MarketplaceTrade
 	byRef    map[string]string
+	nonces   map[string]bool
 }
 
 type marketplaceSnapshot struct {
 	Listings map[string]MarketplaceListing `json:"listings"`
 	Trades   map[string]MarketplaceTrade   `json:"trades"`
+	Nonces   map[string]bool               `json:"nonces"`
 }
 
 func NewMarketplaceStore(path string) *MarketplaceStore {
@@ -30,6 +32,7 @@ func NewMarketplaceStore(path string) *MarketplaceStore {
 		listings: map[string]MarketplaceListing{},
 		trades:   map[string]MarketplaceTrade{},
 		byRef:    map[string]string{},
+		nonces:   map[string]bool{},
 	}
 	if data, err := readFileIfExists(path); err == nil && data != nil {
 		var snapshot marketplaceSnapshot
@@ -43,13 +46,16 @@ func NewMarketplaceStore(path string) *MarketplaceStore {
 					s.byRef[trade.Reference] = id
 				}
 			}
+			if snapshot.Nonces != nil {
+				s.nonces = snapshot.Nonces
+			}
 		}
 	}
 	return s
 }
 
 func (s *MarketplaceStore) persistLocked() error {
-	data, err := json.Marshal(marketplaceSnapshot{Listings: s.listings, Trades: s.trades})
+	data, err := json.Marshal(marketplaceSnapshot{Listings: s.listings, Trades: s.trades, Nonces: s.nonces})
 	if err != nil {
 		return err
 	}
@@ -58,6 +64,23 @@ func (s *MarketplaceStore) persistLocked() error {
 		return err
 	}
 	return os.Rename(tmp, s.path)
+}
+
+// ConsumeNonce records a nonce as used, failing if it was already consumed.
+// Listing and purchase intents each carry one — this is what makes a
+// captured, replayed signed intent inert after its first use.
+func (s *MarketplaceStore) ConsumeNonce(nonce string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.nonces[nonce] {
+		return fmt.Errorf("nonce %q already used", nonce)
+	}
+	s.nonces[nonce] = true
+	if err := s.persistLocked(); err != nil {
+		delete(s.nonces, nonce)
+		return err
+	}
+	return nil
 }
 
 func (s *MarketplaceStore) CreateListing(handle, seller string, priceLuna, feeLuna uint64, ownershipEpochTxHash string) (MarketplaceListing, error) {

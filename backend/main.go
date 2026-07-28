@@ -30,6 +30,27 @@ func parseActivationHeight(v string) uint64 {
 	return h
 }
 
+func parseUintEnv(v string, fallback uint64) uint64 {
+	parsed, err := strconv.ParseUint(v, 10, 64)
+	if err != nil {
+		return fallback
+	}
+	return parsed
+}
+
+// runSweepLoop calls sweep on a fixed interval until the process exits,
+// logging failures without crashing the server.
+func runSweepLoop(interval time.Duration, sweep func() error) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		if err := sweep(); err != nil {
+			log.Printf("marketplace sweep failed err=%q", err)
+		}
+		<-ticker.C
+	}
+}
+
 func main() {
 	port := getEnv("PORT", "8787")
 	coinGeckoBaseURL := getEnv("COINGECKO_API_BASE", "https://api.coingecko.com/api/v3")
@@ -85,6 +106,28 @@ func main() {
 
 		publicOrigin := getEnv("PUBLIC_APP_ORIGIN", "https://nimconnect.nimiqminiapps.com")
 		mux.HandleFunc("GET /p/{handle}", publicPageHandler(registry, profiles, publicOrigin))
+
+		escrowAddress := getEnv("ESCROW_ADDRESS", "")
+		if escrowAddress != "" {
+			marketplaceStore := NewMarketplaceStore(getEnv("MARKETPLACE_FILE", "/data/marketplace.json"))
+			ledger, err := OpenEscrowLedger(getEnv("MARKETPLACE_LEDGER_FILE", "/data/marketplace_ledger.jsonl"))
+			if err != nil {
+				log.Fatalf("failed to open escrow ledger: %v", err)
+			}
+			escrowSignerRPC := NewNimiqRPC(httpClient, getEnv("ESCROW_SIGNER_RPC_URL", getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com")))
+			settlement := NewSettlementWorker(marketplaceStore, ledger, escrowSignerRPC, escrowAddress)
+			escrowWatcher := NewEscrowWatcher(rpc, marketplaceStore, escrowAddress)
+			ownershipWatcher := NewOwnershipWatcher(rpc, marketplaceStore, registry, settlement)
+			go runSweepLoop(2*time.Minute, escrowWatcher.Sweep)
+			go runSweepLoop(2*time.Minute, ownershipWatcher.Sweep)
+
+			maxFeeBps := parseUintEnv(getEnv("MARKETPLACE_MAX_FEE_BPS", "1000"), 1000)
+			mux.HandleFunc("POST /api/marketplace/listings", marketplaceListingCreateHandler(marketplaceStore, registry, maxFeeBps))
+			mux.HandleFunc("POST /api/marketplace/trades", marketplaceTradeReserveHandler(marketplaceStore, escrowAddress))
+			mux.HandleFunc("GET /api/marketplace/trades/{tradeID}", marketplaceTradeGetHandler(marketplaceStore))
+			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/release", marketplaceTradeReleaseHandler(marketplaceStore, rpc, registryAddress))
+			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/claim", marketplaceTradeClaimHandler(marketplaceStore, rpc, registryAddress))
+		}
 	}
 
 	log.Printf("NimConnect backend listening on :%s commit=%s build_time=%s", port, CommitHash, BuildTime)

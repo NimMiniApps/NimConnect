@@ -17,3 +17,9 @@ export declare function isValidHandle(handle: string): boolean;
  * via `resolveHandle`/`getHandleByAddress`.
  */
 export declare function buildHandleClaimPayload(handle: string): HandleClaimPayload;
+/**
+ * Builds the transaction payload for giving up a @handle you currently own.
+ * Only a transaction signed by the handle's resolved owner is honored by the
+ * registry once release handling has been activated.
+ */
+export declare function buildHandleReleasePayload(handle: string): HandleClaimPayload;
