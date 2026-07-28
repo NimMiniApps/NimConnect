@@ -92,3 +92,31 @@ export async function hubSignClaimTransaction(
   const { recipient, extraDataBytes } = buildHandleClaimPayload(handle)
   return hubSignTransaction({ recipient, extraData: extraDataBytes, sender, validityStartHeight })
 }
+
+/** Best-effort mapping of a Hub popup rejection/cancellation to a quieter message. */
+export function hubErrorMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e)
+  if (/cancel/i.test(message)) return 'Canceled — no changes were made.'
+  return 'Install or open a Nimiq Hub compatible wallet'
+}
+
+/**
+ * Generic value+text-data checkout — distinct from hubCheckoutClaim, which
+ * is always value-0 with binary extraData. Used for the marketplace escrow
+ * deposit, where the data is a plain-text "NME1:<reference>" string.
+ */
+export async function hubCheckoutPayment(opts: {
+  recipient: string
+  valueLuna: number
+  data: string
+  sender?: string
+}): Promise<{ txHash: string }> {
+  const signed = await getHub().checkout({
+    appName: APP_NAME,
+    recipient: opts.recipient,
+    value: opts.valueLuna,
+    extraData: opts.data,
+    ...(opts.sender ? { sender: opts.sender } : {}),
+  })
+  return { txHash: signed.hash }
+}
