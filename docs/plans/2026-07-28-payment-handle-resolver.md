@@ -4,9 +4,9 @@
 
 **Goal:** Add a payment-grade public handle resolver that refreshes the shared on-chain registry before returning the current owner.
 
-**Architecture:** Reuse `HandleSyncer.Sweep` and `HandleRegistry.Resolve` behind a dedicated no-cache GET endpoint. Keep the existing cacheable identity resolver unchanged for normal profile reads.
+**Architecture:** Reuse `HandleSyncer.Sweep` and `HandleRegistry.Resolve` behind a dedicated no-cache GET endpoint. Keep the existing cacheable identity resolver unchanged for normal profile reads, and expose the payment route through `@nimconnect/profile-client`.
 
-**Tech Stack:** Go, `net/http`, existing Nimiq RPC and handle registry.
+**Tech Stack:** Go, `net/http`, TypeScript, Vitest, existing Nimiq RPC and handle registry.
 
 ---
 
@@ -36,7 +36,25 @@
 3. Document the payment resolver and its freshness/error semantics.
 4. Run `go test ./...`.
 
-### Task 3: Verify and prepare review
+### Task 3: Expose payment resolution in the profile client
+
+**Files:**
+- Modify: `packages/profile-client/src/client.ts`
+- Modify: `packages/profile-client/src/client.test.ts`
+- Modify: `packages/profile-client/README.md`
+- Modify: `docs/api/public-profile-read.md`
+- Modify: `packages/profile-client/package.json`
+- Modify: `package-lock.json`
+- Rebuild: `packages/profile-client/dist`
+
+**Steps:**
+1. Add failing client tests for success, unknown handle, and unavailable fresh resolution.
+2. Add `resolveHandleForPayment(handle)` using the no-cache payment route.
+3. Document the review-and-revalidate payment flow.
+4. Bump the package to `0.4.0` and rebuild `dist`.
+5. Do not publish the package without separate approval.
+
+### Task 4: Verify and prepare review
 
 **Steps:**
 1. Run `gofmt` on modified Go files.

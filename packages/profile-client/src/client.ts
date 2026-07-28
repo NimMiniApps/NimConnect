@@ -16,6 +16,7 @@ export const DEFAULT_BASE_URL = 'https://api-nimconnect.nimiqminiapps.com'
 export interface ProfileClient {
   getProfileByAddress(address: string): Promise<StoredPublicProfile | null>
   resolveHandle(handle: string): Promise<HandleClaim | null>
+  resolveHandleForPayment(handle: string): Promise<HandleClaim | null>
   getHandleByAddress(address: string): Promise<HandleClaim | null>
   getDisplayIdentity(address: string): Promise<DisplayIdentity>
 }
@@ -56,6 +57,16 @@ export function createProfileClient(options: ProfileClientOptions = {}): Profile
     return parseHandleClaim(await res.json())
   }
 
+  async function resolveHandleForPayment(handle: string): Promise<HandleClaim | null> {
+    const res = await fetch(`${baseUrl}/api/pay/resolve/${encodeURIComponent(handle)}`, {
+      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+    })
+    if (res.status === 404) return null
+    if (!res.ok) throw new Error(`payment handle resolve failed: ${res.status}`)
+    return parseHandleClaim(await res.json())
+  }
+
   async function getHandleByAddress(address: string): Promise<HandleClaim | null> {
     const res = await fetch(`${baseUrl}/api/handles/by-address/${compactAddress(address)}`, {
       headers: { Accept: 'application/json' },
@@ -86,5 +97,11 @@ export function createProfileClient(options: ProfileClientOptions = {}): Profile
     }
   }
 
-  return { getProfileByAddress, resolveHandle, getHandleByAddress, getDisplayIdentity }
+  return {
+    getProfileByAddress,
+    resolveHandle,
+    resolveHandleForPayment,
+    getHandleByAddress,
+    getDisplayIdentity,
+  }
 }

@@ -13,7 +13,12 @@ it only builds the `{ recipient, extraData }` you pass to your own
 ## Quick start — zero setup (NimConnect's API for everything)
 
 ```ts
-import { createProfileClient, buildHandleClaimPayload, isValidHandle } from '@nimconnect/profile-client'
+import {
+  createProfileClient,
+  buildHandleClaimPayload,
+  compactAddress,
+  isValidHandle,
+} from '@nimconnect/profile-client'
 
 const client = createProfileClient()
 
@@ -30,10 +35,31 @@ async function claimHandle(handle: string, wallet: WalletIntegration) {
 async function loadIdentity(address: string) {
   return client.getDisplayIdentity(address) // { address, handle?, displayName?, bio?, links? }
 }
+
+// Payment — resolve once for review, then again immediately before signing.
+async function payHandle(handle: string, amount: number, wallet: WalletIntegration) {
+  const preview = await client.resolveHandleForPayment(handle)
+  if (!preview) throw new Error(`unknown handle: @${handle}`)
+
+  // Show preview.handle + preview.address to the user before confirmation.
+  const confirmed = await client.resolveHandleForPayment(handle)
+  if (!confirmed) throw new Error(`handle no longer resolves: @${handle}`)
+  if (compactAddress(confirmed.address) !== compactAddress(preview.address)) {
+    throw new Error(`@${handle} changed owners — review the new address`)
+  }
+
+  await wallet.sendTransaction({ recipient: confirmed.address, value: amount })
+}
 ```
 
-Reads hit NimConnect's public, CORS-open, cacheable read endpoints — no
-config or allow-listing needed on either side.
+Reads hit NimConnect's public, CORS-open endpoints — no config or
+allow-listing needed on either side.
+
+`resolveHandle()` is the cacheable identity lookup. Payments must use
+`resolveHandleForPayment()`, which asks NimConnect to refresh its on-chain
+registry and uses `cache: 'no-store'`. It returns `null` for an unknown handle
+and throws when fresh resolution is unavailable; never fall back to a cached
+address or an AI-guessed recipient.
 
 ## No NimConnect dependency for handles — self-hosted RPC
 
