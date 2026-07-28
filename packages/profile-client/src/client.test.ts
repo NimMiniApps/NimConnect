@@ -84,6 +84,52 @@ describe('resolveHandle', () => {
   })
 })
 
+describe('resolveHandleForPayment', () => {
+  it('uses the fresh, non-cacheable payment resolver and parses the claim', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        handle: 'ada',
+        address: 'NQ01 TEST',
+        tx_hash: 'abc123',
+        block_height: 42,
+        tx_index: 1,
+      }),
+    }))
+    const client = createProfileClient({ baseUrl: 'https://nc.example' })
+
+    await expect(client.resolveHandleForPayment('ada')).resolves.toEqual({
+      handle: 'ada',
+      address: 'NQ01 TEST',
+      txHash: 'abc123',
+      blockHeight: 42,
+      txIndex: 1,
+    })
+    expect(fetch).toHaveBeenCalledWith(
+      'https://nc.example/api/pay/resolve/ada',
+      {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
+      },
+    )
+  })
+
+  it('returns null when the payment handle is unknown', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 404 }))
+    const client = createProfileClient({ baseUrl: 'https://nc.example' })
+    expect(await client.resolveHandleForPayment('missing')).toBeNull()
+  })
+
+  it('fails closed when fresh payment resolution is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 503 }))
+    const client = createProfileClient({ baseUrl: 'https://nc.example' })
+    await expect(client.resolveHandleForPayment('ada')).rejects.toThrow(
+      'payment handle resolve failed: 503',
+    )
+  })
+})
+
 describe('getHandleByAddress', () => {
   it('returns parsed claim on 200', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

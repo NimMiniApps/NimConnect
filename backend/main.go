@@ -97,6 +97,7 @@ func main() {
 		go syncer.Run(2*time.Minute, make(chan struct{}))
 
 		mux.HandleFunc("GET /api/resolve/{handle}", resolveHandler(registry))
+		mux.HandleFunc("GET /api/pay/resolve/{handle}", paymentResolveHandler(syncer, registry))
 		mux.HandleFunc("GET /api/profile/{address}", profileGetHandler(profiles))
 		mux.HandleFunc("PUT /api/profile/{address}", profilePutHandler(profiles))
 		mux.HandleFunc("DELETE /api/profile/{address}", profileDeleteHandler(profiles))

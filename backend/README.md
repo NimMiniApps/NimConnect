@@ -14,6 +14,7 @@ Go REST API for NimConnect: CoinGecko-backed exchange rates, encrypted cloud bac
 | `POST` | `/api/admin/login` | Wallet-signed admin login → session token |
 | `GET` | `/api/stats` | Usage stats (requires `X-Admin-Session` header from `/api/admin/login`) |
 | `GET` | `/api/resolve/{handle}` | Resolve @handle → address (requires `REGISTRY_ADDRESS`) |
+| `GET` | `/api/pay/resolve/{handle}` | Freshly resolve @handle → payment address; returns 503 rather than stale data when chain refresh fails |
 | `GET` | `/api/profile/{address}` | Fetch signed public profile JSON |
 | `PUT` | `/api/profile/{address}` | Store signed profile (wallet signature) |
 | `DELETE` | `/api/profile/{address}` | Delete profile (signed headers) |
@@ -25,6 +26,12 @@ Backup uploads must sign: `nimconnect-backup:v1:{address}:{exported_at}`
 Nimiq Pay prefixes and SHA-256-hashes that string before Ed25519 signing (same as Hub `signMessage`). The backend verifies using that Nimiq message format, not a raw Ed25519 sign of the challenge string.
 
 The server stores only encrypted blobs — it cannot read contact data.
+
+The normal `/api/resolve/{handle}` endpoint is cacheable identity data. Payment
+clients should use `/api/pay/resolve/{handle}` immediately before showing and
+again before signing a payment. The payment resolver performs the existing
+rate-limited registry sweep, responds with `Cache-Control: no-store`, and
+refuses to serve the warm-start claim if the RPC refresh fails.
 
 ## Configuration
 

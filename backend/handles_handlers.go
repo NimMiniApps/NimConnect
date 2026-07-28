@@ -35,6 +35,32 @@ func resolveHandler(registry *HandleRegistry) http.HandlerFunc {
 	}
 }
 
+// paymentResolveHandler refreshes the registry before resolving a payment
+// recipient. Unlike the cacheable identity resolver, it must not serve a
+// known-stale owner when the chain cannot be checked.
+func paymentResolveHandler(syncer *HandleSyncer, registry *HandleRegistry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		handle := r.PathValue("handle")
+		if !isValidHandle(handle) {
+			writeJSONError(w, http.StatusBadRequest, "invalid handle")
+			return
+		}
+		if err := syncer.Sweep(); err != nil {
+			log.Printf("payment handle refresh failed handle=%q err=%q", handle, err)
+			writeJSONError(w, http.StatusServiceUnavailable, "handle resolution unavailable")
+			return
+		}
+		claim, ok := registry.Resolve(handle)
+		if !ok {
+			writeJSONError(w, http.StatusNotFound, "unknown handle")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(claim)
+	}
+}
+
 func profileGetHandler(store *ProfileStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		stored, err := store.Get(r.PathValue("address"))

@@ -40,6 +40,17 @@ export function createProfileClient(options = {}) {
             throw new Error(`resolve handle failed: ${res.status}`);
         return parseHandleClaim(await res.json());
     }
+    async function resolveHandleForPayment(handle) {
+        const res = await fetch(`${baseUrl}/api/pay/resolve/${encodeURIComponent(handle)}`, {
+            headers: { Accept: 'application/json' },
+            cache: 'no-store',
+        });
+        if (res.status === 404)
+            return null;
+        if (!res.ok)
+            throw new Error(`payment handle resolve failed: ${res.status}`);
+        return parseHandleClaim(await res.json());
+    }
     async function getHandleByAddress(address) {
         const res = await fetch(`${baseUrl}/api/handles/by-address/${compactAddress(address)}`, {
             headers: { Accept: 'application/json' },
@@ -69,5 +80,11 @@ export function createProfileClient(options = {}) {
                 : undefined,
         };
     }
-    return { getProfileByAddress, resolveHandle, getHandleByAddress, getDisplayIdentity };
+    return {
+        getProfileByAddress,
+        resolveHandle,
+        resolveHandleForPayment,
+        getHandleByAddress,
+        getDisplayIdentity,
+    };
 }
