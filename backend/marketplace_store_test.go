@@ -153,3 +153,15 @@ func TestConsumeNonce_PersistsAcrossRestart(t *testing.T) {
 		t.Fatal("expected the reloaded store to still reject a previously used nonce")
 	}
 }
+
+func TestActiveListings_ReturnsOnlyActiveStatus(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	s.CreateListing("alice", "NQ22 SELLER", 2000, 100, "t2")
+	s.ReserveListing("alice", "trade-1", "ref-1", "NQ33 BUYER") // moves alice's listing to "reserved"
+
+	active := s.ActiveListings()
+	if len(active) != 1 || active[0].Handle != "chuck" {
+		t.Fatalf("expected only chuck's active listing, got %+v", active)
+	}
+}

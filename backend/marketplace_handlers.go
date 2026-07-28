@@ -143,6 +143,13 @@ func marketplaceTradeGetHandler(store *MarketplaceStore) http.HandlerFunc {
 	}
 }
 
+func marketplaceListingsGetHandler(store *MarketplaceStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(store.ActiveListings())
+	}
+}
+
 type marketplaceSubmitRequest struct {
 	Kind   string `json:"kind"`
 	RawHex string `json:"raw_hex,omitempty"`

@@ -308,3 +308,21 @@ func mustJSON(t *testing.T, v any) []byte {
 	}
 	return data
 }
+
+func TestMarketplaceListingsGetHandler_ReturnsActiveListings(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/listings", nil)
+	rec := httptest.NewRecorder()
+	marketplaceListingsGetHandler(store)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var listings []MarketplaceListing
+	json.NewDecoder(rec.Body).Decode(&listings)
+	if len(listings) != 1 || listings[0].Handle != "chuck" {
+		t.Fatalf("unexpected listings: %+v", listings)
+	}
+}

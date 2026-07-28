@@ -189,6 +189,20 @@ func (s *MarketplaceStore) FindTradeByReference(reference string) (MarketplaceTr
 	return trade, ok
 }
 
+// ActiveListings returns every currently active listing. No pagination —
+// fine at expected marketplace volume; add it if that stops being true.
+func (s *MarketplaceStore) ActiveListings() []MarketplaceListing {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := make([]MarketplaceListing, 0)
+	for _, listing := range s.listings {
+		if listing.Status == "active" {
+			active = append(active, listing)
+		}
+	}
+	return active
+}
+
 // TradesInState returns copies of trades in state for workers that process a
 // persisted lifecycle stage independently from incoming transactions.
 func (s *MarketplaceStore) TradesInState(state TradeState) []MarketplaceTrade {
