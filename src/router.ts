@@ -1,4 +1,8 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { canonicalHashRoute } from './services/hash-routing'
+
+const canonicalRoute = canonicalHashRoute(window.location.pathname, window.location.search, window.location.hash)
+if (canonicalRoute) window.history.replaceState(null, '', canonicalRoute)
 
 export const router = createRouter({
   history: createWebHashHistory(),
