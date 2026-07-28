@@ -51,7 +51,7 @@ async function connect() {
 }
 
 async function submitListing() {
-  if (!hubAddress.value || !claim.value || priceLuna.value <= 0) return
+  if (!hubAddress.value || !claim.value || priceLuna.value <= 0 || listing.value) return
   listing.value = true
   error.value = null
   try {
@@ -116,7 +116,7 @@ onMounted(async () => {
       </label>
       <p>Marketplace fee: {{ FEE_BPS / 100 }}% ({{ feeNim }} NIM)</p>
       <p v-if="error" class="desktop-marketplace-sell__error">{{ error }}</p>
-      <button type="submit" data-list-button :disabled="listing || priceLuna <= 0" @click="submitListing">
+      <button type="submit" data-list-button :disabled="listing || priceLuna <= 0">
         {{ listing ? 'Listing…' : 'List for sale' }}
       </button>
     </form>

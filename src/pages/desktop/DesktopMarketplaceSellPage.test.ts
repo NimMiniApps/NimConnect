@@ -68,7 +68,7 @@ describe('DesktopMarketplaceSellPage', () => {
     const wrapper = mount(DesktopMarketplaceSellPage)
     await flushPromises()
     await wrapper.find('input[type="number"]').setValue('10')
-    await wrapper.find('[data-list-button]').trigger('click')
+    await wrapper.find('form').trigger('submit')
     await flushPromises()
 
     expect(hubSignMessage).toHaveBeenCalledWith('the-message', 'NQ11 SELLER')
@@ -88,7 +88,7 @@ describe('DesktopMarketplaceSellPage', () => {
     const wrapper = mount(DesktopMarketplaceSellPage)
     await flushPromises()
     await wrapper.find('input[type="number"]').setValue('10')
-    await wrapper.find('[data-list-button]').trigger('click')
+    await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(wrapper.text()).toContain('canceled')
   })
