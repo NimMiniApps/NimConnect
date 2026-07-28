@@ -61,6 +61,29 @@ registry and uses `cache: 'no-store'`. It returns `null` for an unknown handle
 and throws when fresh resolution is unavailable; never fall back to a cached
 address or an AI-guessed recipient.
 
+## Handle release support
+
+The package can also build and replay the shared protocol's gated `RELEASE`
+action:
+
+```ts
+import {
+  buildHandleReleasePayload,
+  fetchHandleRegistry,
+} from '@nimconnect/profile-client'
+
+const { recipient, extraData } = buildHandleReleasePayload('chuck')
+
+const registry = await fetchHandleRegistry({
+  releaseActivationHeight: AGREED_SHARED_ACTIVATION_HEIGHT,
+})
+```
+
+Do not send a release transaction until NimConnect, NimFeed, and other shared
+registry readers have agreed on and activated the same block height. Release
+actions remain inert by default: registry replay ignores them unless the caller
+explicitly supplies `releaseActivationHeight`.
+
 ## No NimConnect dependency for handles — self-hosted RPC
 
 ```ts

@@ -73,7 +73,7 @@ func TestPaymentResolveHandlerRefreshesBeforeResolving(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{})
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
 
@@ -122,7 +122,7 @@ func TestPaymentResolveHandlerValidatesAndReportsUnknownHandles(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{})
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
 

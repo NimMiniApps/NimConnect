@@ -69,6 +69,7 @@ func TestSweepDoesNotRateLimitAFailedRebuild(t *testing.T) {
 	registry := NewHandleRegistry(
 		filepath.Join(t.TempDir(), "missing-directory", "handles.json"),
 		map[string]bool{},
+		0,
 	)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 
