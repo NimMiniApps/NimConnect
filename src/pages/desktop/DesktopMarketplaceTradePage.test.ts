@@ -60,16 +60,40 @@ describe('DesktopMarketplaceTradePage', () => {
     expect(wrapper.text()).toContain('no such trade')
   })
 
-  it('shows the pay panel and calls hubCheckoutPayment with the escrow reference', async () => {
-    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_DEPOSIT' })
+  it('shows the pay panel and calls hubCheckoutPayment with the escrow reference and the buyer as sender', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_DEPOSIT', escrow_address: 'NQ99 ESCROW' })
     vi.mocked(hubCheckoutPayment).mockResolvedValue({ txHash: 'd1' })
     const wrapper = await mountForTrade('trade-1')
     await flushPromises()
     await wrapper.find('[data-pay-button]').trigger('click')
     await flushPromises()
     expect(hubCheckoutPayment).toHaveBeenCalledWith(
-      expect.objectContaining({ valueLuna: 100000, data: 'NME1:ref1' }),
+      expect.objectContaining({
+        recipient: 'NQ99 ESCROW', valueLuna: 100000, data: 'NME1:ref1', sender: 'NQ22 BUYER',
+      }),
     )
+  })
+
+  it('disables paying when the trade has no escrow_address', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_DEPOSIT' })
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    expect(wrapper.find('[data-pay-button]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Escrow address unavailable')
+  })
+
+  it('ignores a second pay click while the first checkout is still in flight', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_DEPOSIT', escrow_address: 'NQ99 ESCROW' })
+    let resolveCheckout: (v: { txHash: string }) => void = () => {}
+    vi.mocked(hubCheckoutPayment).mockReturnValue(new Promise((resolve) => { resolveCheckout = resolve }))
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    const button = wrapper.find('[data-pay-button]')
+    await button.trigger('click')
+    await button.trigger('click')
+    resolveCheckout({ txHash: 'd1' })
+    await flushPromises()
+    expect(hubCheckoutPayment).toHaveBeenCalledTimes(1)
   })
 
   it('shows a release button for the seller when AWAITING_RELEASE', async () => {
@@ -83,6 +107,22 @@ describe('DesktopMarketplaceTradePage', () => {
     await flushPromises()
     expect(hubSignReleaseTransaction).toHaveBeenCalledWith('chuck', 'NQ11 SELLER', 42)
     expect(submitRelease).toHaveBeenCalledWith('trade-1', { kind: 'hub', raw_hex: 'deadbeef' })
+  })
+
+  it('ignores a second release click while the first is still in flight', async () => {
+    vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_RELEASE' })
+    vi.mocked(fetchChainHeight).mockResolvedValue(42)
+    let resolveSign: (v: { rawHex: string; hash: string }) => void = () => {}
+    vi.mocked(hubSignReleaseTransaction).mockReturnValue(new Promise((resolve) => { resolveSign = resolve }))
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    const button = wrapper.find('[data-release-button]')
+    await button.trigger('click')
+    await button.trigger('click')
+    resolveSign({ rawHex: 'deadbeef', hash: 'r1' })
+    await flushPromises()
+    expect(hubSignReleaseTransaction).toHaveBeenCalledTimes(1)
   })
 
   it('shows a passive waiting panel for the buyer when AWAITING_RELEASE', async () => {
@@ -104,6 +144,21 @@ describe('DesktopMarketplaceTradePage', () => {
     await flushPromises()
     expect(hubSignClaimTransaction).toHaveBeenCalledWith('chuck', 'NQ22 BUYER', 43)
     expect(submitClaim).toHaveBeenCalledWith('trade-1', { kind: 'hub', raw_hex: 'cafebabe' })
+  })
+
+  it('ignores a second claim click while the first is still in flight', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_CLAIM' })
+    vi.mocked(fetchChainHeight).mockResolvedValue(43)
+    let resolveSign: (v: { rawHex: string; hash: string }) => void = () => {}
+    vi.mocked(hubSignClaimTransaction).mockReturnValue(new Promise((resolve) => { resolveSign = resolve }))
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    const button = wrapper.find('[data-claim-button]')
+    await button.trigger('click')
+    await button.trigger('click')
+    resolveSign({ rawHex: 'cafebabe', hash: 'c1' })
+    await flushPromises()
+    expect(hubSignClaimTransaction).toHaveBeenCalledTimes(1)
   })
 
   it('shows a settled confirmation and stops polling', async () => {

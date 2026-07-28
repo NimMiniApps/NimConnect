@@ -31,7 +31,7 @@ async function connect() {
 }
 
 async function confirmBuy() {
-  if (!hubAddress.value || !listing.value) return
+  if (buying.value || !hubAddress.value || !listing.value) return
   buying.value = true
   error.value = null
   try {

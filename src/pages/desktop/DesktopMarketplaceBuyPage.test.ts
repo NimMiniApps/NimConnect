@@ -69,4 +69,20 @@ describe('DesktopMarketplaceBuyPage', () => {
     )
     expect(wrapper.vm.$router.currentRoute.value.path).toBe('/marketplace/trades/trade-1')
   })
+
+  it('ignores a second confirm click while the first purchase is still in flight', async () => {
+    vi.mocked(fetchListings).mockResolvedValue([
+      { handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 100000, fee_luna: 5000, status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1 },
+    ])
+    let resolveSign: (v: { publicKey: string; signature: string }) => void = () => {}
+    vi.mocked(hubSignMessage).mockReturnValue(new Promise((resolve) => { resolveSign = resolve }))
+    const wrapper = await mountWithQuery('chuck')
+    await flushPromises()
+    const button = wrapper.find('[data-confirm-buy]')
+    await button.trigger('click')
+    await button.trigger('click')
+    resolveSign({ publicKey: 'pub', signature: 'sig' })
+    await flushPromises()
+    expect(hubSignMessage).toHaveBeenCalledTimes(1)
+  })
 })

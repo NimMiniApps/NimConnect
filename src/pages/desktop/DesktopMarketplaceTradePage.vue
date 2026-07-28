@@ -52,15 +52,18 @@ function stopPolling() {
   pollHandle = undefined
 }
 
+const canPay = computed(() => !!trade.value?.escrow_address)
+
 async function pay() {
-  if (!trade.value) return
+  if (acting.value || !trade.value || !trade.value.escrow_address) return
   acting.value = true
   error.value = null
   try {
     await hubCheckoutPayment({
-      recipient: (trade.value as any).escrow_address ?? '',
+      recipient: trade.value.escrow_address,
       valueLuna: trade.value.price_luna,
       data: `NME1:${trade.value.reference}`,
+      sender: trade.value.buyer,
     })
   } catch (e) {
     error.value = hubErrorMessage(e)
@@ -70,7 +73,7 @@ async function pay() {
 }
 
 async function release() {
-  if (!trade.value || !ownAddress.value) return
+  if (acting.value || !trade.value || !ownAddress.value) return
   acting.value = true
   error.value = null
   try {
@@ -86,7 +89,7 @@ async function release() {
 }
 
 async function claim() {
-  if (!trade.value || !ownAddress.value) return
+  if (acting.value || !trade.value || !ownAddress.value) return
   acting.value = true
   error.value = null
   try {
@@ -117,7 +120,8 @@ onUnmounted(stopPolling)
 
       <div v-if="trade.state === 'AWAITING_DEPOSIT' || trade.state === 'DEPOSIT_FINALIZING'">
         <p>Pay {{ lunaToNim(trade.price_luna) }} NIM to fund this trade.</p>
-        <button type="button" data-pay-button :disabled="acting" @click="pay">Pay with Hub</button>
+        <p v-if="!canPay">Escrow address unavailable — reload this page in a moment.</p>
+        <button v-else type="button" data-pay-button :disabled="acting" @click="pay">Pay with Hub</button>
       </div>
 
       <div v-else-if="['FUNDED', 'AWAITING_RELEASE'].includes(trade.state) && isSeller">

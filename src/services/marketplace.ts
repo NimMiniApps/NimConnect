@@ -23,6 +23,7 @@ export interface MarketplaceTrade {
   seller: string
   price_luna: number
   fee_luna: number
+  escrow_address?: string
   state: string
   version: number
   deposit_tx_hash?: string
