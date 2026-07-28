@@ -51,6 +51,22 @@ Resolves a `@handle` to its winning claim.
 { "error": "unknown handle" }
 ```
 
+### `GET /api/pay/resolve/{handle}`
+
+Payment-grade handle resolution. It performs the backend's rate-limited
+on-demand registry sweep before returning the current winning claim.
+
+- **200 OK** — same claim shape as `GET /api/resolve/{handle}`.
+- **400 Bad Request** — malformed handle.
+- **404 Not Found** — no current claim for the handle.
+- **503 Service Unavailable** — the chain refresh failed. Payment clients must
+  fail closed and must not reuse a previously cached address.
+
+This endpoint always sends `Cache-Control: no-store`, including error
+responses. Consumers should call it once to show the recipient and again
+immediately before requesting the wallet signature. The profile client exposes
+this flow as `createProfileClient().resolveHandleForPayment(handle)`.
+
 ### `GET /api/profile/{address}`
 
 Fetches the signed public profile JSON stored for a Nimiq address.
@@ -131,7 +147,8 @@ unknown addresses both miss and return the same 404.
 
 ## Caching
 
-All three endpoints above are cacheable GETs and set:
+The three identity endpoints (`resolve`, `profile`, and `handles/by-address`)
+are cacheable GETs and set:
 
 - `Cache-Control: public, max-age=60`
 - `ETag` — `resolve` / `by-address` use the claim's `tx_hash`; `profile` uses
@@ -142,7 +159,7 @@ Send `If-None-Match` with the previously-seen ETag to get a `304 Not Modified`
 
 ## CORS
 
-The three read endpoints above are **always CORS-open** (`Access-Control-Allow-Origin: *`),
+All four read endpoints above are **always CORS-open** (`Access-Control-Allow-Origin: *`),
 regardless of the server's `ALLOWED_ORIGIN` setting — any mini app, from any
 origin, can call them directly with no server-side config change. This is
 what makes the ecosystem self-serve: a new consumer never needs a PR against
@@ -155,7 +172,7 @@ other route. Those stay origin-gated; a wallet signature is the real trust
 boundary for writes either way, origin-locking is defense in depth on top of it.
 
 `OPTIONS` preflight requests short-circuit with `204 No Content`. Read-only
-consumers hitting these three GET endpoints don't send custom headers or
+consumers hitting these four GET endpoints don't send custom headers or
 non-simple methods, so preflight is generally not triggered anyway.
 
 ## Out of scope for consumers

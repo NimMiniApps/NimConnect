@@ -6,6 +6,7 @@ export declare const DEFAULT_BASE_URL = "https://api-nimconnect.nimiqminiapps.co
 export interface ProfileClient {
     getProfileByAddress(address: string): Promise<StoredPublicProfile | null>;
     resolveHandle(handle: string): Promise<HandleClaim | null>;
+    resolveHandleForPayment(handle: string): Promise<HandleClaim | null>;
     getHandleByAddress(address: string): Promise<HandleClaim | null>;
     getDisplayIdentity(address: string): Promise<DisplayIdentity>;
 }
