@@ -7,7 +7,7 @@ vi.mock('../../services/hub', () => ({
   hubCheckoutPayment: vi.fn(),
   hubSignReleaseTransaction: vi.fn(),
   hubSignClaimTransaction: vi.fn(),
-  hubErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  hubErrorMessage: (e: unknown) => `HUB:${e instanceof Error ? e.message : String(e)}`,
 }))
 vi.mock('../../services/desktop-session', () => ({
   getDesktopHubAddress: vi.fn(() => 'NQ22 BUYER'),
@@ -94,6 +94,52 @@ describe('DesktopMarketplaceTradePage', () => {
     resolveCheckout({ txHash: 'd1' })
     await flushPromises()
     expect(hubCheckoutPayment).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a waiting message and hides the pay button after a successful payment', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_DEPOSIT', escrow_address: 'NQ99 ESCROW' })
+    vi.mocked(hubCheckoutPayment).mockResolvedValue({ txHash: 'd1' })
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    await wrapper.find('[data-pay-button]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-pay-button]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Payment sent — waiting for confirmation')
+  })
+
+  it('never shows a payable button during DEPOSIT_FINALIZING, even after a fresh poll', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'DEPOSIT_FINALIZING', escrow_address: 'NQ99 ESCROW' })
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    expect(wrapper.find('[data-pay-button]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Confirming your payment on chain')
+  })
+
+  it('shows the backend error verbatim for a release rejected by the backend', async () => {
+    vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_RELEASE' })
+    vi.mocked(fetchChainHeight).mockResolvedValue(42)
+    vi.mocked(hubSignReleaseTransaction).mockResolvedValue({ rawHex: 'deadbeef', hash: 'r1' })
+    vi.mocked(submitRelease).mockRejectedValue(new Error('trade is not awaiting a release'))
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    await wrapper.find('[data-release-button]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('trade is not awaiting a release')
+    expect(wrapper.text()).not.toContain('HUB:')
+  })
+
+  it('shows the backend error verbatim for a claim rejected by the backend', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'AWAITING_CLAIM' })
+    vi.mocked(fetchChainHeight).mockResolvedValue(43)
+    vi.mocked(hubSignClaimTransaction).mockResolvedValue({ rawHex: 'cafebabe', hash: 'c1' })
+    vi.mocked(submitClaim).mockRejectedValue(new Error('nonce already used'))
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    await wrapper.find('[data-claim-button]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('nonce already used')
+    expect(wrapper.text()).not.toContain('HUB:')
   })
 
   it('shows a release button for the seller when AWAITING_RELEASE', async () => {

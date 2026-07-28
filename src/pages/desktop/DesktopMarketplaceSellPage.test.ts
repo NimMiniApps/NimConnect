@@ -5,7 +5,7 @@ import DesktopMarketplaceSellPage from './DesktopMarketplaceSellPage.vue'
 vi.mock('../../services/hub', () => ({
   chooseHubAddress: vi.fn(),
   hubSignMessage: vi.fn(),
-  hubErrorMessage: (e: unknown) => (e instanceof Error ? e.message : String(e)),
+  hubErrorMessage: (e: unknown) => `HUB:${e instanceof Error ? e.message : String(e)}`,
 }))
 vi.mock('../../services/desktop-session', () => ({
   getDesktopHubAddress: vi.fn(() => null),
@@ -78,7 +78,7 @@ describe('DesktopMarketplaceSellPage', () => {
         ownership_epoch_tx_hash: 't1', nonce: 'the-nonce', public_key: 'pub', signature: 'sig',
       }),
     )
-    expect(wrapper.text()).toContain('marketplace/chuck')
+    expect(wrapper.text()).toContain('/marketplace/buy?handle=chuck')
   })
 
   it('maps a Hub rejection to a quiet message', async () => {
@@ -90,6 +90,21 @@ describe('DesktopMarketplaceSellPage', () => {
     await wrapper.find('input[type="number"]').setValue('10')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('canceled')
+    expect(wrapper.text()).toContain('HUB:canceled')
+    expect(createListing).not.toHaveBeenCalled()
+  })
+
+  it('shows the backend error verbatim instead of routing it through hubErrorMessage', async () => {
+    vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(findMyHandle).mockResolvedValue({ handle: 'chuck', address: 'NQ11 SELLER', tx_hash: 't1', block_height: 5, tx_index: 0 })
+    vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    vi.mocked(createListing).mockRejectedValue(new Error('fee exceeds the maximum allowed'))
+    const wrapper = mount(DesktopMarketplaceSellPage)
+    await flushPromises()
+    await wrapper.find('input[type="number"]').setValue('10')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.text()).toContain('fee exceeds the maximum allowed')
+    expect(wrapper.text()).not.toContain('HUB:')
   })
 })

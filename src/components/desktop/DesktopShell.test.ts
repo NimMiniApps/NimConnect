@@ -19,6 +19,7 @@ function makeRouter() {
       { path: '/lookup', component: { template: '<div>lookup</div>' } },
       { path: '/me', component: { template: '<div>me</div>' } },
       { path: '/about', component: { template: '<div>about</div>' } },
+      { path: '/marketplace', component: { template: '<div>marketplace</div>' } },
     ],
   })
 }
@@ -46,6 +47,8 @@ describe('DesktopShell', () => {
     expect(wrapper.text()).toContain('Home')
     expect(wrapper.text()).toContain('Lookup')
     expect(wrapper.text()).toContain('About')
+    expect(wrapper.text()).toContain('Marketplace')
+    expect(wrapper.find('a[href="#/marketplace"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('My Identity')
     expect(wrapper.find('[data-desktop-connect]').exists()).toBe(true)
     expect(wrapper.find('[data-desktop-connect]').text()).toBe('Connect')

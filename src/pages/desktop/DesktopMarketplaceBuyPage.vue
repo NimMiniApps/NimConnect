@@ -34,18 +34,25 @@ async function confirmBuy() {
   if (buying.value || !hubAddress.value || !listing.value) return
   buying.value = true
   error.value = null
+  const nonce = generateNonce()
+  const expiresAt = Math.floor(Date.now() / 1000) + 600
+  const message = marketplacePurchaseMessage(handle.value, hubAddress.value, hubAddress.value, nonce, expiresAt)
+  let publicKey: string, signature: string
   try {
-    const nonce = generateNonce()
-    const expiresAt = Math.floor(Date.now() / 1000) + 600
-    const message = marketplacePurchaseMessage(handle.value, hubAddress.value, hubAddress.value, nonce, expiresAt)
-    const { publicKey, signature } = await hubSignMessage(message, hubAddress.value)
+    ;({ publicKey, signature } = await hubSignMessage(message, hubAddress.value))
+  } catch (e) {
+    error.value = hubErrorMessage(e)
+    buying.value = false
+    return
+  }
+  try {
     const trade = await reserveTrade({
       handle: handle.value, buyer: hubAddress.value, refund_address: hubAddress.value,
       nonce, expires_at: expiresAt, public_key: publicKey, signature,
     })
     router.push(`/marketplace/trades/${trade.trade_id}`)
   } catch (e) {
-    error.value = hubErrorMessage(e)
+    error.value = (e as Error).message
   } finally {
     buying.value = false
   }

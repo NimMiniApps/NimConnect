@@ -96,7 +96,8 @@ func main() {
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))
 
-		mux.HandleFunc("GET /api/chain/height", chainHeightHandler(rpc))
+		chainHeightCache := NewChainHeightCache(2*time.Second, rpc.GetBlockNumber)
+		mux.HandleFunc("GET /api/chain/height", chainHeightHandler(chainHeightCache))
 		mux.HandleFunc("GET /api/resolve/{handle}", resolveHandler(registry))
 		mux.HandleFunc("GET /api/pay/resolve/{handle}", paymentResolveHandler(syncer, registry))
 		mux.HandleFunc("GET /api/profile/{address}", profileGetHandler(profiles))

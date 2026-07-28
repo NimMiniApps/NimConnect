@@ -3,5 +3,6 @@ export const DESKTOP_PORTAL_ROUTES = ['/', '/lookup', '/me', '/about', '/admin/s
 
 export function isDesktopPortalPath(path: string): boolean {
   if (path.startsWith('/u/')) return true
+  if (path.startsWith('/marketplace')) return true
   return (DESKTOP_PORTAL_ROUTES as readonly string[]).includes(path)
 }

@@ -53,6 +53,7 @@ function stopPolling() {
 }
 
 const canPay = computed(() => !!trade.value?.escrow_address)
+const paid = ref(false)
 
 async function pay() {
   if (acting.value || !trade.value || !trade.value.escrow_address) return
@@ -65,6 +66,7 @@ async function pay() {
       data: `NME1:${trade.value.reference}`,
       sender: trade.value.buyer,
     })
+    paid.value = true
   } catch (e) {
     error.value = hubErrorMessage(e)
   } finally {
@@ -76,13 +78,22 @@ async function release() {
   if (acting.value || !trade.value || !ownAddress.value) return
   acting.value = true
   error.value = null
+  const handle = trade.value.handle
+  const tradeId = trade.value.id
+  let rawHex: string
   try {
     const height = await fetchChainHeight()
-    const { rawHex } = await hubSignReleaseTransaction(trade.value.handle, ownAddress.value, height)
-    await submitRelease(trade.value.id, { kind: 'hub', raw_hex: rawHex })
-    await refresh()
+    ;({ rawHex } = await hubSignReleaseTransaction(handle, ownAddress.value, height))
   } catch (e) {
     error.value = hubErrorMessage(e)
+    acting.value = false
+    return
+  }
+  try {
+    await submitRelease(tradeId, { kind: 'hub', raw_hex: rawHex })
+    await refresh()
+  } catch (e) {
+    error.value = (e as Error).message
   } finally {
     acting.value = false
   }
@@ -92,13 +103,22 @@ async function claim() {
   if (acting.value || !trade.value || !ownAddress.value) return
   acting.value = true
   error.value = null
+  const handle = trade.value.handle
+  const tradeId = trade.value.id
+  let rawHex: string
   try {
     const height = await fetchChainHeight()
-    const { rawHex } = await hubSignClaimTransaction(trade.value.handle, ownAddress.value, height)
-    await submitClaim(trade.value.id, { kind: 'hub', raw_hex: rawHex })
-    await refresh()
+    ;({ rawHex } = await hubSignClaimTransaction(handle, ownAddress.value, height))
   } catch (e) {
     error.value = hubErrorMessage(e)
+    acting.value = false
+    return
+  }
+  try {
+    await submitClaim(tradeId, { kind: 'hub', raw_hex: rawHex })
+    await refresh()
+  } catch (e) {
+    error.value = (e as Error).message
   } finally {
     acting.value = false
   }
@@ -118,10 +138,15 @@ onUnmounted(stopPolling)
       <h1>@{{ trade.handle }}</h1>
       <p v-if="error" class="desktop-marketplace-trade__error">{{ error }}</p>
 
-      <div v-if="trade.state === 'AWAITING_DEPOSIT' || trade.state === 'DEPOSIT_FINALIZING'">
+      <div v-if="trade.state === 'AWAITING_DEPOSIT'">
         <p>Pay {{ lunaToNim(trade.price_luna) }} NIM to fund this trade.</p>
-        <p v-if="!canPay">Escrow address unavailable — reload this page in a moment.</p>
+        <p v-if="paid" data-payment-sent>Payment sent — waiting for confirmation…</p>
+        <p v-else-if="!canPay">Escrow address unavailable — reload this page in a moment.</p>
         <button v-else type="button" data-pay-button :disabled="acting" @click="pay">Pay with Hub</button>
+      </div>
+
+      <div v-else-if="trade.state === 'DEPOSIT_FINALIZING'">
+        <p>Confirming your payment on chain…</p>
       </div>
 
       <div v-else-if="['FUNDED', 'AWAITING_RELEASE'].includes(trade.state) && isSeller">

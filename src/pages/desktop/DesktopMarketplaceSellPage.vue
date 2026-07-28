@@ -54,23 +54,30 @@ async function submitListing() {
   if (!hubAddress.value || !claim.value || priceLuna.value <= 0 || listing.value) return
   listing.value = true
   error.value = null
+  const nonce = generateNonce()
+  const expiresAt = Math.floor(Date.now() / 1000) + 600
+  const message = marketplaceListingMessage(
+    claim.value.handle, hubAddress.value, priceLuna.value, feeLuna.value,
+    claim.value.tx_hash, nonce, expiresAt,
+  )
+  let publicKey: string, signature: string
   try {
-    const nonce = generateNonce()
-    const expiresAt = Math.floor(Date.now() / 1000) + 600
-    const message = marketplaceListingMessage(
-      claim.value.handle, hubAddress.value, priceLuna.value, feeLuna.value,
-      claim.value.tx_hash, nonce, expiresAt,
-    )
-    const { publicKey, signature } = await hubSignMessage(message, hubAddress.value)
+    ;({ publicKey, signature } = await hubSignMessage(message, hubAddress.value))
+  } catch (e) {
+    error.value = hubErrorMessage(e)
+    listing.value = false
+    return
+  }
+  try {
     await createListing({
       handle: claim.value.handle, seller: hubAddress.value,
       price_luna: priceLuna.value, fee_luna: feeLuna.value,
       ownership_epoch_tx_hash: claim.value.tx_hash,
       nonce, expires_at: expiresAt, public_key: publicKey, signature,
     })
-    listedLink.value = `/marketplace/${claim.value.handle}`
+    listedLink.value = `/marketplace/buy?handle=${claim.value.handle}`
   } catch (e) {
-    error.value = hubErrorMessage(e)
+    error.value = (e as Error).message
   } finally {
     listing.value = false
   }

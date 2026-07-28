@@ -52,9 +52,9 @@ func ratesHandler(cache *RatesCache) http.HandlerFunc {
 	}
 }
 
-func chainHeightHandler(rpc *NimiqRPC) http.HandlerFunc {
+func chainHeightHandler(cache *ChainHeightCache) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		height, err := rpc.GetBlockNumber()
+		height, err := cache.Get()
 		if err != nil {
 			log.Printf("chain height unavailable error=%q", err)
 			writeJSONError(w, http.StatusBadGateway, "chain height unavailable")
