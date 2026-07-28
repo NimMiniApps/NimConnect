@@ -87,14 +87,17 @@ func (s *HandleSyncer) Sweep() error {
 	if err != nil {
 		return err
 	}
-	s.lastSweep = time.Now()
 	inbound := txs[:0]
 	for _, tx := range txs {
 		if compactAddress(tx.recipient()) == compactAddress(s.registryAddress) {
 			inbound = append(inbound, tx)
 		}
 	}
-	return s.registry.Rebuild(inbound)
+	if err := s.registry.Rebuild(inbound); err != nil {
+		return err
+	}
+	s.lastSweep = time.Now()
+	return nil
 }
 
 // Run sweeps on a fixed interval until stop closes. Start as a goroutine.
