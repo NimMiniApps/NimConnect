@@ -140,6 +140,9 @@ func TestMarketplaceTradeReserveHandler_CreatesAFundableTrade(t *testing.T) {
 	if !ok || trade.State != StateAwaitingDeposit {
 		t.Fatalf("expected the trade to already be AWAITING_DEPOSIT, got %+v ok=%v", trade, ok)
 	}
+	if trade.EscrowAddress != "NQ99 ESCROW" {
+		t.Fatalf("expected the persisted trade to carry the escrow address, got %+v", trade)
+	}
 }
 
 func TestMarketplaceTradeGetHandler_ReturnsTradeStatus(t *testing.T) {
@@ -149,6 +152,11 @@ func TestMarketplaceTradeGetHandler_ReturnsTradeStatus(t *testing.T) {
 	}
 	trade, err := store.ReserveListing("chuck", "trade-1", "ref-1", "NQ22 BUYER")
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, func(t *MarketplaceTrade) {
+		t.EscrowAddress = "NQ99 ESCROW"
+	}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,8 +172,11 @@ func TestMarketplaceTradeGetHandler_ReturnsTradeStatus(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatal(err)
 	}
-	if got.ID != trade.ID || got.State != StateReserved {
+	if got.ID != trade.ID || got.State != StateAwaitingDeposit {
 		t.Fatalf("unexpected trade: %+v", got)
+	}
+	if got.EscrowAddress != "NQ99 ESCROW" {
+		t.Fatalf("expected the escrow address to round-trip through GET, got %+v", got)
 	}
 }
 

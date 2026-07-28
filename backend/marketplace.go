@@ -67,6 +67,7 @@ type MarketplaceTrade struct {
 	Seller             string     `json:"seller"`
 	PriceLuna          uint64     `json:"price_luna"`
 	FeeLuna            uint64     `json:"fee_luna"`
+	EscrowAddress      string     `json:"escrow_address,omitempty"`
 	State              TradeState `json:"state"`
 	Version            uint64     `json:"version"`
 	DepositTxHash      string     `json:"deposit_tx_hash,omitempty"`

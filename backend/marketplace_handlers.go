@@ -115,7 +115,9 @@ func marketplaceTradeReserveHandler(store *MarketplaceStore, escrowAddress strin
 			writeJSONError(w, http.StatusConflict, err.Error())
 			return
 		}
-		if err := store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil); err != nil {
+		if err := store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, func(t *MarketplaceTrade) {
+			t.EscrowAddress = escrowAddress
+		}); err != nil {
 			log.Printf("marketplace reserve: failed to advance to AWAITING_DEPOSIT err=%q", err)
 			writeJSONError(w, http.StatusInternalServerError, "marketplace unavailable")
 			return
