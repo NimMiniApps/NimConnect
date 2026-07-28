@@ -60,3 +60,25 @@ func TestSweepIsRateLimited(t *testing.T) {
 		t.Fatalf("want 2 RPC calls after cooldown, got %d", got)
 	}
 }
+
+func TestSweepDoesNotRateLimitAFailedRebuild(t *testing.T) {
+	var calls atomic.Int64
+	srv := syncTestServer(t, &calls)
+	defer srv.Close()
+
+	registry := NewHandleRegistry(
+		filepath.Join(t.TempDir(), "missing-directory", "handles.json"),
+		map[string]bool{},
+	)
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+
+	if err := syncer.Sweep(); err == nil {
+		t.Fatal("want persistence failure")
+	}
+	if err := syncer.Sweep(); err == nil {
+		t.Fatal("want persistence failure on retry")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("failed rebuild must be retried immediately: want 2 RPC calls, got %d", got)
+	}
+}

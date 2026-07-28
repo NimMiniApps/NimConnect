@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 )
 
@@ -21,6 +22,7 @@ func handlesTestMux(t *testing.T, registry *HandleRegistry, profiles *ProfileSto
 	mux.HandleFunc("GET /api/handles/check", handleCheckHandler(registry))
 	mux.HandleFunc("GET /api/handles/by-address/{address}", handleByAddressHandler(registry))
 	if syncer != nil {
+		mux.HandleFunc("GET /api/pay/resolve/{handle}", paymentResolveHandler(syncer, registry))
 		mux.HandleFunc("POST /api/handles/claims", claimSubmitHandler(syncer, registry))
 	}
 	return mux
@@ -63,6 +65,80 @@ func TestResolveHandler(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/resolve/NOPE", nil))
 	if rec.Code != 400 {
 		t.Fatalf("invalid handle: want 400, got %d", rec.Code)
+	}
+}
+
+func TestPaymentResolveHandlerRefreshesBeforeResolving(t *testing.T) {
+	var calls atomic.Int64
+	srv := syncTestServer(t, &calls)
+	defer srv.Close()
+
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{})
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/chuck", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("want an on-demand registry sweep, got %d RPC calls", calls.Load())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("want Cache-Control no-store, got %q", got)
+	}
+	var claim HandleClaim
+	if err := json.Unmarshal(rec.Body.Bytes(), &claim); err != nil {
+		t.Fatal(err)
+	}
+	if claim.Handle != "chuck" || compactAddress(claim.Address) != "NQ11OWNER" {
+		t.Fatalf("unexpected claim: %+v", claim)
+	}
+}
+
+func TestPaymentResolveHandlerDoesNotServeStaleDataWhenRefreshFails(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "upstream unavailable", http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	registry := seededRegistry(t)
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/chuck", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503 instead of stale claim, got %d: %s", rec.Code, rec.Body)
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("want failures to be non-cacheable, got %q", got)
+	}
+}
+
+func TestPaymentResolveHandlerValidatesAndReportsUnknownHandles(t *testing.T) {
+	var calls atomic.Int64
+	srv := syncTestServer(t, &calls)
+	defer srv.Close()
+
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{})
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/NOPE", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid handle: want 400, got %d", rec.Code)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("invalid handles must not trigger an RPC sweep")
+	}
+
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/ghost", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown handle: want 404, got %d", rec.Code)
 	}
 }
 
