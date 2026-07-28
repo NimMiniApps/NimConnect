@@ -20,6 +20,7 @@ export const router = createRouter({
     { path: '/lookup', component: () => import('./pages/desktop/DesktopLookupPage.vue') },
     { path: '/about', component: () => import('./pages/desktop/DesktopAboutPage.vue') },
     { path: '/marketplace', component: () => import('./pages/desktop/DesktopMarketplacePage.vue') },
+    { path: '/marketplace/sell', component: () => import('./pages/desktop/DesktopMarketplaceSellPage.vue') },
     { path: '/admin/stats', component: () => import('./pages/AdminStatsPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
