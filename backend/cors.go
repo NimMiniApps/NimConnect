@@ -13,7 +13,7 @@ import (
 // handle. Write endpoints on the same path prefixes (PUT/DELETE) are not
 // GET, so they still go through the origin allow-list below; they're also
 // gated by a wallet signature, which is the real trust boundary either way.
-var publicReadPaths = []string{"/api/resolve/", "/api/profile/", "/api/handles/by-address/"}
+var publicReadPaths = []string{"/api/resolve/", "/api/pay/resolve/", "/api/profile/", "/api/handles/by-address/"}
 
 func isPublicReadRequest(r *http.Request) bool {
 	if r.Method != http.MethodGet {

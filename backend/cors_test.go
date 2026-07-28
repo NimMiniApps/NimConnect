@@ -91,6 +91,7 @@ func TestWithCORS_PublicReadEndpoints_AlwaysWildcard(t *testing.T) {
 
 	for _, path := range []string{
 		"/api/resolve/chuck",
+		"/api/pay/resolve/chuck",
 		"/api/profile/NQ11TEST",
 		"/api/handles/by-address/NQ11TEST",
 	} {
