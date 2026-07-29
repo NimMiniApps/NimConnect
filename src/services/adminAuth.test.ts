@@ -121,4 +121,39 @@ describe('adminAuth', () => {
     await expect(fetchStats()).rejects.toThrow()
     expect(getSessionToken()).toBe('tok-4')
   })
+
+  it('fetchAdminHandles returns the authenticated current handle directory', async () => {
+    globalThis.localStorage?.setItem(
+      'nimconnect:admin-session',
+      JSON.stringify({ token: 'tok-handles', expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
+    )
+    mockFetchOnce(200, {
+      handles: [
+        { handle: 'alice', address: 'NQ11 OWNER', tx_hash: 'tx-1', claimed_at: 1785270866171 },
+      ],
+    })
+
+    const { fetchAdminHandles } = await import('./adminAuth')
+    const handles = await fetchAdminHandles()
+
+    expect(handles).toEqual([
+      { handle: 'alice', address: 'NQ11 OWNER', tx_hash: 'tx-1', claimed_at: 1785270866171 },
+    ])
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/admin/handles'),
+      expect.objectContaining({ headers: { 'X-Admin-Session': 'tok-handles' } }),
+    )
+  })
+
+  it('fetchAdminHandles clears the session and throws AdminSessionExpiredError on 401', async () => {
+    globalThis.localStorage?.setItem(
+      'nimconnect:admin-session',
+      JSON.stringify({ token: 'tok-handles-expired', expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
+    )
+    mockFetchOnce(401, { error: 'unauthorized' })
+
+    const { fetchAdminHandles, AdminSessionExpiredError, getSessionToken } = await import('./adminAuth')
+    await expect(fetchAdminHandles()).rejects.toBeInstanceOf(AdminSessionExpiredError)
+    expect(getSessionToken()).toBeNull()
+  })
 })

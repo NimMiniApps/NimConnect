@@ -88,6 +88,13 @@ export interface StatsSummary {
   days: DayStats[]
 }
 
+export interface AdminHandle {
+  handle: string
+  address: string
+  tx_hash: string
+  claimed_at: number
+}
+
 /** GET /api/stats with the stored session. 401 clears the session; other failures do not. */
 export async function fetchStats(): Promise<StatsSummary> {
   const token = getSessionToken()
@@ -100,4 +107,19 @@ export async function fetchStats(): Promise<StatsSummary> {
   }
   if (!res.ok) throw new Error(`stats fetch failed (${res.status})`)
   return (await res.json()) as StatsSummary
+}
+
+/** GET the current handle registry with the stored admin session. */
+export async function fetchAdminHandles(): Promise<AdminHandle[]> {
+  const token = getSessionToken()
+  const res = await fetch(apiUrl('/api/admin/handles'), {
+    headers: token ? { 'X-Admin-Session': token } : {},
+  })
+  if (res.status === 401) {
+    logout()
+    throw new AdminSessionExpiredError()
+  }
+  if (!res.ok) throw new Error(`handle directory fetch failed (${res.status})`)
+  const body = await res.json() as { handles: AdminHandle[] }
+  return body.handles
 }
