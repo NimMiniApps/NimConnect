@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import AdminStatsChart from '../components/AdminStatsChart.vue'
 import {
   AdminSessionExpiredError,
   fetchAdminHandles,
@@ -114,19 +115,26 @@ onMounted(() => {
         </div>
       </div>
 
-      <table class="stats-table">
-        <thead>
-          <tr><th>Day</th><th>Wallets</th><th>Opens</th><th>Handles claimed</th></tr>
-        </thead>
-        <tbody>
-          <tr v-for="d in [...summary.days].reverse()" :key="d.day" data-day-row>
-            <td>{{ d.day }}</td>
-            <td>{{ d.wallets }}</td>
-            <td>{{ d.opens }}</td>
-            <td data-handles>{{ d.handles }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <AdminStatsChart :days="summary.days" />
+
+      <details class="daily-table-disclosure" data-daily-table>
+        <summary>View daily table</summary>
+        <div class="daily-table-wrap">
+          <table class="stats-table">
+            <thead>
+              <tr><th>Day</th><th>Wallets</th><th>Opens</th><th>Handles claimed</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in [...summary.days].reverse()" :key="d.day" data-day-row>
+                <td>{{ d.day }}</td>
+                <td>{{ d.wallets }}</td>
+                <td>{{ d.opens }}</td>
+                <td data-handles>{{ d.handles }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
 
       <section class="handle-directory" aria-labelledby="handle-directory-heading">
         <div class="directory-heading">
@@ -197,6 +205,11 @@ onMounted(() => {
 .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stats-table th, .stats-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
 .stats-table th { color: var(--text-2); font-weight: 700; text-transform: uppercase; font-size: 11px; }
+.daily-table-disclosure { margin: 4px 0 0; }
+.daily-table-disclosure summary { width: fit-content; min-height: 40px; display: flex; align-items: center; color: var(--primary); font-size: 13px; font-weight: 700; cursor: pointer; }
+.daily-table-disclosure summary:hover { text-decoration: underline; }
+.daily-table-disclosure summary:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 4px; }
+.daily-table-wrap { overflow-x: auto; padding-top: 4px; }
 .handle-directory { margin-top: 30px; }
 .directory-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
 .directory-heading h2 { margin: 0; font-size: 18px; }

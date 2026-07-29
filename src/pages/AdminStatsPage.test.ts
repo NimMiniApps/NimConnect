@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import AdminStatsChart from '../components/AdminStatsChart.vue'
 import AdminStatsPage from './AdminStatsPage.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -91,6 +92,15 @@ describe('AdminStatsPage', () => {
     expect(wrapper.text()).toContain('Handles claimed')
     expect(wrapper.findAll('[data-handles]').map(cell => cell.text())).toEqual(['5', '4'])
     expect(wrapper.findAll('[data-day-row]')).toHaveLength(2)
+    expect(wrapper.findComponent(AdminStatsChart).exists()).toBe(true)
+    const dailyTable = wrapper.get('[data-daily-table]')
+    expect((dailyTable.element as HTMLDetailsElement).open).toBe(false)
+    expect(dailyTable.get('summary').text()).toBe('View daily table')
+    expect(dailyTable.findAll('[data-day-row]')).toHaveLength(2)
+    ;(dailyTable.element as HTMLDetailsElement).open = true
+    await wrapper.vm.$nextTick()
+    expect(dailyTable.text()).toContain('2026-07-22')
+    expect(dailyTable.text()).toContain('25')
     expect(wrapper.text()).toContain('Current handles (2)')
     expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
       expect.stringContaining('@alice'),
