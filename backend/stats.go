@@ -145,3 +145,18 @@ func statsHandler(stats *Stats, sessions *AdminSessions, registry *HandleRegistr
 		json.NewEncoder(w).Encode(stats.Summary(handleStats))
 	}
 }
+
+func adminHandlesHandler(sessions *AdminSessions, registry *HandleRegistry) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !sessions.Valid(r.Header.Get("X-Admin-Session")) {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		claims := []HandleClaim{}
+		if registry != nil {
+			claims = registry.Claims()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string][]HandleClaim{"handles": claims})
+	}
+}

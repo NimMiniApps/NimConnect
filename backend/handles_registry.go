@@ -145,6 +145,20 @@ func (r *HandleRegistry) Stats() HandleStats {
 	return stats
 }
 
+func (r *HandleRegistry) Claims() []HandleClaim {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	claims := make([]HandleClaim, 0, len(r.handles))
+	for _, claim := range r.handles {
+		claims = append(claims, claim)
+	}
+	sort.Slice(claims, func(i, j int) bool {
+		return claims[i].Handle < claims[j].Handle
+	})
+	return claims
+}
+
 // Available reports whether a handle could be claimed and, when not, why:
 // "invalid", "reserved", "taken". Advisory only — the chain decides.
 func (r *HandleRegistry) Available(handle string) (bool, string) {

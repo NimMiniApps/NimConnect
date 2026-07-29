@@ -87,6 +87,33 @@ func TestHandleRegistryStatsIncludeLegacyClaimWithoutDailyBucket(t *testing.T) {
 	}
 }
 
+func TestHandleRegistryClaimsReturnsCurrentClaimsAlphabetically(t *testing.T) {
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
+	if err := r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OLD", "chuck", 5, 0),
+		claimTx("t2", "NQ22 OWNER", "alice", 6, 0),
+		releaseTx("t3", "NQ11 OLD", "chuck", 200, 0),
+		claimTx("t4", "NQ33 NEW", "chuck", 201, 0),
+		claimTx("t5", "NQ44 OWNER", "bob", 202, 0),
+		releaseTx("t6", "NQ44 OWNER", "bob", 203, 0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	claims := r.Claims()
+	if len(claims) != 2 || claims[0].Handle != "alice" || claims[1].Handle != "chuck" {
+		t.Fatalf("claims = %+v", claims)
+	}
+	if compactAddress(claims[1].Address) != "NQ33NEW" {
+		t.Fatalf("reclaimed owner = %q, want NQ33 NEW", claims[1].Address)
+	}
+
+	claims[0].Handle = "mutated"
+	if got := r.Claims(); got[0].Handle != "alice" {
+		t.Fatalf("Claims exposed mutable registry state: %+v", got)
+	}
+}
+
 func TestRebuild_ReleaseFromNonOwnerIsNoOp(t *testing.T) {
 	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
 	r.Rebuild([]rpcTx{

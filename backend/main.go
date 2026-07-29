@@ -84,6 +84,7 @@ func main() {
 		ratesHandler(ratesCache)(w, r)
 	})
 	mux.HandleFunc("POST /api/admin/login", adminLoginHandler(adminSessions))
+	mux.HandleFunc("GET /api/admin/handles", adminHandlesHandler(adminSessions, registry))
 	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions, registry))
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore)))
 	mux.HandleFunc("HEAD /api/backup/{address}", withWalletStat(stats, backupHeadHandler(backupStore)))

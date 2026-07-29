@@ -115,6 +115,59 @@ func TestStatsHandlerAuth(t *testing.T) {
 	}
 }
 
+func TestAdminHandlesHandler(t *testing.T) {
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	if err := registry.Rebuild([]rpcTx{
+		claimTx("t2", "NQ22 OWNER", "chuck", 6, 0),
+		claimTx("t1", "NQ11 OWNER", "alice", 5, 0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions := NewAdminSessions(nil)
+	token, _, err := sessions.Issue()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := adminHandlesHandler(sessions, registry)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/handles", nil)
+	rec := httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("no session header: got %d, want 401", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/handles", nil)
+	req.Header.Set("X-Admin-Session", token)
+	rec = httptest.NewRecorder()
+	h(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("valid session: got %d, want 200", rec.Code)
+	}
+	var body struct {
+		Handles []HandleClaim `json:"handles"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.Handles) != 2 || body.Handles[0].Handle != "alice" || body.Handles[1].Handle != "chuck" {
+		t.Fatalf("handles = %+v", body.Handles)
+	}
+
+	h = adminHandlesHandler(sessions, nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/admin/handles", nil)
+	req.Header.Set("X-Admin-Session", token)
+	rec = httptest.NewRecorder()
+	h(rec, req)
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Handles == nil || len(body.Handles) != 0 {
+		t.Fatalf("disabled registry handles = %#v, want empty array", body.Handles)
+	}
+}
+
 func TestWithWalletStat(t *testing.T) {
 	s := NewStats("")
 	mux := http.NewServeMux()
