@@ -1,20 +1,60 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { AdminSessionExpiredError, fetchStats, getSessionToken, login, type StatsSummary } from '../services/adminAuth'
+import {
+  AdminSessionExpiredError,
+  fetchAdminHandles,
+  fetchStats,
+  getSessionToken,
+  login,
+  type AdminHandle,
+  type StatsSummary,
+} from '../services/adminAuth'
 import { getDesktopHubAddress } from '../services/desktop-session'
+import { shortAddress, transactionExplorerUrl } from '../services/links'
 
 type ViewState = 'connect' | 'loading' | 'loaded' | 'error'
 
 const state = ref<ViewState>('connect')
 const summary = ref<StatsSummary | null>(null)
+const handles = ref<AdminHandle[]>([])
+const handleQuery = ref('')
 const connectLabel = computed(() =>
   getDesktopHubAddress() ? 'Sign to view stats' : 'Connect wallet',
 )
+const filteredHandles = computed(() => {
+  const query = handleQuery.value.trim().toLowerCase()
+  if (!query) return handles.value
+  const compactQuery = query.replace(/\s+/g, '')
+  return handles.value.filter(claim =>
+    claim.handle.toLowerCase().includes(query)
+    || claim.address.toLowerCase().replace(/\s+/g, '').includes(compactQuery),
+  )
+})
+
+function publicProfileUrl(handle: string): string {
+  return `/#/u/${encodeURIComponent(handle)}`
+}
+
+function shortHash(hash: string): string {
+  return hash.length > 18 ? `${hash.slice(0, 9)}…${hash.slice(-7)}` : hash
+}
+
+function claimDate(timestamp: number): string {
+  if (timestamp <= 0) return 'Unknown'
+  return new Intl.DateTimeFormat('en', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(timestamp))
+}
 
 async function load() {
   state.value = 'loading'
   try {
-    summary.value = await fetchStats()
+    const [nextSummary, nextHandles] = await Promise.all([fetchStats(), fetchAdminHandles()])
+    summary.value = nextSummary
+    handles.value = nextHandles
     state.value = 'loaded'
   } catch (err) {
     if (err instanceof AdminSessionExpiredError) {
@@ -87,6 +127,60 @@ onMounted(() => {
           </tr>
         </tbody>
       </table>
+
+      <section class="handle-directory" aria-labelledby="handle-directory-heading">
+        <div class="directory-heading">
+          <div>
+            <h2 id="handle-directory-heading">Current handles ({{ handles.length }})</h2>
+            <p>Current winning claims from the on-chain registry.</p>
+          </div>
+          <input
+            v-if="handles.length"
+            v-model="handleQuery"
+            class="directory-search"
+            type="search"
+            placeholder="Search handle or wallet"
+            aria-label="Search current handles"
+            data-handle-search
+          >
+        </div>
+
+        <p v-if="!handles.length" class="directory-empty">No handles are currently claimed.</p>
+        <p v-else-if="!filteredHandles.length" class="directory-empty">No matching handles.</p>
+
+        <div v-else class="directory-table-wrap">
+          <table class="stats-table directory-table">
+            <thead>
+              <tr><th>Handle</th><th>Owner</th><th>Claimed</th><th>Transaction</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="claim in filteredHandles" :key="claim.handle" data-handle-row>
+                <td>
+                  <a
+                    :href="publicProfileUrl(claim.handle)"
+                    :data-handle-profile="claim.handle"
+                  >@{{ claim.handle }}</a>
+                </td>
+                <td>
+                  <span :title="claim.address" :data-handle-address="claim.handle">
+                    {{ shortAddress(claim.address) }}
+                  </span>
+                </td>
+                <td>{{ claimDate(claim.claimed_at) }}</td>
+                <td>
+                  <a
+                    :href="transactionExplorerUrl(claim.tx_hash)"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    :title="claim.tx_hash"
+                    :data-handle-tx="claim.handle"
+                  >{{ shortHash(claim.tx_hash) }}</a>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
     </template>
   </div>
 </template>
@@ -103,4 +197,19 @@ onMounted(() => {
 .stats-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .stats-table th, .stats-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
 .stats-table th { color: var(--text-2); font-weight: 700; text-transform: uppercase; font-size: 11px; }
+.handle-directory { margin-top: 30px; }
+.directory-heading { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 10px; }
+.directory-heading h2 { margin: 0; font-size: 18px; }
+.directory-heading p { margin: 4px 0 0; color: var(--text-2); font-size: 13px; }
+.directory-search { min-height: 40px; width: min(240px, 100%); padding: 8px 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; }
+.directory-search:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.directory-empty { margin: 18px 0; color: var(--text-2); font-size: 14px; }
+.directory-table-wrap { overflow-x: auto; }
+.directory-table { min-width: 620px; }
+.directory-table a { color: var(--primary); font-weight: 600; text-decoration: none; }
+.directory-table a:hover { text-decoration: underline; }
+@media (max-width: 560px) {
+  .directory-heading { align-items: stretch; flex-direction: column; }
+  .directory-search { width: 100%; }
+}
 </style>

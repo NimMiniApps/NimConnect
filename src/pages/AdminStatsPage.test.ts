@@ -5,6 +5,7 @@ import AdminStatsPage from './AdminStatsPage.vue'
 const mocks = vi.hoisted(() => ({
   login: vi.fn(),
   fetchStats: vi.fn(),
+  fetchAdminHandles: vi.fn(),
   getSessionToken: vi.fn(),
   getDesktopHubAddress: vi.fn(),
 }))
@@ -15,6 +16,7 @@ vi.mock('../services/adminAuth', async importOriginal => {
     ...actual,
     login: mocks.login,
     fetchStats: mocks.fetchStats,
+    fetchAdminHandles: mocks.fetchAdminHandles,
     getSessionToken: mocks.getSessionToken,
   }
 })
@@ -33,12 +35,29 @@ const summary = {
   ],
 }
 
+const handles = [
+  {
+    handle: 'alice',
+    address: 'NQ11 ALICE WALLET',
+    tx_hash: 'alice-tx',
+    claimed_at: Date.UTC(2026, 6, 21),
+  },
+  {
+    handle: 'chuck',
+    address: 'NQ22 CHUCK WALLET',
+    tx_hash: 'chuck-tx',
+    claimed_at: Date.UTC(2026, 6, 22),
+  },
+]
+
 describe('AdminStatsPage', () => {
   beforeEach(() => {
     mocks.login.mockReset()
     mocks.fetchStats.mockReset()
+    mocks.fetchAdminHandles.mockReset()
     mocks.getSessionToken.mockReset()
     mocks.getDesktopHubAddress.mockReset()
+    mocks.fetchAdminHandles.mockResolvedValue([])
     mocks.getDesktopHubAddress.mockReturnValue(null)
   })
 
@@ -62,6 +81,7 @@ describe('AdminStatsPage', () => {
   it('loads and renders stats when a session exists', async () => {
     mocks.getSessionToken.mockReturnValue('tok')
     mocks.fetchStats.mockResolvedValue(summary)
+    mocks.fetchAdminHandles.mockResolvedValue(handles)
     const wrapper = mount(AdminStatsPage)
     await flushPromises()
     expect(wrapper.text()).toContain('12')
@@ -71,6 +91,50 @@ describe('AdminStatsPage', () => {
     expect(wrapper.text()).toContain('Handles claimed')
     expect(wrapper.findAll('[data-handles]').map(cell => cell.text())).toEqual(['5', '4'])
     expect(wrapper.findAll('[data-day-row]')).toHaveLength(2)
+    expect(wrapper.text()).toContain('Current handles (2)')
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@alice'),
+      expect.stringContaining('@chuck'),
+    ])
+    expect(wrapper.get('[data-handle-profile="alice"]').attributes('href')).toBe('/#/u/alice')
+    expect(wrapper.get('[data-handle-tx="alice"]').attributes('href')).toBe(
+      'https://nimiqscan.com/transaction/alice-tx',
+    )
+    expect(wrapper.get('[data-handle-address="alice"]').attributes('title')).toBe('NQ11 ALICE WALLET')
+    expect(wrapper.get('[data-handle-tx="alice"]').attributes('title')).toBe('alice-tx')
+  })
+
+  it('filters current handles by handle or compact wallet address', async () => {
+    mocks.getSessionToken.mockReturnValue('tok')
+    mocks.fetchStats.mockResolvedValue(summary)
+    mocks.fetchAdminHandles.mockResolvedValue(handles)
+    const wrapper = mount(AdminStatsPage)
+    await flushPromises()
+
+    await wrapper.get('[data-handle-search]').setValue('chuck')
+    expect(wrapper.findAll('[data-handle-row]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('@chuck')
+    expect(wrapper.text()).not.toContain('@alice')
+
+    await wrapper.get('[data-handle-search]').setValue('NQ11ALICE')
+    expect(wrapper.findAll('[data-handle-row]')).toHaveLength(1)
+    expect(wrapper.text()).toContain('@alice')
+    expect(wrapper.text()).not.toContain('@chuck')
+  })
+
+  it('shows empty registry and empty search result states', async () => {
+    mocks.getSessionToken.mockReturnValue('tok')
+    mocks.fetchStats.mockResolvedValue(summary)
+    mocks.fetchAdminHandles.mockResolvedValue([])
+    const wrapper = mount(AdminStatsPage)
+    await flushPromises()
+    expect(wrapper.text()).toContain('No handles are currently claimed.')
+
+    mocks.fetchAdminHandles.mockResolvedValue(handles)
+    const populated = mount(AdminStatsPage)
+    await flushPromises()
+    await populated.get('[data-handle-search]').setValue('nobody')
+    expect(populated.text()).toContain('No matching handles.')
   })
 
   it('falls back to the connect prompt on AdminSessionExpiredError', async () => {
