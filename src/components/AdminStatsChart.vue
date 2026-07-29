@@ -52,7 +52,8 @@ function formatShortDay(day: string): string {
 const normalizedDays = computed<DayStats[]>(() => {
   if (!props.days.length) return []
 
-  const newestDay = [...props.days].sort((a, b) => a.day.localeCompare(b.day)).at(-1)!.day
+  const orderedDays = [...props.days].sort((a, b) => a.day.localeCompare(b.day))
+  const newestDay = orderedDays[orderedDays.length - 1]!.day
   const newestDate = parseUtcDay(newestDay)
   const byDay = new Map(props.days.map(day => [day.day, day]))
 
