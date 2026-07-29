@@ -32,6 +32,7 @@ docker-compose.homelab.yml
 data/
 .worktrees/
 backend/nimconnect-backend
+video/
 
 # superpowers brainstorming scratch
 .superpowers/
