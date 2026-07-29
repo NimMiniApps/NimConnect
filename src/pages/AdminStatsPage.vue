@@ -44,7 +44,7 @@ onMounted(() => {
   <div class="page">
     <header class="header">
       <h1>Admin · Stats</h1>
-      <p>Daily unique wallets and app opens.</p>
+      <p>Daily unique wallets, app opens, and claimed handles.</p>
     </header>
 
     <div v-if="state === 'connect'" class="hint">
@@ -68,17 +68,22 @@ onMounted(() => {
           <span class="total-value">{{ summary.total_opens }}</span>
           <span class="total-label">Total opens</span>
         </div>
+        <div class="total-card">
+          <span class="total-value" data-handles-total>{{ summary.unique_handles }}</span>
+          <span class="total-label">Claimed handles</span>
+        </div>
       </div>
 
       <table class="stats-table">
         <thead>
-          <tr><th>Day</th><th>Wallets</th><th>Opens</th></tr>
+          <tr><th>Day</th><th>Wallets</th><th>Opens</th><th>Handles claimed</th></tr>
         </thead>
         <tbody>
           <tr v-for="d in [...summary.days].reverse()" :key="d.day" data-day-row>
             <td>{{ d.day }}</td>
             <td>{{ d.wallets }}</td>
             <td>{{ d.opens }}</td>
+            <td data-handles>{{ d.handles }}</td>
           </tr>
         </tbody>
       </table>
@@ -91,7 +96,7 @@ onMounted(() => {
 .header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 4px; }
 .header p { margin: 0 0 14px; color: var(--text-2); font-size: 14px; }
 .hint { color: var(--text-2); font-size: 14px; text-align: center; margin: 24px 0; display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.totals { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+.totals { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 18px; }
 .total-card { padding: 14px; border-radius: var(--radius); border: 1px solid var(--border); background: var(--card); box-shadow: var(--shadow); text-align: center; }
 .total-value { display: block; font-size: 22px; font-weight: 700; }
 .total-label { display: block; margin-top: 4px; color: var(--text-2); font-size: 12px; font-weight: 600; text-transform: uppercase; }

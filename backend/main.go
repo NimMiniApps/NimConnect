@@ -67,6 +67,13 @@ func main() {
 	inboxStore := NewInboxStore(getEnv("INBOX_DIR", "/data/inbox"))
 	stats := NewStats(getEnv("STATS_FILE", "/data/stats.json"))
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
+	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
+	var registry *HandleRegistry
+	if registryAddress != "off" {
+		reserved := loadReservedHandles(getEnv("RESERVED_HANDLES_FILE", "/data/reserved-handles.json"))
+		releaseActivationHeight := parseActivationHeight(getEnv("RELEASE_ACTIVATION_HEIGHT", ""))
+		registry = NewHandleRegistry(getEnv("HANDLES_FILE", "/data/handles.json"), reserved, releaseActivationHeight)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", rootHandler)
@@ -77,7 +84,7 @@ func main() {
 		ratesHandler(ratesCache)(w, r)
 	})
 	mux.HandleFunc("POST /api/admin/login", adminLoginHandler(adminSessions))
-	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions))
+	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions, registry))
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore)))
 	mux.HandleFunc("HEAD /api/backup/{address}", withWalletStat(stats, backupHeadHandler(backupStore)))
 	mux.HandleFunc("PUT /api/backup/{address}", withWalletStat(stats, backupPutHandler(backupStore)))
@@ -86,12 +93,8 @@ func main() {
 	mux.HandleFunc("DELETE /api/inbox/{address}/messages/{id}", withWalletStat(stats, inboxDeleteHandler(inboxStore)))
 
 	// On-chain handle registry — defaults to the shared NimFeed catalog address.
-	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
-	if registryAddress != "off" {
+	if registry != nil {
 		rpc := NewNimiqRPC(httpClient, getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com"))
-		reserved := loadReservedHandles(getEnv("RESERVED_HANDLES_FILE", "/data/reserved-handles.json"))
-		releaseActivationHeight := parseActivationHeight(getEnv("RELEASE_ACTIVATION_HEIGHT", ""))
-		registry := NewHandleRegistry(getEnv("HANDLES_FILE", "/data/handles.json"), reserved, releaseActivationHeight)
 		profiles := NewProfileStore(getEnv("PROFILES_DIR", "/data/profiles"))
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))

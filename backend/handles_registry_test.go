@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func claimTx(hash, sender, handle string, block, index uint64) rpcTx {
@@ -35,6 +36,54 @@ func TestRebuild_ReleaseThenReclaim(t *testing.T) {
 	claim, ok := r.Resolve("chuck")
 	if !ok || compactAddress(claim.Address) != "NQ22NEWOWNER" || claim.TxHash != "t3" {
 		t.Fatalf("expected new owner after release+reclaim: %+v ok=%v", claim, ok)
+	}
+}
+
+func TestHandleRegistryStatsFollowCurrentWinningClaims(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "handles.json")
+	r := NewHandleRegistry(path, map[string]bool{}, 100)
+
+	first := claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)
+	first.Timestamp = time.Date(2026, 7, 20, 1, 0, 0, 0, time.UTC).UnixMilli()
+	release := releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0)
+	reclaim := claimTx("t3", "NQ22 NEW", "chuck", 300, 0)
+	reclaim.Timestamp = time.Date(2026, 7, 22, 1, 0, 0, 0, time.UTC).UnixMilli()
+	alice := claimTx("t4", "NQ33 OWNER", "alice", 301, 0)
+	alice.Timestamp = time.Date(2026, 7, 22, 2, 0, 0, 0, time.UTC).UnixMilli()
+
+	if err := r.Rebuild([]rpcTx{first, release, reclaim, alice}); err != nil {
+		t.Fatal(err)
+	}
+	got := r.Stats()
+	if got.UniqueHandles != 2 || got.Days["2026-07-22"] != 2 {
+		t.Fatalf("unexpected handle stats: %+v", got)
+	}
+	if got.Days["2026-07-20"] != 0 {
+		t.Fatalf("released claim still counted on its old day: %+v", got)
+	}
+
+	reloaded := NewHandleRegistry(path, map[string]bool{}, 100)
+	reloadedClaim, ok := reloaded.Resolve("chuck")
+	if !ok || reloadedClaim.ClaimedAt != reclaim.Timestamp {
+		t.Fatalf("reloaded claim timestamp = %d, want %d", reloadedClaim.ClaimedAt, reclaim.Timestamp)
+	}
+	if got := reloaded.Stats(); got.UniqueHandles != 2 || got.Days["2026-07-22"] != 2 {
+		t.Fatalf("unexpected reloaded stats: %+v", got)
+	}
+}
+
+func TestHandleRegistryStatsIncludeLegacyClaimWithoutDailyBucket(t *testing.T) {
+	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	if err := r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)}); err != nil {
+		t.Fatal(err)
+	}
+
+	got := r.Stats()
+	if got.UniqueHandles != 1 {
+		t.Fatalf("unique handles = %d, want 1", got.UniqueHandles)
+	}
+	if len(got.Days) != 0 {
+		t.Fatalf("zero timestamp should not create a daily bucket: %+v", got.Days)
 	}
 }
 

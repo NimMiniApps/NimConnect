@@ -81,25 +81,42 @@ type daySummary struct {
 	Day     string `json:"day"`
 	Wallets int    `json:"wallets"`
 	Opens   int    `json:"opens"`
+	Handles int    `json:"handles"`
 }
 
 type statsSummary struct {
 	UniqueWallets int          `json:"unique_wallets"`
+	UniqueHandles int          `json:"unique_handles"`
 	TotalOpens    int          `json:"total_opens"`
 	Days          []daySummary `json:"days"`
 }
 
-func (s *Stats) Summary() statsSummary {
+func (s *Stats) Summary(handleStats HandleStats) statsSummary {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	all := map[string]bool{}
-	out := statsSummary{Days: []daySummary{}}
+	byDay := map[string]*daySummary{}
+	out := statsSummary{
+		UniqueHandles: handleStats.UniqueHandles,
+		Days:          []daySummary{},
+	}
 	for day, d := range s.Days {
 		for w := range d.Wallets {
 			all[w] = true
 		}
 		out.TotalOpens += d.Opens
-		out.Days = append(out.Days, daySummary{Day: day, Wallets: len(d.Wallets), Opens: d.Opens})
+		byDay[day] = &daySummary{Day: day, Wallets: len(d.Wallets), Opens: d.Opens}
+	}
+	for day, handles := range handleStats.Days {
+		d := byDay[day]
+		if d == nil {
+			d = &daySummary{Day: day}
+			byDay[day] = d
+		}
+		d.Handles = handles
+	}
+	for _, d := range byDay {
+		out.Days = append(out.Days, *d)
 	}
 	out.UniqueWallets = len(all)
 	sort.Slice(out.Days, func(i, j int) bool { return out.Days[i].Day < out.Days[j].Day })
@@ -114,13 +131,17 @@ func withWalletStat(stats *Stats, next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func statsHandler(stats *Stats, sessions *AdminSessions) http.HandlerFunc {
+func statsHandler(stats *Stats, sessions *AdminSessions, registry *HandleRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !sessions.Valid(r.Header.Get("X-Admin-Session")) {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		handleStats := HandleStats{}
+		if registry != nil {
+			handleStats = registry.Stats()
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stats.Summary())
+		json.NewEncoder(w).Encode(stats.Summary(handleStats))
 	}
 }

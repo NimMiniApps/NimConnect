@@ -85,12 +85,13 @@ describe('adminAuth', () => {
       'nimconnect:admin-session',
       JSON.stringify({ token: 'tok-2', expiresAt: Math.floor(Date.now() / 1000) + 3600 }),
     )
-    mockFetchOnce(200, { unique_wallets: 3, total_opens: 10, days: [] })
+    mockFetchOnce(200, { unique_wallets: 3, unique_handles: 2, total_opens: 10, days: [] })
 
     const { fetchStats } = await import('./adminAuth')
     const summary = await fetchStats()
 
     expect(summary.unique_wallets).toBe(3)
+    expect(summary.unique_handles).toBe(2)
     expect(fetch).toHaveBeenCalledWith(
       expect.stringContaining('/api/stats'),
       expect.objectContaining({ headers: { 'X-Admin-Session': 'tok-2' } }),

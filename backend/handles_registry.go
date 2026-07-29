@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"sync"
+	"time"
 )
 
 type HandleClaim struct {
@@ -13,6 +14,12 @@ type HandleClaim struct {
 	TxHash      string `json:"tx_hash"`
 	BlockHeight uint64 `json:"block_height"`
 	TxIndex     uint64 `json:"tx_index"`
+	ClaimedAt   int64  `json:"claimed_at,omitempty"`
+}
+
+type HandleStats struct {
+	UniqueHandles int
+	Days          map[string]int
 }
 
 // HandleRegistry maps handle -> winning claim. The whole map is recomputed
@@ -90,6 +97,7 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 				TxHash:      tx.Hash,
 				BlockHeight: tx.BlockNumber,
 				TxIndex:     tx.TransactionIndex,
+				ClaimedAt:   tx.Timestamp,
 			}
 		}
 	}
@@ -117,6 +125,24 @@ func (r *HandleRegistry) Resolve(handle string) (HandleClaim, bool) {
 	defer r.mu.RUnlock()
 	claim, ok := r.handles[handle]
 	return claim, ok
+}
+
+func (r *HandleRegistry) Stats() HandleStats {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	stats := HandleStats{
+		UniqueHandles: len(r.handles),
+		Days:          map[string]int{},
+	}
+	for _, claim := range r.handles {
+		if claim.ClaimedAt <= 0 {
+			continue
+		}
+		day := time.UnixMilli(claim.ClaimedAt).UTC().Format("2006-01-02")
+		stats.Days[day]++
+	}
+	return stats
 }
 
 // Available reports whether a handle could be claimed and, when not, why:

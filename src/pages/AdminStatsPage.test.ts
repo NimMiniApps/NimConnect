@@ -25,10 +25,11 @@ vi.mock('../services/desktop-session', () => ({
 
 const summary = {
   unique_wallets: 12,
+  unique_handles: 9,
   total_opens: 40,
   days: [
-    { day: '2026-07-21', wallets: 5, opens: 15 },
-    { day: '2026-07-22', wallets: 7, opens: 25 },
+    { day: '2026-07-21', wallets: 5, opens: 15, handles: 4 },
+    { day: '2026-07-22', wallets: 7, opens: 25, handles: 5 },
   ],
 }
 
@@ -65,6 +66,10 @@ describe('AdminStatsPage', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('12')
     expect(wrapper.text()).toContain('40')
+    expect(wrapper.text()).toContain('Claimed handles')
+    expect(wrapper.find('[data-handles-total]').text()).toBe('9')
+    expect(wrapper.text()).toContain('Handles claimed')
+    expect(wrapper.findAll('[data-handles]').map(cell => cell.text())).toEqual(['5', '4'])
     expect(wrapper.findAll('[data-day-row]')).toHaveLength(2)
   })
 

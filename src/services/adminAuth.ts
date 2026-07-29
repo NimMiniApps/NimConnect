@@ -78,10 +78,12 @@ export interface DayStats {
   day: string
   wallets: number
   opens: number
+  handles: number
 }
 
 export interface StatsSummary {
   unique_wallets: number
+  unique_handles: number
   total_opens: number
   days: DayStats[]
 }
