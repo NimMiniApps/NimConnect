@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { chooseHubAddress, hubSignMessage } from '../../services/hub'
+import { RouterLink } from 'vue-router'
+import { chooseHubAddress, hubSignMessage, hubErrorMessage } from '../../services/hub'
 import { getDesktopHubAddress, setDesktopHubAddress } from '../../services/desktop-session'
 import {
   fetchTradesForWallet,
@@ -43,7 +44,7 @@ async function loadTrades() {
     trades.value = await fetchTradesForWallet(address, nonce, expiresAt, publicKey, signature)
     loaded.value = true
   } catch (e) {
-    error.value = e instanceof Error ? e.message : String(e)
+    error.value = hubErrorMessage(e)
   } finally {
     loading.value = false
   }
@@ -61,13 +62,13 @@ async function loadTrades() {
       <p v-if="error" class="desktop-marketplace-trades__error">{{ error }}</p>
     </div>
     <div v-else-if="trades.length === 0">
-      <p>No trades yet. <a href="#/marketplace">Browse the marketplace</a>.</p>
+      <p>No trades yet. <RouterLink to="/marketplace">Browse the marketplace</RouterLink>.</p>
     </div>
     <ul v-else class="desktop-marketplace-trades__list">
       <li v-for="trade in trades" :key="trade.id">
-        <a :href="`#/marketplace/trades/${trade.id}`">
+        <RouterLink :to="`/marketplace/trades/${trade.id}`">
           @{{ trade.handle }} — {{ roleFor(trade) }} — {{ trade.state }}
-        </a>
+        </RouterLink>
       </li>
     </ul>
   </section>

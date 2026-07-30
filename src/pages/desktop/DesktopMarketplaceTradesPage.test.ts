@@ -5,6 +5,7 @@ import DesktopMarketplaceTradesPage from './DesktopMarketplaceTradesPage.vue'
 vi.mock('../../services/hub', () => ({
   chooseHubAddress: vi.fn(),
   hubSignMessage: vi.fn(),
+  hubErrorMessage: (e: unknown) => `HUB:${e instanceof Error ? e.message : String(e)}`,
 }))
 vi.mock('../../services/desktop-session', () => ({
   getDesktopHubAddress: vi.fn(() => null),
@@ -20,6 +21,13 @@ import { chooseHubAddress, hubSignMessage } from '../../services/hub'
 import { getDesktopHubAddress } from '../../services/desktop-session'
 import { fetchTradesForWallet } from '../../services/marketplace'
 
+// This page's hrefs are asserted in hash-route form (e.g. "#/marketplace"),
+// matching the app's createWebHashHistory router — unlike sibling pages'
+// plain-path assertions, so the stub here prepends "#" to reflect that.
+const stubs = {
+  RouterLink: { props: ['to'], template: '<a :href="`#${to}`"><slot /></a>' },
+}
+
 describe('DesktopMarketplaceTradesPage', () => {
   beforeEach(() => {
     vi.mocked(getDesktopHubAddress).mockReset().mockReturnValue(null)
@@ -29,7 +37,7 @@ describe('DesktopMarketplaceTradesPage', () => {
   })
 
   it('shows a connect-and-load prompt when no Hub wallet is connected, and does not fetch until clicked', async () => {
-    const wrapper = mount(DesktopMarketplaceTradesPage)
+    const wrapper = mount(DesktopMarketplaceTradesPage, { global: { stubs } })
     await flushPromises()
     expect(wrapper.text()).toContain('Connect')
     expect(fetchTradesForWallet).not.toHaveBeenCalled()
@@ -42,7 +50,7 @@ describe('DesktopMarketplaceTradesPage', () => {
       { id: 't1', handle: 'chuck', seller: 'NQ11 SELLER', buyer: 'NQ22 BUYER', state: 'AWAITING_RELEASE' },
       { id: 't2', handle: 'alice', seller: 'NQ33 OTHER', buyer: 'NQ11 SELLER', state: 'SETTLED' },
     ])
-    const wrapper = mount(DesktopMarketplaceTradesPage)
+    const wrapper = mount(DesktopMarketplaceTradesPage, { global: { stubs } })
     await flushPromises()
     await wrapper.find('[data-load-trades]').trigger('click')
     await flushPromises()
@@ -59,7 +67,7 @@ describe('DesktopMarketplaceTradesPage', () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
     vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
     vi.mocked(fetchTradesForWallet).mockResolvedValue([])
-    const wrapper = mount(DesktopMarketplaceTradesPage)
+    const wrapper = mount(DesktopMarketplaceTradesPage, { global: { stubs } })
     await flushPromises()
     await wrapper.find('[data-load-trades]').trigger('click')
     await flushPromises()
@@ -73,7 +81,7 @@ describe('DesktopMarketplaceTradesPage', () => {
     vi.mocked(fetchTradesForWallet).mockResolvedValue([
       { id: 't1', handle: 'chuck', seller: 'NQ11 SELLER', buyer: 'NQ22 BUYER', state: 'AWAITING_RELEASE' },
     ])
-    const wrapper = mount(DesktopMarketplaceTradesPage)
+    const wrapper = mount(DesktopMarketplaceTradesPage, { global: { stubs } })
     await flushPromises()
     await wrapper.find('[data-load-trades]').trigger('click')
     await flushPromises()
@@ -83,7 +91,7 @@ describe('DesktopMarketplaceTradesPage', () => {
   it('maps a Hub rejection during signing to a quiet message', async () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
     vi.mocked(hubSignMessage).mockRejectedValue(new Error('canceled'))
-    const wrapper = mount(DesktopMarketplaceTradesPage)
+    const wrapper = mount(DesktopMarketplaceTradesPage, { global: { stubs } })
     await flushPromises()
     await wrapper.find('[data-load-trades]').trigger('click')
     await flushPromises()
