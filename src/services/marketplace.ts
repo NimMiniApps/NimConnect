@@ -145,6 +145,27 @@ export function getTrade(tradeId: string): Promise<MarketplaceTrade> {
   return marketplaceFetch(`/api/marketplace/trades/${tradeId}`)
 }
 
+/** Byte-for-byte match of backend/marketplace_intents.go's marketplaceTradesLookupMessage. */
+export function marketplaceTradesLookupMessage(address: string, nonce: string, expiresAt: number): string {
+  return (
+    'nimconnect:marketplace-trades-lookup:v1' +
+    `\naddress=${compact(address)}` +
+    `\nnonce=${nonce}` +
+    `\nexpires_at=${expiresAt}`
+  )
+}
+
+export function fetchTradesForWallet(
+  address: string,
+  nonce: string,
+  expiresAt: number,
+  publicKey: string,
+  signature: string,
+): Promise<MarketplaceTrade[]> {
+  const params = new URLSearchParams({ nonce, expires_at: String(expiresAt), public_key: publicKey, signature })
+  return marketplaceFetch(`/api/marketplace/trades/by-wallet/${encodeURIComponent(address)}?${params.toString()}`)
+}
+
 export type SubmitTransactionRequest =
   | { kind: 'hub'; raw_hex: string }
   | { kind: 'pay'; tx_hash: string }

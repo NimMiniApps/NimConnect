@@ -22,6 +22,7 @@ export const router = createRouter({
     { path: '/marketplace', component: () => import('./pages/desktop/DesktopMarketplacePage.vue') },
     { path: '/marketplace/sell', component: () => import('./pages/desktop/DesktopMarketplaceSellPage.vue') },
     { path: '/marketplace/buy', component: () => import('./pages/desktop/DesktopMarketplaceBuyPage.vue') },
+    { path: '/marketplace/trades', component: () => import('./pages/desktop/DesktopMarketplaceTradesPage.vue') },
     { path: '/marketplace/trades/:id', component: () => import('./pages/desktop/DesktopMarketplaceTradePage.vue') },
     { path: '/admin/stats', component: () => import('./pages/AdminStatsPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },

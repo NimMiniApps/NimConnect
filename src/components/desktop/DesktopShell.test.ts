@@ -20,6 +20,7 @@ function makeRouter() {
       { path: '/me', component: { template: '<div>me</div>' } },
       { path: '/about', component: { template: '<div>about</div>' } },
       { path: '/marketplace', component: { template: '<div>marketplace</div>' } },
+      { path: '/marketplace/trades', component: { template: '<div>trades</div>' } },
     ],
   })
 }
@@ -89,5 +90,14 @@ describe('DesktopShell', () => {
     expect(wrapper.text()).toContain('Mini Apps')
     expect(wrapper.text()).toContain('© NimConnect')
     expect(wrapper.text()).toContain('Built for the Nimiq ecosystem.')
+  })
+
+  it('links to the trades page', async () => {
+    const router = makeRouter()
+    router.push('/')
+    await router.isReady()
+    const wrapper = mount(DesktopShell, { global: { plugins: [router], stubs } })
+
+    expect(wrapper.find('a[href="#/marketplace/trades"]').exists()).toBe(true)
   })
 })

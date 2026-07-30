@@ -10,6 +10,8 @@ import {
   submitRelease,
   submitClaim,
   fetchChainHeight,
+  marketplaceTradesLookupMessage,
+  fetchTradesForWallet,
 } from './marketplace'
 
 describe('marketplaceListingMessage', () => {
@@ -127,5 +129,28 @@ describe('marketplace API calls', () => {
   it('fetchChainHeight returns the numeric height', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => ({ height: 4321 }) })
     await expect(fetchChainHeight()).resolves.toBe(4321)
+  })
+
+  it('marketplaceTradesLookupMessage matches the exact backend format', () => {
+    const message = marketplaceTradesLookupMessage('NQ11 SELLER', 'nonce1', 1234)
+    expect(message).toBe(
+      'nimconnect:marketplace-trades-lookup:v1' +
+        '\naddress=NQ11SELLER' +
+        '\nnonce=nonce1' +
+        '\nexpires_at=1234',
+    )
+  })
+
+  it('fetchTradesForWallet returns the parsed array and sends the signed query params', async () => {
+    ;(fetch as any).mockResolvedValue({ ok: true, json: async () => [{ id: 't1', state: 'FUNDED' }] })
+    await expect(fetchTradesForWallet('NQ11 SELLER', 'nonce1', 1234, 'pub', 'sig')).resolves.toEqual([
+      { id: 't1', state: 'FUNDED' },
+    ])
+    expect(fetch).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /\/api\/marketplace\/trades\/by-wallet\/NQ11%20SELLER\?nonce=nonce1&expires_at=1234&public_key=pub&signature=sig/,
+      ),
+      undefined,
+    )
   })
 })
