@@ -218,6 +218,24 @@ func (s *MarketplaceStore) TradesInState(state TradeState) []MarketplaceTrade {
 	return trades
 }
 
+// TradesForWallet returns every trade where the given address is either the
+// buyer or the seller — a wallet can't be both on the same trade, since
+// CreateListing/ReserveListing never let a listing's seller reserve their
+// own listing... actually nothing enforces that today, so this simply
+// matches on either field without assuming exclusivity.
+func (s *MarketplaceStore) TradesForWallet(address string) []MarketplaceTrade {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	compact := compactAddress(address)
+	trades := make([]MarketplaceTrade, 0)
+	for _, trade := range s.trades {
+		if compactAddress(trade.Seller) == compact || compactAddress(trade.Buyer) == compact {
+			trades = append(trades, trade)
+		}
+	}
+	return trades
+}
+
 // MarkPayoutAttempt atomically records an outbound payout attempt before a
 // signer can be called. An existing marker represents an ambiguous send and
 // must never be automatically retried.

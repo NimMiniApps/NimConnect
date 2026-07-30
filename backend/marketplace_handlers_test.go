@@ -337,3 +337,41 @@ func TestMarketplaceListingsGetHandler_ReturnsActiveListings(t *testing.T) {
 		t.Fatalf("unexpected listings: %+v", listings)
 	}
 }
+
+func TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	trade, _ := store.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/trades/by-wallet/NQ11%20SELLER", nil)
+	req.SetPathValue("address", "NQ11 SELLER")
+	rec := httptest.NewRecorder()
+	marketplaceTradesByWalletHandler(store)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var got []MarketplaceTrade
+	json.NewDecoder(rec.Body).Decode(&got)
+	if len(got) != 1 || got[0].ID != trade.ID {
+		t.Fatalf("unexpected trades: %+v", got)
+	}
+}
+
+func TestMarketplaceTradesByWalletHandler_EmptyArrayForNoMatches(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/trades/by-wallet/NQ99%20NOBODY", nil)
+	req.SetPathValue("address", "NQ99 NOBODY")
+	rec := httptest.NewRecorder()
+	marketplaceTradesByWalletHandler(store)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (empty result is not an error), got %d", rec.Code)
+	}
+	var got []MarketplaceTrade
+	json.NewDecoder(rec.Body).Decode(&got)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("expected an empty array, got %+v", got)
+	}
+}

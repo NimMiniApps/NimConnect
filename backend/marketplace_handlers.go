@@ -145,6 +145,13 @@ func marketplaceTradeGetHandler(store *MarketplaceStore) http.HandlerFunc {
 	}
 }
 
+func marketplaceTradesByWalletHandler(store *MarketplaceStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(store.TradesForWallet(r.PathValue("address")))
+	}
+}
+
 func marketplaceListingsGetHandler(store *MarketplaceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
