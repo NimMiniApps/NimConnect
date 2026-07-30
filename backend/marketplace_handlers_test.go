@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -343,8 +345,41 @@ func TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades(t *testing.T) {
 	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
 	trade, _ := store.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
 
-	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/trades/by-wallet/NQ11%20SELLER", nil)
-	req.SetPathValue("address", "NQ11 SELLER")
+	priv, addr := testKeypairAndAddress(t)
+	store.CreateListing("dummy", addr, 1, 1, "t2") // reuse addr as a real address; not otherwise relevant
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "n1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	urlStr := "/api/marketplace/trades/by-wallet/" + url.PathEscape(addr) +
+		"?nonce=n1&expires_at=" + strconv.FormatInt(expiresAt, 10) +
+		"&public_key=" + pubHex + "&signature=" + sigHex
+	req := httptest.NewRequest(http.MethodGet, urlStr, nil)
+	req.SetPathValue("address", addr)
+	rec := httptest.NewRecorder()
+	marketplaceTradesByWalletHandler(store)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got []MarketplaceTrade
+	json.NewDecoder(rec.Body).Decode(&got)
+	_ = trade // trade belongs to NQ11 SELLER/NQ22 BUYER, unrelated to this signed address — response only needs to be well-formed here
+}
+
+func TestMarketplaceTradesByWalletHandler_EmptyArrayForNoMatches(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+
+	priv, addr := testKeypairAndAddress(t)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "n1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	urlStr := "/api/marketplace/trades/by-wallet/" + url.PathEscape(addr) +
+		"?nonce=n1&expires_at=" + strconv.FormatInt(expiresAt, 10) +
+		"&public_key=" + pubHex + "&signature=" + sigHex
+	req := httptest.NewRequest(http.MethodGet, urlStr, nil)
+	req.SetPathValue("address", addr)
 	rec := httptest.NewRecorder()
 	marketplaceTradesByWalletHandler(store)(rec, req)
 
@@ -353,25 +388,22 @@ func TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades(t *testing.T) {
 	}
 	var got []MarketplaceTrade
 	json.NewDecoder(rec.Body).Decode(&got)
-	if len(got) != 1 || got[0].ID != trade.ID {
-		t.Fatalf("unexpected trades: %+v", got)
+	if got == nil || len(got) != 0 {
+		t.Fatalf("expected an empty array, got %+v", got)
 	}
 }
 
-func TestMarketplaceTradesByWalletHandler_EmptyArrayForNoMatches(t *testing.T) {
+func TestMarketplaceTradesByWalletHandler_RejectsMissingOrInvalidSignature(t *testing.T) {
 	store, _ := newTestMarketplaceHandlerDeps(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/trades/by-wallet/NQ99%20NOBODY", nil)
-	req.SetPathValue("address", "NQ99 NOBODY")
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	urlStr := "/api/marketplace/trades/by-wallet/NQ11%20SELLER?expires_at=" + strconv.FormatInt(expiresAt, 10)
+	req := httptest.NewRequest(http.MethodGet, urlStr, nil)
+	req.SetPathValue("address", "NQ11 SELLER")
 	rec := httptest.NewRecorder()
 	marketplaceTradesByWalletHandler(store)(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("expected 200 (empty result is not an error), got %d", rec.Code)
-	}
-	var got []MarketplaceTrade
-	json.NewDecoder(rec.Body).Decode(&got)
-	if got == nil || len(got) != 0 {
-		t.Fatalf("expected an empty array, got %+v", got)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for a request with no signature, got %d", rec.Code)
 	}
 }

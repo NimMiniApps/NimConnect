@@ -54,3 +54,28 @@ func verifyPurchaseIntent(handle, buyer, refundAddress, nonce string, expiresAt 
 	}
 	return nil
 }
+
+// marketplaceTradesLookupMessage is the domain-separated message a wallet
+// signs to prove control of an address before its marketplace trade history
+// is returned. Unlike the listing/purchase intents, this is a read-only
+// proof of ownership, not an action to authorize — the same signature may
+// be reused for repeated lookups (e.g. the trades page polling or
+// reloading) until it expires; there is no nonce-consumption/replay
+// concern here since nothing is mutated.
+func marketplaceTradesLookupMessage(address, nonce string, expiresAt int64) string {
+	return "nimconnect:marketplace-trades-lookup:v1" +
+		"\naddress=" + compactAddress(address) +
+		"\nnonce=" + nonce +
+		"\nexpires_at=" + strconv.FormatInt(expiresAt, 10)
+}
+
+func verifyTradesLookupIntent(address, nonce string, expiresAt int64, publicKeyHex, signatureHex string) error {
+	if time.Now().Unix() > expiresAt {
+		return fmt.Errorf("%w: trades lookup intent expired", errBadRequest)
+	}
+	message := marketplaceTradesLookupMessage(address, nonce, expiresAt)
+	if err := verifySignedMessage(address, publicKeyHex, signatureHex, message); err != nil {
+		return fmt.Errorf("%w: %s", errUnauthorized, err)
+	}
+	return nil
+}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 func newTradeID() string {
@@ -147,8 +148,19 @@ func marketplaceTradeGetHandler(store *MarketplaceStore) http.HandlerFunc {
 
 func marketplaceTradesByWalletHandler(store *MarketplaceStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		address := r.PathValue("address")
+		q := r.URL.Query()
+		expiresAt, err := strconv.ParseInt(q.Get("expires_at"), 10, 64)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+		if err := verifyTradesLookupIntent(address, q.Get("nonce"), expiresAt, q.Get("public_key"), q.Get("signature")); err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid trades lookup signature")
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(store.TradesForWallet(r.PathValue("address")))
+		json.NewEncoder(w).Encode(store.TradesForWallet(address))
 	}
 }
 
