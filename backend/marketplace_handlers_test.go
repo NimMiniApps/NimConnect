@@ -342,11 +342,10 @@ func TestMarketplaceListingsGetHandler_ReturnsActiveListings(t *testing.T) {
 
 func TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades(t *testing.T) {
 	store, _ := newTestMarketplaceHandlerDeps(t)
-	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
-	trade, _ := store.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
-
 	priv, addr := testKeypairAndAddress(t)
-	store.CreateListing("dummy", addr, 1, 1, "t2") // reuse addr as a real address; not otherwise relevant
+	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	trade, _ := store.ReserveListing("chuck", "trade-a", "ref-a", addr)
+
 	expiresAt := time.Now().Add(time.Hour).Unix()
 	message := marketplaceTradesLookupMessage(addr, "n1", expiresAt)
 	pubHex, sigHex := signMessage(t, priv, message)
@@ -364,7 +363,9 @@ func TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades(t *testing.T) {
 	}
 	var got []MarketplaceTrade
 	json.NewDecoder(rec.Body).Decode(&got)
-	_ = trade // trade belongs to NQ11 SELLER/NQ22 BUYER, unrelated to this signed address — response only needs to be well-formed here
+	if len(got) != 1 || got[0].ID != trade.ID {
+		t.Fatalf("expected the signer's own trade, got %+v", got)
+	}
 }
 
 func TestMarketplaceTradesByWalletHandler_EmptyArrayForNoMatches(t *testing.T) {

@@ -80,6 +80,42 @@ func TestEscrowWatcher_FundedTradeImmediatelyBecomesAwaitingRelease(t *testing.T
 	}
 }
 
+func TestEscrowWatcher_SweepAdvancesATradeAlreadyStuckAtFunded(t *testing.T) {
+	// Simulates a trade left at FUNDED by a prior deploy (or a failed/raced
+	// transition) — constructed directly via the store rather than via a
+	// deposit sweep. Sweep() must self-heal it to AWAITING_RELEASE.
+	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
+	trade, _ := store.ReserveListing("chuck", "t1", "the-ref", "NQ22 BUYER")
+	for _, transition := range [][2]TradeState{
+		{StateReserved, StateAwaitingDeposit},
+		{StateAwaitingDeposit, StateDepositFinalizing},
+		{StateDepositFinalizing, StateFunded},
+	} {
+		if err := store.Transition(trade.ID, transition[0], transition[1], nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, _ := store.Resolve(trade.ID)
+	if got.State != StateFunded {
+		t.Fatalf("test setup: expected trade stuck at FUNDED, got %s", got.State)
+	}
+
+	macroHeight := uint64(100)
+	srv := escrowSweepServer(t, &macroHeight, nil)
+	defer srv.Close()
+
+	w := NewEscrowWatcher(NewNimiqRPC(srv.Client(), srv.URL), store, "NQ99 ESCROW")
+	if err := w.Sweep(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ = store.Resolve(trade.ID)
+	if got.State != StateAwaitingRelease {
+		t.Fatalf("expected a trade stuck at FUNDED to self-heal to AWAITING_RELEASE on sweep, got %s", got.State)
+	}
+}
+
 func TestEscrowWatcher_FundsAMatchingMacroFinalizedDeposit(t *testing.T) {
 	store, trade := awaitingDepositTrade(t)
 	macroHeight := uint64(100)
