@@ -224,4 +224,11 @@ describe('DesktopMarketplaceTradePage', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('refunded')
   })
+
+  it('shows a refund-in-progress panel for REFUND_PENDING', async () => {
+    vi.mocked(getTrade).mockResolvedValue({ ...baseTrade, state: 'REFUND_PENDING' })
+    const wrapper = await mountForTrade('trade-1')
+    await flushPromises()
+    expect(wrapper.text()).toContain('being refunded')
+  })
 })

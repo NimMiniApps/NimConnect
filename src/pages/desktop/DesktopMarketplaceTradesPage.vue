@@ -30,21 +30,32 @@ function roleFor(trade: MarketplaceTrade): string {
 async function loadTrades() {
   loading.value = true
   error.value = null
+  let address: string
+  let publicKey: string
+  let signature: string
+  let nonce: string
+  let expiresAt: number
   try {
-    let address = hubAddress.value
+    address = hubAddress.value ?? ''
     if (!address) {
       address = await chooseHubAddress()
       setDesktopHubAddress(address)
       hubAddress.value = address
     }
-    const nonce = generateNonce()
-    const expiresAt = Math.floor(Date.now() / 1000) + 600
+    nonce = generateNonce()
+    expiresAt = Math.floor(Date.now() / 1000) + 600
     const message = marketplaceTradesLookupMessage(address, nonce, expiresAt)
-    const { publicKey, signature } = await hubSignMessage(message, address)
+    ;({ publicKey, signature } = await hubSignMessage(message, address))
+  } catch (e) {
+    error.value = hubErrorMessage(e)
+    loading.value = false
+    return
+  }
+  try {
     trades.value = await fetchTradesForWallet(address, nonce, expiresAt, publicKey, signature)
     loaded.value = true
   } catch (e) {
-    error.value = hubErrorMessage(e)
+    error.value = (e as Error).message
   } finally {
     loading.value = false
   }

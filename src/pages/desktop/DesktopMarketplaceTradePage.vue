@@ -179,6 +179,9 @@ onUnmounted(stopPolling)
       <div v-else-if="trade.state === 'REFUNDED'">
         <p>This trade was refunded — the buyer's payment was returned.</p>
       </div>
+      <div v-else-if="trade.state === 'REFUND_PENDING'">
+        <p>This trade is being refunded.</p>
+      </div>
       <div v-else-if="trade.state === 'FAILED_AFTER_RELEASE' || trade.state === 'MANUAL_REVIEW'">
         <p>This trade did not complete.</p>
       </div>

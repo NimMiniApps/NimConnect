@@ -98,4 +98,16 @@ describe('DesktopMarketplaceTradesPage', () => {
     expect(wrapper.text()).toContain('canceled')
     expect(fetchTradesForWallet).not.toHaveBeenCalled()
   })
+
+  it('shows the backend error verbatim for a fetchTradesForWallet rejection, not the generic Hub message', async () => {
+    vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    vi.mocked(fetchTradesForWallet).mockRejectedValue(new Error('lookup intent expired'))
+    const wrapper = mount(DesktopMarketplaceTradesPage, { global: { stubs } })
+    await flushPromises()
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('lookup intent expired')
+    expect(wrapper.text()).not.toContain('HUB:')
+  })
 })
