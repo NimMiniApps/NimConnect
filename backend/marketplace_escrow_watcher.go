@@ -97,6 +97,12 @@ func (w *EscrowWatcher) Sweep() error {
 		if err := w.store.Transition(trade.ID, StateDepositFinalizing, StateFunded, nil); err != nil {
 			return err
 		}
+		// A finalized deposit is definitionally sufficient to move on — there's
+		// no separate condition to wait for, so a trade should never rest
+		// observably at FUNDED. See docs/superpowers/specs/2026-07-29-marketplace-release-transition-and-trade-discovery-design.md.
+		if err := w.store.Transition(trade.ID, StateFunded, StateAwaitingRelease, nil); err != nil {
+			return err
+		}
 	}
 	return nil
 }

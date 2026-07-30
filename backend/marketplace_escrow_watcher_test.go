@@ -57,6 +57,29 @@ func awaitingDepositTrade(t *testing.T) (*MarketplaceStore, MarketplaceTrade) {
 	return store, trade
 }
 
+func TestEscrowWatcher_FundedTradeImmediatelyBecomesAwaitingRelease(t *testing.T) {
+	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
+	trade, _ := store.ReserveListing("chuck", "t1", "the-ref", "NQ22 BUYER")
+	store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
+
+	macroHeight := uint64(100)
+	srv := escrowSweepServer(t, &macroHeight, []rpcTx{
+		depositTx("d1", "NQ22 BUYER", 1000, "the-ref", 50), // block 50, well before macro height 100
+	})
+	defer srv.Close()
+
+	w := NewEscrowWatcher(NewNimiqRPC(srv.Client(), srv.URL), store, "NQ99 ESCROW")
+	if err := w.Sweep(); err != nil {
+		t.Fatal(err)
+	}
+
+	got, _ := store.Resolve(trade.ID)
+	if got.State != StateAwaitingRelease {
+		t.Fatalf("expected AWAITING_RELEASE (never observably stuck at FUNDED), got %s", got.State)
+	}
+}
+
 func TestEscrowWatcher_FundsAMatchingMacroFinalizedDeposit(t *testing.T) {
 	store, trade := awaitingDepositTrade(t)
 	macroHeight := uint64(100)
@@ -71,8 +94,8 @@ func TestEscrowWatcher_FundsAMatchingMacroFinalizedDeposit(t *testing.T) {
 	}
 
 	got, _ := store.Resolve(trade.ID)
-	if got.State != StateFunded || got.DepositTxHash != "d1" {
-		t.Fatalf("expected FUNDED with deposit hash d1, got %+v", got)
+	if got.State != StateAwaitingRelease || got.DepositTxHash != "d1" {
+		t.Fatalf("expected AWAITING_RELEASE with deposit hash d1, got %+v", got)
 	}
 }
 
@@ -99,8 +122,8 @@ func TestEscrowWatcher_StagesUnfinalizedDepositBeforeFunding(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = store.Resolve(trade.ID)
-	if got.State != StateFunded {
-		t.Fatalf("expected staged deposit to become FUNDED, got %+v", got)
+	if got.State != StateAwaitingRelease {
+		t.Fatalf("expected staged deposit to become AWAITING_RELEASE, got %+v", got)
 	}
 }
 
