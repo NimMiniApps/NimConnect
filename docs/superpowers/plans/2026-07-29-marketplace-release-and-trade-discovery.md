@@ -12,6 +12,7 @@
 
 - No new state, no new condition for the release transition — `FUNDED` and `AWAITING_RELEASE` both become true in the same sweep, so a trade is never observably stuck in `FUNDED`.
 - `GET /api/marketplace/trades/by-wallet/{address}` is a path-segment lookup (matching `GET /api/handles/by-address/{address}`), not a query parameter. No 404 for zero matches — an empty array is a valid, non-error response.
+- The wallet trades lookup requires a signed proof of address ownership (Task 2b) — a wallet address is not a secret, so an unauthenticated version of this endpoint would let anyone enumerate any address's marketplace trade history. Reuses the existing `verifySignedMessage` intent pattern; the signature may be reused for repeated reads until it expires (no nonce consumption, unlike the write-path listing/purchase intents), since nothing is mutated by a lookup.
 - No pagination on the trades list — matches the same call already made for the listings browse page.
 - No deadline/timeout-driven transitions — explicitly out of scope, unchanged from every prior marketplace plan.
 
@@ -255,7 +256,7 @@ func (s *MarketplaceStore) TradesForWallet(address string) []MarketplaceTrade {
 }
 ```
 
-Add to `backend/marketplace_handlers.go`, after `marketplaceTradeGetHandler`:
+Add to `backend/marketplace_handlers.go`, after `marketplaceTradeGetHandler` — **note: this initial version is intentionally insecure and gets locked down in Task 2b immediately below; do not skip Task 2b.**
 
 ```go
 func marketplaceTradesByWalletHandler(store *MarketplaceStore) http.HandlerFunc {
@@ -291,6 +292,191 @@ git commit -m "feat: add GET /api/marketplace/trades/by-wallet/{address}"
 
 ---
 
+### Task 2b: Backend — secure the wallet trades lookup with a signed intent
+
+**Why:** a bare `GET /trades/by-wallet/{address}` lets anyone who merely knows a wallet address (not a secret — routinely shared to receive payments) enumerate that wallet's complete marketplace trade history: handle, price, counterparty address, escrow reference, state. This is a materially different exposure than `GET /trades/{tradeID}` (keyed by an unguessable random ID) or `GET /handles/by-address/{address}` (already-public on-chain ownership data) — it turns a known, shareable identifier into a lookup key for private trading data. Found by an automated security review during Task 2's execution; the fix reuses this codebase's existing signed-intent pattern (`verifySignedMessage`, already used for listing/purchase intents in `backend/marketplace_intents.go`) rather than inventing new auth.
+
+**Files:**
+- Modify: `backend/marketplace_intents.go`
+- Modify: `backend/marketplace_handlers.go`
+- Test: `backend/marketplace_intents_test.go`, `backend/marketplace_handlers_test.go`
+
+**Interfaces:**
+- Produces: `marketplaceTradesLookupMessage(address, nonce string, expiresAt int64) string`; `verifyTradesLookupIntent(address, nonce string, expiresAt int64, publicKeyHex, signatureHex string) error`.
+- Consumes/modifies: `marketplaceTradesByWalletHandler` from Task 2.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `backend/marketplace_intents_test.go`:
+
+```go
+func TestMarketplaceTradesLookupMessage_MatchesExactFormat(t *testing.T) {
+	got := marketplaceTradesLookupMessage("NQ11 SELLER", "nonce1", 1234)
+	want := "nimconnect:marketplace-trades-lookup:v1" +
+		"\naddress=NQ11SELLER" +
+		"\nnonce=nonce1" +
+		"\nexpires_at=1234"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestVerifyTradesLookupIntent_AcceptsValidSignature(t *testing.T) {
+	priv, addr := testKeypairAndAddress(t)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "nonce1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	if err := verifyTradesLookupIntent(addr, "nonce1", expiresAt, pubHex, sigHex); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyTradesLookupIntent_RejectsWrongAddressOrExpired(t *testing.T) {
+	priv, addr := testKeypairAndAddress(t)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "nonce1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	_, otherAddr := testKeypairAndAddress(t)
+	if err := verifyTradesLookupIntent(otherAddr, "nonce1", expiresAt, pubHex, sigHex); err == nil {
+		t.Fatal("expected an error when the requested address doesn't match the signing key")
+	}
+
+	expired := time.Now().Add(-time.Minute).Unix()
+	expiredMessage := marketplaceTradesLookupMessage(addr, "nonce1", expired)
+	pubHex2, sigHex2 := signMessage(t, priv, expiredMessage)
+	if err := verifyTradesLookupIntent(addr, "nonce1", expired, pubHex2, sigHex2); err == nil {
+		t.Fatal("expected an error for an expired lookup intent")
+	}
+}
+```
+
+Update the two existing handler tests in `backend/marketplace_handlers_test.go` (`TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades` and `TestMarketplaceTradesByWalletHandler_EmptyArrayForNoMatches`) to sign a valid lookup intent and attach it as query parameters, and add one new test asserting a request without a valid signature is rejected:
+
+```go
+func TestMarketplaceTradesByWalletHandler_ReturnsMatchingTrades(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	trade, _ := store.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
+
+	priv, addr := testKeypairAndAddress(t)
+	store.CreateListing("dummy", addr, 1, 1, "t2") // reuse addr as a real address; not otherwise relevant
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "n1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	url := "/api/marketplace/trades/by-wallet/" + addr +
+		"?nonce=n1&expires_at=" + strconv.FormatInt(expiresAt, 10) +
+		"&public_key=" + pubHex + "&signature=" + sigHex
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.SetPathValue("address", addr)
+	rec := httptest.NewRecorder()
+	marketplaceTradesByWalletHandler(store)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got []MarketplaceTrade
+	json.NewDecoder(rec.Body).Decode(&got)
+	_ = trade // trade belongs to NQ11 SELLER/NQ22 BUYER, unrelated to this signed address — response only needs to be well-formed here
+}
+
+func TestMarketplaceTradesByWalletHandler_RejectsMissingOrInvalidSignature(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/marketplace/trades/by-wallet/NQ11%20SELLER", nil)
+	req.SetPathValue("address", "NQ11 SELLER")
+	rec := httptest.NewRecorder()
+	marketplaceTradesByWalletHandler(store)(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for a request with no signature, got %d", rec.Code)
+	}
+}
+```
+
+(Rewrite `TestMarketplaceTradesByWalletHandler_EmptyArrayForNoMatches` the same way — sign a valid intent for the looked-up address, attach it as query params, and keep its assertion that the result is an empty, non-nil array.)
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `cd backend && go test ./... -run 'TestMarketplaceTradesLookupMessage|TestVerifyTradesLookupIntent|TestMarketplaceTradesByWalletHandler' -v`
+Expected: FAIL — `marketplaceTradesLookupMessage`/`verifyTradesLookupIntent` don't exist yet; the handler doesn't check a signature yet, so the "rejects missing signature" test fails.
+
+- [ ] **Step 3: Implement**
+
+Add to `backend/marketplace_intents.go`, following the exact shape of the existing `marketplaceListingMessage`/`verifyListingIntent`:
+
+```go
+// marketplaceTradesLookupMessage is the domain-separated message a wallet
+// signs to prove control of an address before its marketplace trade history
+// is returned. Unlike the listing/purchase intents, this is a read-only
+// proof of ownership, not an action to authorize — the same signature may
+// be reused for repeated lookups (e.g. the trades page polling or
+// reloading) until it expires; there is no nonce-consumption/replay
+// concern here since nothing is mutated.
+func marketplaceTradesLookupMessage(address, nonce string, expiresAt int64) string {
+	return "nimconnect:marketplace-trades-lookup:v1" +
+		"\naddress=" + compactAddress(address) +
+		"\nnonce=" + nonce +
+		"\nexpires_at=" + strconv.FormatInt(expiresAt, 10)
+}
+
+func verifyTradesLookupIntent(address, nonce string, expiresAt int64, publicKeyHex, signatureHex string) error {
+	if time.Now().Unix() > expiresAt {
+		return fmt.Errorf("%w: trades lookup intent expired", errBadRequest)
+	}
+	message := marketplaceTradesLookupMessage(address, nonce, expiresAt)
+	if err := verifySignedMessage(address, publicKeyHex, signatureHex, message); err != nil {
+		return fmt.Errorf("%w: %s", errUnauthorized, err)
+	}
+	return nil
+}
+```
+
+Replace `marketplaceTradesByWalletHandler` in `backend/marketplace_handlers.go`:
+
+```go
+func marketplaceTradesByWalletHandler(store *MarketplaceStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		address := r.PathValue("address")
+		q := r.URL.Query()
+		expiresAt, err := strconv.ParseInt(q.Get("expires_at"), 10, 64)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+		if err := verifyTradesLookupIntent(address, q.Get("nonce"), expiresAt, q.Get("public_key"), q.Get("signature")); err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid trades lookup signature")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(store.TradesForWallet(address))
+	}
+}
+```
+
+Add `"strconv"` to `marketplace_handlers.go`'s imports if not already present.
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+Run: `cd backend && go test ./... -run 'TestMarketplaceTradesLookupMessage|TestVerifyTradesLookupIntent|TestMarketplaceTradesByWalletHandler' -v`
+Expected: PASS
+
+- [ ] **Step 5: Run the full backend suite**
+
+Run: `cd backend && go build ./... && go vet ./... && go test ./... -race`
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/marketplace_intents.go backend/marketplace_intents_test.go backend/marketplace_handlers.go backend/marketplace_handlers_test.go
+git commit -m "fix: require a signed proof-of-ownership for the wallet trades lookup"
+```
+
+---
+
 ### Task 3: Frontend — `DesktopMarketplaceTradesPage.vue`
 
 **Files:**
@@ -302,18 +488,37 @@ git commit -m "feat: add GET /api/marketplace/trades/by-wallet/{address}"
 - Test: `src/components/desktop/DesktopShell.test.ts`
 
 **Interfaces:**
-- Consumes: `MarketplaceTrade` type, `apiUrl`-based fetch pattern (`src/services/marketplace.ts`); `getDesktopHubAddress`, `chooseHubAddress`, `setDesktopHubAddress` (existing).
-- Produces: `fetchTradesForWallet(address: string): Promise<MarketplaceTrade[]>` in `src/services/marketplace.ts`.
+- Consumes: `MarketplaceTrade` type, `apiUrl`-based fetch pattern, `generateNonce` (`src/services/marketplace.ts`); `getDesktopHubAddress`, `setDesktopHubAddress`, `chooseHubAddress`, `hubSignMessage` (existing).
+- Produces: `marketplaceTradesLookupMessage(address: string, nonce: string, expiresAt: number): string`; `fetchTradesForWallet(address: string, nonce: string, expiresAt: number, publicKey: string, signature: string): Promise<MarketplaceTrade[]>` in `src/services/marketplace.ts`.
+
+**Note on the signed lookup (Task 2b):** fetching this page's data is no longer a bare GET — it requires a signature proving control of the wallet address, matching Task 2b's backend requirement. This means the page cannot silently auto-load trades just because a Hub address is already stored locally (`getDesktopHubAddress()` returning a value doesn't mean the page holds a valid signature) — every load, whether from a fresh connect or a previously-connected session, requires signing a fresh short-lived message via `hubSignMessage` first. There is no "Connect" vs. "already connected, auto-load" split anymore; there's one `loadTrades()` action that connects if needed, always signs, then fetches.
 
 - [ ] **Step 1: Write the failing tests**
 
 Add to `src/services/marketplace.test.ts`:
 
 ```ts
-it('fetchTradesForWallet returns the parsed array', async () => {
+it('marketplaceTradesLookupMessage matches the exact backend format', () => {
+  const message = marketplaceTradesLookupMessage('NQ11 SELLER', 'nonce1', 1234)
+  expect(message).toBe(
+    'nimconnect:marketplace-trades-lookup:v1' +
+      '\naddress=NQ11SELLER' +
+      '\nnonce=nonce1' +
+      '\nexpires_at=1234',
+  )
+})
+
+it('fetchTradesForWallet returns the parsed array and sends the signed query params', async () => {
   ;(fetch as any).mockResolvedValue({ ok: true, json: async () => [{ id: 't1', state: 'FUNDED' }] })
-  await expect(fetchTradesForWallet('NQ11 SELLER')).resolves.toEqual([{ id: 't1', state: 'FUNDED' }])
-  expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/api/marketplace/trades/by-wallet/NQ11%20SELLER'), undefined)
+  await expect(fetchTradesForWallet('NQ11 SELLER', 'nonce1', 1234, 'pub', 'sig')).resolves.toEqual([
+    { id: 't1', state: 'FUNDED' },
+  ])
+  expect(fetch).toHaveBeenCalledWith(
+    expect.stringMatching(
+      /\/api\/marketplace\/trades\/by-wallet\/NQ11%20SELLER\?nonce=nonce1&expires_at=1234&public_key=pub&signature=sig/,
+    ),
+    undefined,
+  )
 })
 ```
 
@@ -326,6 +531,7 @@ import DesktopMarketplaceTradesPage from './DesktopMarketplaceTradesPage.vue'
 
 vi.mock('../../services/hub', () => ({
   chooseHubAddress: vi.fn(),
+  hubSignMessage: vi.fn(),
 }))
 vi.mock('../../services/desktop-session', () => ({
   getDesktopHubAddress: vi.fn(() => null),
@@ -333,9 +539,11 @@ vi.mock('../../services/desktop-session', () => ({
 }))
 vi.mock('../../services/marketplace', () => ({
   fetchTradesForWallet: vi.fn(),
+  marketplaceTradesLookupMessage: vi.fn(() => 'the-message'),
+  generateNonce: vi.fn(() => 'the-nonce'),
 }))
 
-import { chooseHubAddress } from '../../services/hub'
+import { chooseHubAddress, hubSignMessage } from '../../services/hub'
 import { getDesktopHubAddress } from '../../services/desktop-session'
 import { fetchTradesForWallet } from '../../services/marketplace'
 
@@ -343,25 +551,31 @@ describe('DesktopMarketplaceTradesPage', () => {
   beforeEach(() => {
     vi.mocked(getDesktopHubAddress).mockReset().mockReturnValue(null)
     vi.mocked(chooseHubAddress).mockReset()
+    vi.mocked(hubSignMessage).mockReset()
     vi.mocked(fetchTradesForWallet).mockReset()
   })
 
-  it('shows a connect prompt when no Hub wallet is connected', async () => {
+  it('shows a connect-and-load prompt when no Hub wallet is connected, and does not fetch until clicked', async () => {
     const wrapper = mount(DesktopMarketplaceTradesPage)
     await flushPromises()
     expect(wrapper.text()).toContain('Connect')
     expect(fetchTradesForWallet).not.toHaveBeenCalled()
   })
 
-  it('fetches and renders trades with the correct role label', async () => {
+  it('signs a fresh lookup message and fetches trades on load, even with a previously stored address', async () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
     vi.mocked(fetchTradesForWallet).mockResolvedValue([
       { id: 't1', handle: 'chuck', seller: 'NQ11 SELLER', buyer: 'NQ22 BUYER', state: 'AWAITING_RELEASE' },
       { id: 't2', handle: 'alice', seller: 'NQ33 OTHER', buyer: 'NQ11 SELLER', state: 'SETTLED' },
     ])
     const wrapper = mount(DesktopMarketplaceTradesPage)
     await flushPromises()
-    expect(fetchTradesForWallet).toHaveBeenCalledWith('NQ11 SELLER')
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+
+    expect(hubSignMessage).toHaveBeenCalledWith('the-message', 'NQ11 SELLER')
+    expect(fetchTradesForWallet).toHaveBeenCalledWith('NQ11 SELLER', 'the-nonce', expect.any(Number), 'pub', 'sig')
     expect(wrapper.text()).toContain('chuck')
     expect(wrapper.text()).toContain('Selling')
     expect(wrapper.text()).toContain('alice')
@@ -370,8 +584,11 @@ describe('DesktopMarketplaceTradesPage', () => {
 
   it('shows an empty state with a link back to browse when there are no trades', async () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
     vi.mocked(fetchTradesForWallet).mockResolvedValue([])
     const wrapper = mount(DesktopMarketplaceTradesPage)
+    await flushPromises()
+    await wrapper.find('[data-load-trades]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('No trades yet')
     expect(wrapper.find('a[href="#/marketplace"]').exists()).toBe(true)
@@ -379,12 +596,26 @@ describe('DesktopMarketplaceTradesPage', () => {
 
   it('links each trade to its status page', async () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
     vi.mocked(fetchTradesForWallet).mockResolvedValue([
       { id: 't1', handle: 'chuck', seller: 'NQ11 SELLER', buyer: 'NQ22 BUYER', state: 'AWAITING_RELEASE' },
     ])
     const wrapper = mount(DesktopMarketplaceTradesPage)
     await flushPromises()
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
     expect(wrapper.find('a[href="#/marketplace/trades/t1"]').exists()).toBe(true)
+  })
+
+  it('maps a Hub rejection during signing to a quiet message', async () => {
+    vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
+    vi.mocked(hubSignMessage).mockRejectedValue(new Error('canceled'))
+    const wrapper = mount(DesktopMarketplaceTradesPage)
+    await flushPromises()
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('canceled')
+    expect(fetchTradesForWallet).not.toHaveBeenCalled()
   })
 })
 ```
@@ -408,8 +639,25 @@ Expected: FAIL — `fetchTradesForWallet` and the page don't exist yet, the nav 
 Add to `src/services/marketplace.ts`, after `getTrade`:
 
 ```ts
-export function fetchTradesForWallet(address: string): Promise<MarketplaceTrade[]> {
-  return marketplaceFetch(`/api/marketplace/trades/by-wallet/${encodeURIComponent(address)}`)
+/** Byte-for-byte match of backend/marketplace_intents.go's marketplaceTradesLookupMessage. */
+export function marketplaceTradesLookupMessage(address: string, nonce: string, expiresAt: number): string {
+  return (
+    'nimconnect:marketplace-trades-lookup:v1' +
+    `\naddress=${compact(address)}` +
+    `\nnonce=${nonce}` +
+    `\nexpires_at=${expiresAt}`
+  )
+}
+
+export function fetchTradesForWallet(
+  address: string,
+  nonce: string,
+  expiresAt: number,
+  publicKey: string,
+  signature: string,
+): Promise<MarketplaceTrade[]> {
+  const params = new URLSearchParams({ nonce, expires_at: String(expiresAt), public_key: publicKey, signature })
+  return marketplaceFetch(`/api/marketplace/trades/by-wallet/${encodeURIComponent(address)}?${params.toString()}`)
 }
 ```
 
@@ -417,15 +665,20 @@ Create `src/pages/desktop/DesktopMarketplaceTradesPage.vue`:
 
 ```vue
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { chooseHubAddress } from '../../services/hub'
+import { ref } from 'vue'
+import { chooseHubAddress, hubSignMessage, hubErrorMessage } from '../../services/hub'
 import { getDesktopHubAddress, setDesktopHubAddress } from '../../services/desktop-session'
-import { fetchTradesForWallet, type MarketplaceTrade } from '../../services/marketplace'
+import {
+  fetchTradesForWallet,
+  marketplaceTradesLookupMessage,
+  generateNonce,
+  type MarketplaceTrade,
+} from '../../services/marketplace'
 
-const hubAddress = ref<string | null>(null)
+const hubAddress = ref<string | null>(getDesktopHubAddress())
 const trades = ref<MarketplaceTrade[]>([])
+const loaded = ref(false)
 const loading = ref(false)
-const connecting = ref(false)
 const error = ref<string | null>(null)
 
 function compact(address: string): string {
@@ -436,53 +689,42 @@ function roleFor(trade: MarketplaceTrade): string {
   return compact(trade.seller) === compact(hubAddress.value || '') ? 'Selling' : 'Buying'
 }
 
-async function load(address: string) {
+// A stored address alone doesn't carry a valid signature — every load, first
+// visit or returning, signs a fresh short-lived proof of ownership before
+// fetching, since the backend requires one on every request.
+async function loadTrades() {
   loading.value = true
   error.value = null
   try {
-    trades.value = await fetchTradesForWallet(address)
+    let address = hubAddress.value
+    if (!address) {
+      address = await chooseHubAddress()
+      setDesktopHubAddress(address)
+      hubAddress.value = address
+    }
+    const nonce = generateNonce()
+    const expiresAt = Math.floor(Date.now() / 1000) + 600
+    const message = marketplaceTradesLookupMessage(address, nonce, expiresAt)
+    const { publicKey, signature } = await hubSignMessage(message, address)
+    trades.value = await fetchTradesForWallet(address, nonce, expiresAt, publicKey, signature)
+    loaded.value = true
   } catch (e) {
-    error.value = (e as Error).message
+    error.value = hubErrorMessage(e)
   } finally {
     loading.value = false
   }
 }
-
-async function connect() {
-  connecting.value = true
-  try {
-    const addr = await chooseHubAddress()
-    setDesktopHubAddress(addr)
-    hubAddress.value = addr
-    await load(addr)
-  } finally {
-    connecting.value = false
-  }
-}
-
-onMounted(async () => {
-  const stored = getDesktopHubAddress()
-  if (stored) {
-    hubAddress.value = stored
-    await load(stored)
-  }
-})
 </script>
 
 <template>
   <section class="desktop-marketplace-trades">
     <h1>My Trades</h1>
-    <div v-if="!hubAddress">
-      <p>Connect your Nimiq Hub wallet to see your trades.</p>
-      <button type="button" :disabled="connecting" @click="connect">
-        {{ connecting ? 'Connecting…' : 'Connect Wallet' }}
+    <div v-if="!loaded">
+      <p>{{ hubAddress ? 'Sign to prove you own this wallet and load your trades.' : 'Connect your Nimiq Hub wallet to see your trades.' }}</p>
+      <button type="button" data-load-trades :disabled="loading" @click="loadTrades">
+        {{ loading ? 'Loading…' : (hubAddress ? 'Load My Trades' : 'Connect Wallet') }}
       </button>
-    </div>
-    <div v-else-if="loading">
-      <p>Loading…</p>
-    </div>
-    <div v-else-if="error" class="desktop-marketplace-trades__error">
-      <p>{{ error }}</p>
+      <p v-if="error" class="desktop-marketplace-trades__error">{{ error }}</p>
     </div>
     <div v-else-if="trades.length === 0">
       <p>No trades yet. <RouterLink to="/marketplace">Browse the marketplace</RouterLink>.</p>
@@ -540,6 +782,6 @@ git commit -m "feat: add /marketplace/trades page for trade discovery by wallet"
 
 ## Self-Review Notes
 
-- **Spec coverage:** Task 1 covers "Backend fix: FUNDED → AWAITING_RELEASE" exactly. Tasks 2-3 cover "Backend: TradesForWallet" and "Frontend: /marketplace/trades page" exactly, including the empty-state, role-label, and nav-link requirements.
+- **Spec coverage:** Task 1 covers "Backend fix: FUNDED → AWAITING_RELEASE" exactly. Task 2 + Task 2b cover "Backend: TradesForWallet" including the signed-lookup requirement added mid-plan after an automated security review flagged the initial unauthenticated version as an IDOR risk (a wallet address, unlike a trade ID, isn't a secret). Task 3 covers "Frontend: /marketplace/trades page" exactly, including the empty-state, role-label, nav-link, and (updated) sign-before-fetch requirements.
 - **Placeholder scan:** No TBDs. The one inline note in Task 3 (router ordering) explains itself rather than hand-waving — it's a clarification, not a deferred decision.
-- **Type consistency:** `TradesForWallet`/`marketplaceTradesByWalletHandler`/`fetchTradesForWallet` names and the `/api/marketplace/trades/by-wallet/{address}` path are used identically across all three tasks. `MarketplaceTrade`'s existing fields (`seller`, `buyer`, `handle`, `state`, `id`) are used as already defined in `src/services/marketplace.ts` — no new fields needed.
+- **Type consistency:** `TradesForWallet`/`marketplaceTradesByWalletHandler`/`fetchTradesForWallet` names and the `/api/marketplace/trades/by-wallet/{address}` path are used identically across Tasks 2, 2b, and 3. `fetchTradesForWallet`'s signature changed once (Task 2b) to add the four signed-intent parameters — Task 3's frontend calls and tests use the post-2b signature throughout, not the original bare-address version. `MarketplaceTrade`'s existing fields (`seller`, `buyer`, `handle`, `state`, `id`) are used as already defined in `src/services/marketplace.ts` — no new fields needed.
