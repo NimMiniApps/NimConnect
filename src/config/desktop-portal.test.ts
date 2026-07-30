@@ -13,6 +13,13 @@ describe('isDesktopPortalPath', () => {
     expect(isDesktopPortalPath('/u/ada')).toBe(true)
   })
 
+  it('allows the marketplace routes', () => {
+    expect(isDesktopPortalPath('/marketplace')).toBe(true)
+    expect(isDesktopPortalPath('/marketplace/sell')).toBe(true)
+    expect(isDesktopPortalPath('/marketplace/buy')).toBe(true)
+    expect(isDesktopPortalPath('/marketplace/trades/abc123')).toBe(true)
+  })
+
   it('rejects Mini App relationship surfaces', () => {
     expect(isDesktopPortalPath('/contacts')).toBe(false)
     expect(isDesktopPortalPath('/settings')).toBe(false)

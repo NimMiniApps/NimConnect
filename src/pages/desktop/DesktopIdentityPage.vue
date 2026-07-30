@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { chooseHubAddress, hubSignMessage } from '../../services/hub'
+import { chooseHubAddress, hubSignMessage, hubErrorMessage } from '../../services/hub'
 import {
   getDesktopHubAddress,
   setDesktopHubAddress,
@@ -30,8 +30,6 @@ import type { Profile } from '../../types/profile'
 
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 
-const HUB_INSTALL_HINT = 'Install or open a Nimiq Hub compatible wallet'
-
 const CAPABILITIES = [
   'Claim your @handle',
   'Publish your profile',
@@ -39,13 +37,6 @@ const CAPABILITIES = [
   'Generate your payment page',
   'Share one identity everywhere',
 ]
-
-/** Best-effort mapping of Hub popup rejection to a quieter message than the generic hint. */
-function hubErrorMessage(e: unknown): string {
-  const message = e instanceof Error ? e.message : String(e)
-  if (/cancel/i.test(message)) return 'Canceled — no changes were made.'
-  return HUB_INSTALL_HINT
-}
 
 type Availability = 'idle' | 'checking' | 'available' | 'taken' | 'reserved' | 'invalid' | 'unknown'
 

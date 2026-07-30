@@ -129,6 +129,17 @@ func (c *NimiqRPC) GetLastMacroBlockNumber() (uint64, error) {
 	return block.Number, nil
 }
 
+// GetBlockNumber returns the current chain tip height. Used to give clients
+// a fresh validityStartHeight for wallet-signed transactions (e.g. Hub's
+// signTransaction, which requires one explicitly).
+func (c *NimiqRPC) GetBlockNumber() (uint64, error) {
+	var height uint64
+	if err := c.call("getBlockNumber", []any{}, &height); err != nil {
+		return 0, err
+	}
+	return height, nil
+}
+
 // SendBasicTransactionWithData asks the connected node to sign and broadcast
 // a transaction from sender. It must only be used with the dedicated,
 // access-restricted escrow signing node which has that key unlocked.

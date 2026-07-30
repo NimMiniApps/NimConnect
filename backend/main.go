@@ -100,6 +100,8 @@ func main() {
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))
 
+		chainHeightCache := NewChainHeightCache(2*time.Second, rpc.GetBlockNumber)
+		mux.HandleFunc("GET /api/chain/height", chainHeightHandler(chainHeightCache))
 		mux.HandleFunc("GET /api/resolve/{handle}", resolveHandler(registry))
 		mux.HandleFunc("GET /api/pay/resolve/{handle}", paymentResolveHandler(syncer, registry))
 		mux.HandleFunc("GET /api/profile/{address}", profileGetHandler(profiles))
@@ -128,8 +130,10 @@ func main() {
 
 			maxFeeBps := parseUintEnv(getEnv("MARKETPLACE_MAX_FEE_BPS", "1000"), 1000)
 			mux.HandleFunc("POST /api/marketplace/listings", marketplaceListingCreateHandler(marketplaceStore, registry, maxFeeBps))
+			mux.HandleFunc("GET /api/marketplace/listings", marketplaceListingsGetHandler(marketplaceStore))
 			mux.HandleFunc("POST /api/marketplace/trades", marketplaceTradeReserveHandler(marketplaceStore, escrowAddress))
 			mux.HandleFunc("GET /api/marketplace/trades/{tradeID}", marketplaceTradeGetHandler(marketplaceStore))
+			mux.HandleFunc("GET /api/marketplace/trades/by-wallet/{address}", marketplaceTradesByWalletHandler(marketplaceStore))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/release", marketplaceTradeReleaseHandler(marketplaceStore, rpc, registryAddress))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/claim", marketplaceTradeClaimHandler(marketplaceStore, rpc, registryAddress))
 		}

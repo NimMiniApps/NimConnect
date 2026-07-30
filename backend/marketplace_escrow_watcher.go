@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -96,6 +97,19 @@ func (w *EscrowWatcher) Sweep() error {
 		}
 		if err := w.store.Transition(trade.ID, StateDepositFinalizing, StateFunded, nil); err != nil {
 			return err
+		}
+	}
+
+	// A finalized deposit is definitionally sufficient to move on — there's no
+	// separate condition to wait for, so a trade should never rest observably
+	// at FUNDED. This loop re-scans StateFunded every sweep (rather than only
+	// acting at the moment of the first transition above), so it is
+	// self-healing: it also repairs any trade already stuck at FUNDED from a
+	// prior deploy or a failed/raced transition. A single trade's failure is
+	// logged and does not abort the sweep for the rest.
+	for _, trade := range w.store.TradesInState(StateFunded) {
+		if err := w.store.Transition(trade.ID, StateFunded, StateAwaitingRelease, nil); err != nil {
+			log.Printf("escrow sweep: funded trade %q did not advance err=%q", trade.ID, err)
 		}
 	}
 	return nil

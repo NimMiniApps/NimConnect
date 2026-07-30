@@ -125,3 +125,19 @@ func TestSendRawTransaction(t *testing.T) {
 		t.Fatalf("want cafebabe, got %q", hash)
 	}
 }
+
+func TestGetBlockNumber(t *testing.T) {
+	srv := fakeRPC(t, map[string]string{
+		"getBlockNumber": `4321`,
+	})
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL)
+	got, err := rpc.GetBlockNumber()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 4321 {
+		t.Fatalf("want 4321, got %d", got)
+	}
+}

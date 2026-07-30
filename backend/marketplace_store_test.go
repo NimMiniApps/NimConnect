@@ -153,3 +153,52 @@ func TestConsumeNonce_PersistsAcrossRestart(t *testing.T) {
 		t.Fatal("expected the reloaded store to still reject a previously used nonce")
 	}
 }
+
+func TestActiveListings_ReturnsOnlyActiveStatus(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	s.CreateListing("alice", "NQ22 SELLER", 2000, 100, "t2")
+	s.ReserveListing("alice", "trade-1", "ref-1", "NQ33 BUYER") // moves alice's listing to "reserved"
+
+	active := s.ActiveListings()
+	if len(active) != 1 || active[0].Handle != "chuck" {
+		t.Fatalf("expected only chuck's active listing, got %+v", active)
+	}
+}
+
+func TestTradesForWallet_MatchesEitherRole(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	s.CreateListing("alice", "NQ33 OTHER", 2000, 100, "t2")
+	tradeA, _ := s.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
+	s.ReserveListing("alice", "trade-b", "ref-b", "NQ44 OTHERBUYER")
+
+	sellerTrades := s.TradesForWallet("NQ11 SELLER")
+	if len(sellerTrades) != 1 || sellerTrades[0].ID != tradeA.ID {
+		t.Fatalf("expected seller to see only their own trade, got %+v", sellerTrades)
+	}
+
+	buyerTrades := s.TradesForWallet("NQ22 BUYER")
+	if len(buyerTrades) != 1 || buyerTrades[0].ID != tradeA.ID {
+		t.Fatalf("expected buyer to see their trade via the buyer role, got %+v", buyerTrades)
+	}
+}
+
+func TestTradesForWallet_SpacingAndCaseInsensitive(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	s.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
+
+	got := s.TradesForWallet("nq11seller")
+	if len(got) != 1 {
+		t.Fatalf("expected a case/spacing-insensitive match, got %+v", got)
+	}
+}
+
+func TestTradesForWallet_EmptyForUnknownAddress(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	got := s.TradesForWallet("NQ99 NOBODY")
+	if got == nil || len(got) != 0 {
+		t.Fatalf("expected an empty (non-nil) slice, got %+v", got)
+	}
+}

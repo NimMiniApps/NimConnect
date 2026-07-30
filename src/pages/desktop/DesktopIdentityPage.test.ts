@@ -16,10 +16,14 @@ const mocks = vi.hoisted(() => ({
   saveMyHandle: vi.fn(),
 }))
 
-vi.mock('../../services/hub', () => ({
-  chooseHubAddress: mocks.chooseHubAddress,
-  hubSignMessage: mocks.hubSignMessage,
-}))
+vi.mock('../../services/hub', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/hub')>()
+  return {
+    ...actual,
+    chooseHubAddress: mocks.chooseHubAddress,
+    hubSignMessage: mocks.hubSignMessage,
+  }
+})
 
 vi.mock('../../services/desktop-session', () => ({
   getDesktopHubAddress: mocks.getDesktopHubAddress,

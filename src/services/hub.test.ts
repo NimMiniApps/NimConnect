@@ -95,4 +95,27 @@ describe('hub service', () => {
       }),
     )
   })
+
+  it('hubCheckoutPayment sends text data and the given value', async () => {
+    checkout.mockResolvedValue({ hash: 'pay-hash' })
+    const { hubCheckoutPayment } = await import('./hub')
+    await expect(
+      hubCheckoutPayment({ recipient: 'NQ99 ESCROW', valueLuna: 1000, data: 'NME1:abc123', sender: 'NQ01 TEST' }),
+    ).resolves.toEqual({ txHash: 'pay-hash' })
+    expect(checkout).toHaveBeenCalledWith(
+      expect.objectContaining({
+        appName: 'NimConnect',
+        recipient: 'NQ99 ESCROW',
+        value: 1000,
+        extraData: 'NME1:abc123',
+        sender: 'NQ01 TEST',
+      }),
+    )
+  })
+
+  it('hubErrorMessage maps a cancellation to a quiet message and anything else to the install hint', async () => {
+    const { hubErrorMessage } = await import('./hub')
+    expect(hubErrorMessage(new Error('User canceled the request'))).toBe('Canceled — no changes were made.')
+    expect(hubErrorMessage(new Error('popup blocked'))).toBe('Install or open a Nimiq Hub compatible wallet')
+  })
 })

@@ -22,6 +22,8 @@ const addressLabel = computed(() =>
       <nav class="desktop-shell__links" aria-label="Desktop">
         <router-link to="/" class="desktop-shell__link">Home</router-link>
         <router-link to="/lookup" class="desktop-shell__link">Lookup</router-link>
+        <router-link to="/marketplace" class="desktop-shell__link">Marketplace</router-link>
+        <router-link to="/marketplace/trades" class="desktop-shell__link">My Trades</router-link>
         <router-link
           v-if="connected"
           to="/me"

@@ -189,6 +189,20 @@ func (s *MarketplaceStore) FindTradeByReference(reference string) (MarketplaceTr
 	return trade, ok
 }
 
+// ActiveListings returns every currently active listing. No pagination —
+// fine at expected marketplace volume; add it if that stops being true.
+func (s *MarketplaceStore) ActiveListings() []MarketplaceListing {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	active := make([]MarketplaceListing, 0)
+	for _, listing := range s.listings {
+		if listing.Status == "active" {
+			active = append(active, listing)
+		}
+	}
+	return active
+}
+
 // TradesInState returns copies of trades in state for workers that process a
 // persisted lifecycle stage independently from incoming transactions.
 func (s *MarketplaceStore) TradesInState(state TradeState) []MarketplaceTrade {
@@ -198,6 +212,24 @@ func (s *MarketplaceStore) TradesInState(state TradeState) []MarketplaceTrade {
 	trades := make([]MarketplaceTrade, 0)
 	for _, trade := range s.trades {
 		if trade.State == state {
+			trades = append(trades, trade)
+		}
+	}
+	return trades
+}
+
+// TradesForWallet returns every trade where the given address is either the
+// buyer or the seller — a wallet can't be both on the same trade, since
+// CreateListing/ReserveListing never let a listing's seller reserve their
+// own listing... actually nothing enforces that today, so this simply
+// matches on either field without assuming exclusivity.
+func (s *MarketplaceStore) TradesForWallet(address string) []MarketplaceTrade {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	compact := compactAddress(address)
+	trades := make([]MarketplaceTrade, 0)
+	for _, trade := range s.trades {
+		if compactAddress(trade.Seller) == compact || compactAddress(trade.Buyer) == compact {
 			trades = append(trades, trade)
 		}
 	}

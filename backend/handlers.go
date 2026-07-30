@@ -51,3 +51,16 @@ func ratesHandler(cache *RatesCache) http.HandlerFunc {
 		json.NewEncoder(w).Encode(resp)
 	}
 }
+
+func chainHeightHandler(cache *ChainHeightCache) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		height, err := cache.Get()
+		if err != nil {
+			log.Printf("chain height unavailable error=%q", err)
+			writeJSONError(w, http.StatusBadGateway, "chain height unavailable")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]uint64{"height": height})
+	}
+}

@@ -76,3 +76,44 @@ func TestVerifyPurchaseIntent_AcceptsValidSignature(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMarketplaceTradesLookupMessage_MatchesExactFormat(t *testing.T) {
+	got := marketplaceTradesLookupMessage("NQ11 SELLER", "nonce1", 1234)
+	want := "nimconnect:marketplace-trades-lookup:v1" +
+		"\naddress=NQ11SELLER" +
+		"\nnonce=nonce1" +
+		"\nexpires_at=1234"
+	if got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+}
+
+func TestVerifyTradesLookupIntent_AcceptsValidSignature(t *testing.T) {
+	priv, addr := testKeypairAndAddress(t)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "nonce1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	if err := verifyTradesLookupIntent(addr, "nonce1", expiresAt, pubHex, sigHex); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestVerifyTradesLookupIntent_RejectsWrongAddressOrExpired(t *testing.T) {
+	priv, addr := testKeypairAndAddress(t)
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceTradesLookupMessage(addr, "nonce1", expiresAt)
+	pubHex, sigHex := signMessage(t, priv, message)
+
+	_, otherAddr := testKeypairAndAddress(t)
+	if err := verifyTradesLookupIntent(otherAddr, "nonce1", expiresAt, pubHex, sigHex); err == nil {
+		t.Fatal("expected an error when the requested address doesn't match the signing key")
+	}
+
+	expired := time.Now().Add(-time.Minute).Unix()
+	expiredMessage := marketplaceTradesLookupMessage(addr, "nonce1", expired)
+	pubHex2, sigHex2 := signMessage(t, priv, expiredMessage)
+	if err := verifyTradesLookupIntent(addr, "nonce1", expired, pubHex2, sigHex2); err == nil {
+		t.Fatal("expected an error for an expired lookup intent")
+	}
+}

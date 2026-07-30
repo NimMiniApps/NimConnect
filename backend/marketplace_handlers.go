@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 )
 
 func newTradeID() string {
@@ -115,7 +116,9 @@ func marketplaceTradeReserveHandler(store *MarketplaceStore, escrowAddress strin
 			writeJSONError(w, http.StatusConflict, err.Error())
 			return
 		}
-		if err := store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil); err != nil {
+		if err := store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, func(t *MarketplaceTrade) {
+			t.EscrowAddress = escrowAddress
+		}); err != nil {
 			log.Printf("marketplace reserve: failed to advance to AWAITING_DEPOSIT err=%q", err)
 			writeJSONError(w, http.StatusInternalServerError, "marketplace unavailable")
 			return
@@ -140,6 +143,31 @@ func marketplaceTradeGetHandler(store *MarketplaceStore) http.HandlerFunc {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(trade)
+	}
+}
+
+func marketplaceTradesByWalletHandler(store *MarketplaceStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		address := r.PathValue("address")
+		q := r.URL.Query()
+		expiresAt, err := strconv.ParseInt(q.Get("expires_at"), 10, 64)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+		if err := verifyTradesLookupIntent(address, q.Get("nonce"), expiresAt, q.Get("public_key"), q.Get("signature")); err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid trades lookup signature")
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(store.TradesForWallet(address))
+	}
+}
+
+func marketplaceListingsGetHandler(store *MarketplaceStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(store.ActiveListings())
 	}
 }
 
