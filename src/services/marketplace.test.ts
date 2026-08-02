@@ -94,8 +94,7 @@ describe('marketplace API calls', () => {
   it('reserveTrade returns the trade payment details', async () => {
     ;(fetch as any).mockResolvedValue({
       ok: true,
-      json: async () => ({ trade_id: 't1', escrow_address: 'NQ99 ESCROW', reference: 'ref1', price_luna: 1000, fee_luna: 50 },
-      ),
+      json: async () => ({ trade_id: 't1', escrow_address: 'NQ99 ESCROW', reference: 'ref1', price_luna: 1000, fee_luna: 50 }),
     })
     await expect(
       reserveTrade({ handle: 'chuck', buyer: 'NQ22 BUYER', refund_address: 'NQ22 BUYER', nonce: 'n2', expires_at: 456, public_key: 'pub', signature: 'sig' }),
