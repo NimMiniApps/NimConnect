@@ -37,7 +37,11 @@ seed_nodes = [
 desired_peer_count = 11
 
 [consensus]
-sync_mode = "full"
+# Pico is enough for import/unlock/send — this node is not a history RPC.
+# Full sync can sit at tip for a long time with consensus_established=false
+# while state/trie chunks catch up, which crash-loops the backend (3 min
+# SetupEscrowWallet timeout) and takes the whole API down with it.
+sync_mode = "pico"
 network = "main-albatross"
 
 [rpc-server]
