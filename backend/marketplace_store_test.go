@@ -166,6 +166,32 @@ func TestActiveListings_ReturnsOnlyActiveStatus(t *testing.T) {
 	}
 }
 
+func TestAllTrades_ReturnsEveryTradeAcrossStates(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
+	s.CreateListing("alice", "NQ33 OTHER", 2000, 100, "t2")
+	tradeA, _ := s.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
+	tradeB, _ := s.ReserveListing("alice", "trade-b", "ref-b", "NQ44 OTHERBUYER")
+	if err := s.Transition(tradeA.ID, StateReserved, StateAwaitingDeposit, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	all := s.AllTrades()
+	if len(all) != 2 {
+		t.Fatalf("want 2 trades, got %d", len(all))
+	}
+	byID := map[string]MarketplaceTrade{}
+	for _, tr := range all {
+		byID[tr.ID] = tr
+	}
+	if byID[tradeA.ID].State != StateAwaitingDeposit {
+		t.Fatalf("expected trade A to reflect its transitioned state, got %+v", byID[tradeA.ID])
+	}
+	if byID[tradeB.ID].State != StateReserved {
+		t.Fatalf("expected trade B to still be RESERVED, got %+v", byID[tradeB.ID])
+	}
+}
+
 func TestTradesForWallet_MatchesEitherRole(t *testing.T) {
 	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")

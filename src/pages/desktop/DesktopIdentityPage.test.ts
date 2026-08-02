@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   claimHandleViaHub: vi.fn(),
   syncPublicProfile: vi.fn(),
   saveMyHandle: vi.fn(),
+  fetchTradesForWallet: vi.fn(),
 }))
 
 vi.mock('../../services/hub', async importOriginal => {
@@ -41,6 +42,16 @@ vi.mock('../../services/handles', async importOriginal => {
     claimHandleViaHub: mocks.claimHandleViaHub,
     syncPublicProfile: mocks.syncPublicProfile,
     saveMyHandle: mocks.saveMyHandle,
+  }
+})
+
+vi.mock('../../services/marketplace', async importOriginal => {
+  const actual = await importOriginal<typeof import('../../services/marketplace')>()
+  return {
+    ...actual,
+    fetchTradesForWallet: mocks.fetchTradesForWallet,
+    marketplaceTradesLookupMessage: vi.fn(() => 'the-message'),
+    generateNonce: vi.fn(() => 'the-nonce'),
   }
 })
 
@@ -79,6 +90,7 @@ describe('DesktopIdentityPage', () => {
     mocks.claimHandleViaHub.mockReset()
     mocks.syncPublicProfile.mockReset()
     mocks.saveMyHandle.mockReset()
+    mocks.fetchTradesForWallet.mockReset()
   })
 
   it('shows a logged-out onboarding panel with Connect Wallet', async () => {
@@ -129,6 +141,45 @@ describe('DesktopIdentityPage', () => {
     expect(wrapper.text()).toContain('Open Public Profile')
     expect(wrapper.text()).toContain('Last published')
     expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(false)
+  })
+
+  it('loads and shows the connected wallet\'s trades on demand', async () => {
+    mocks.getDesktopHubAddress.mockReturnValue(address)
+    mocks.findMyHandle.mockResolvedValue(claim)
+    mocks.hubSignMessage.mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    mocks.fetchTradesForWallet.mockResolvedValue([
+      { id: 't1', handle: 'chuck', seller: address, buyer: 'NQ22 BUYER', state: 'AWAITING_RELEASE' },
+      { id: 't2', handle: 'alice', seller: 'NQ33 OTHER', buyer: address, state: 'SETTLED' },
+    ])
+
+    const wrapper = await mountPage()
+    expect(wrapper.find('[data-desktop-identity-trades]').exists()).toBe(false)
+
+    await wrapper.find('[data-tab-trades]').trigger('click')
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.hubSignMessage).toHaveBeenCalledWith('the-message', address)
+    expect(mocks.fetchTradesForWallet).toHaveBeenCalledWith(address, 'the-nonce', expect.any(Number), 'pub', 'sig')
+    expect(wrapper.text()).toContain('chuck')
+    expect(wrapper.text()).toContain('Selling')
+    expect(wrapper.text()).toContain('alice')
+    expect(wrapper.text()).toContain('Buying')
+  })
+
+  it('shows an empty trades state with a link back to the marketplace', async () => {
+    mocks.getDesktopHubAddress.mockReturnValue(address)
+    mocks.findMyHandle.mockResolvedValue(claim)
+    mocks.hubSignMessage.mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    mocks.fetchTradesForWallet.mockResolvedValue([])
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-tab-trades]').trigger('click')
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('No trades yet')
+    expect(wrapper.find('a[href="/marketplace"]').exists()).toBe(true)
   })
 
   it('marks unsaved changes and enables publish after edits', async () => {
@@ -225,14 +276,24 @@ describe('DesktopIdentityPage', () => {
     expect(wrapper.find('[data-desktop-identity-edit]').exists()).toBe(true)
   })
 
-  it('maps a Hub failure to an install/open hint', async () => {
-    mocks.chooseHubAddress.mockRejectedValue(new Error('no provider'))
+  it('maps a blocked popup to an install/open hint', async () => {
+    mocks.chooseHubAddress.mockRejectedValue(new Error('Failed to open popup'))
     const wrapper = await mountPage()
 
     await wrapper.find('[data-desktop-identity-connect] button').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('Install or open a Nimiq Hub compatible wallet')
+  })
+
+  it('surfaces a real Hub rejection verbatim instead of the install hint', async () => {
+    mocks.chooseHubAddress.mockRejectedValue(new Error('Insufficient balance to cover the fee'))
+    const wrapper = await mountPage()
+
+    await wrapper.find('[data-desktop-identity-connect] button').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Insufficient balance to cover the fee')
   })
 
   it('maps a Hub popup cancel to a quieter message', async () => {

@@ -158,21 +158,48 @@ func handleCheckHandler(registry *HandleRegistry) http.HandlerFunc {
 
 // claimSubmitHandler is the fast path after the app sends a claim tx: verify
 // the tx targets the registry and parses, then sweep so it's indexed promptly.
+//
+// Accepts either an already-broadcast tx_hash (Nimiq Pay, which signs and
+// sends in one step) or a Hub-signed raw_hex (Hub's signTransaction flow,
+// which only signs — checkout() can't be used here since it requires
+// value > 0 and a handle claim is a value-0 registry message).
 func claimSubmitHandler(syncer *HandleSyncer, registry *HandleRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			TxHash string `json:"tx_hash"`
+			TxHash string `json:"tx_hash,omitempty"`
+			RawHex string `json:"raw_hex,omitempty"`
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 4*1024)
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.TxHash) == 0 || len(req.TxHash) > 128 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid request")
 			return
 		}
-		tx, err := syncer.rpc.GetTransactionByHash(req.TxHash)
-		if err != nil {
-			writeJSONError(w, http.StatusBadGateway, "chain lookup failed")
+
+		var tx *rpcTx
+		switch {
+		case req.RawHex != "":
+			hash, err := syncer.rpc.SendRawTransaction(req.RawHex)
+			if err != nil {
+				writeJSONError(w, http.StatusBadGateway, "failed to broadcast transaction")
+				return
+			}
+			tx, err = syncer.rpc.GetTransactionByHash(hash)
+			if err != nil {
+				writeJSONError(w, http.StatusBadGateway, "chain lookup failed")
+				return
+			}
+		case len(req.TxHash) > 0 && len(req.TxHash) <= 128:
+			var err error
+			tx, err = syncer.rpc.GetTransactionByHash(req.TxHash)
+			if err != nil {
+				writeJSONError(w, http.StatusBadGateway, "chain lookup failed")
+				return
+			}
+		default:
+			writeJSONError(w, http.StatusBadRequest, "invalid request")
 			return
 		}
+
 		action := parseClaimData(tx.data())
 		if action == nil || compactAddress(tx.recipient()) != compactAddress(syncer.registryAddress) {
 			writeJSONError(w, http.StatusBadRequest, "not a registry claim")

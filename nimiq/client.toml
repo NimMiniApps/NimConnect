@@ -1,0 +1,61 @@
+# Escrow-signer node — MAINNET. This node's only jobs are reaching consensus
+# and holding the unlocked escrow key so the backend can sign/send payouts;
+# it does not serve chain-history queries (that stays on the public
+# gateway), so index_history and a [validator] section are omitted.
+#
+# Real funds. This node is never exposed on a host/public port — network
+# isolation (Swarm-internal, no published port) is the accepted control here
+# — and `methods` below allowlists only the RPC calls SetupEscrowWallet and
+# the settlement worker actually use. [rpc-server] username/password are
+# optional extra layers: the placeholder tokens below get substituted (or
+# stripped, if unset) at container start from ESCROW_RPC_USER/
+# ESCROW_RPC_PASSWORD (see docker-compose.yml) — never commit real values.
+[network]
+peer_key_file = "peer_key.dat"
+listen_addresses = [
+    "/ip4/0.0.0.0/tcp/8443/ws",
+]
+
+# Official mainnet seed nodes (nimiq/core-rs-albatross client.example.toml).
+seed_nodes = [
+  { address = "/dns4/aurora.seed.nimiq.com/tcp/443/wss" },
+  { address = "/dns4/catalyst.seed.nimiq.network/tcp/443/wss" },
+  { address = "/dns4/cipher.seed.nimiq-network.com/tcp/443/wss" },
+  { address = "/dns4/eclipse.seed.nimiq.cloud/tcp/443/wss" },
+  { address = "/dns4/lumina.seed.nimiq.systems/tcp/443/wss" },
+  { address = "/dns4/nebula.seed.nimiq.com/tcp/443/wss" },
+  { address = "/dns4/nexus.seed.nimiq.network/tcp/443/wss" },
+  { address = "/dns4/polaris.seed.nimiq-network.com/tcp/443/wss" },
+  { address = "/dns4/photon.seed.nimiq.cloud/tcp/443/wss" },
+  { address = "/dns4/pulsar.seed.nimiq.systems/tcp/443/wss" },
+  { address = "/dns4/quasar.seed.nimiq.com/tcp/443/wss" },
+  { address = "/dns4/solstice.seed.nimiq.network/tcp/443/wss" },
+  { address = "/dns4/vortex.seed.nimiq.cloud/tcp/443/wss" },
+  { address = "/dns4/zenith.seed.nimiq.systems/tcp/443/wss" },
+]
+
+desired_peer_count = 11
+
+[consensus]
+sync_mode = "full"
+network = "main-albatross"
+
+[rpc-server]
+bind = "0.0.0.0"
+port = 8648
+username = "__RPC_USER__"
+password = "__RPC_PASSWORD__"
+methods = [
+    "isConsensusEstablished",
+    "importRawKey",
+    "listAccounts",
+    "isAccountUnlocked",
+    "unlockAccount",
+    "sendBasicTransactionWithData",
+]
+
+[database]
+
+[log]
+level = "info"
+timestamps = true

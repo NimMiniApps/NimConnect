@@ -9,6 +9,24 @@
 #   npm run dev:https   # HTTPS for mobile QR testing on LAN
 #
 # Health: curl http://localhost:8787/api/health
+#
+# Handle marketplace (buy/sell) needs an escrow node — off by default, and
+# NOT started by a plain `docker compose up` (see nimiq-node's `profiles:`
+# below). nimiq/client.toml runs it on MAINNET (testnet has no handle
+# registry deployed) — ESCROW_ADDRESS and NIMIQ_WALLET_KEY are REAL funds.
+# To test it locally:
+#   1. export ESCROW_ADDRESS='NQ...' NIMIQ_WALLET_KEY='<hex private key>'
+#   2. docker compose --profile escrow up --build
+# Protection here is network isolation (no published RPC port — only the
+# backend container can reach it) plus nimiq/client.toml's methods allowlist.
+# Optionally also export ESCROW_RPC_USER/ESCROW_RPC_PASSWORD (no # or & chars)
+# before step 2 to additionally require RPC auth — same credentials go to
+# both containers below so the backend can authenticate. Not required if
+# you're relying on Swarm's internal-network isolation instead.
+# First-ever sync can take a while (mainnet full sync, not testnet) — the
+# backend retries escrow setup for 3 minutes per attempt then exits;
+# restart: unless-stopped keeps retrying across that until the node catches
+# up, without blocking startup on a single long timeout.
 
 services:
   backend:
@@ -17,6 +35,7 @@ services:
       args:
         COMMIT_HASH: local
         BUILD_TIME: local
+    restart: unless-stopped
     ports:
       - "8787:8787"
     environment:
@@ -25,5 +44,70 @@ services:
       ALLOWED_ORIGIN: "*"
       BACKUP_DIR: /data/backups
       ADMIN_ADDRESSES: "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
+      # Unset by default — marketplace routes stay off (see header comment).
+      ESCROW_ADDRESS: "${ESCROW_ADDRESS:-}"
+      NIMIQ_WALLET_KEY: "${NIMIQ_WALLET_KEY:-}"
+      ESCROW_SIGNER_RPC_URL: "http://nimiq-node:8648"
+      ESCROW_SIGNER_RPC_USER: "${ESCROW_RPC_USER:-}"
+      ESCROW_SIGNER_RPC_PASSWORD: "${ESCROW_RPC_PASSWORD:-}"
     volumes:
       - ./data/backups:/data/backups
+
+  # Escrow signer node — holds the escrow wallet's unlocked key. Only
+  # reachable by the backend over this internal Compose network (no
+  # published ports) plus nimiq/client.toml's methods allowlist. RPC
+  # username/password are optional (see header comment) — if
+  # ESCROW_RPC_USER/PASSWORD aren't set, those fields are stripped from the
+  # generated config rather than left as literal, unresolved placeholders.
+  # Opt-in: `docker compose --profile escrow up`.
+  nimiq-node:
+    image: ghcr.io/nimiq/core-rs-albatross:1.7.1
+    profiles: ["escrow"]
+    restart: unless-stopped
+    user: "0:0"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /home/nimiq/.nimiq
+        if [ -n "$$ESCROW_RPC_USER" ] && [ -n "$$ESCROW_RPC_PASSWORD" ]; then
+          sed -e "s#__RPC_USER__#$$ESCROW_RPC_USER#g" -e "s#__RPC_PASSWORD__#$$ESCROW_RPC_PASSWORD#g" \
+            /home/nimiq/client.template.toml > /home/nimiq/.nimiq/client.toml
+        else
+          sed -e '/^username = "__RPC_USER__"$/d' -e '/^password = "__RPC_PASSWORD__"$/d' \
+            /home/nimiq/client.template.toml > /home/nimiq/.nimiq/client.toml
+        fi
+        chown -R nimiq:nimiq /home/nimiq/.nimiq || true
+        exec runuser -u nimiq -- /usr/bin/tini -- nimiq-client
+    environment:
+      RPC_ENABLED: "true"
+      NIMIQ_NETWORK: main-albatross
+      ESCROW_RPC_USER: "${ESCROW_RPC_USER:-}"
+      ESCROW_RPC_PASSWORD: "${ESCROW_RPC_PASSWORD:-}"
+    volumes:
+      - nimiq_escrow_node_data:/home/nimiq/.nimiq
+      - ./nimiq/client.toml:/home/nimiq/client.template.toml:ro
+    # JSON-RPC returns 405 on GET; use POST so the check matches a live server
+    # (this only proves the RPC server answers, not that consensus is up yet —
+    # SetupEscrowWallet's own retry loop handles that).
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "-sf",
+          "-X",
+          "POST",
+          "-H",
+          "Content-Type: application/json",
+          "-d",
+          '{"jsonrpc":"2.0","method":"isConsensusEstablished","params":[],"id":1}',
+          "http://localhost:8648",
+        ]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+
+volumes:
+  nimiq_escrow_node_data:

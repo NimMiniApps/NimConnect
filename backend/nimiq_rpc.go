@@ -12,13 +12,25 @@ import (
 // ponytail: positional params only; add the object-param calling convention
 // if a target node ever rejects positional (NimFeed supports both).
 type NimiqRPC struct {
-	url    string
-	client *http.Client
-	id     atomic.Int64
+	url         string
+	client      *http.Client
+	id          atomic.Int64
+	rpcUser     string
+	rpcPassword string
 }
 
 func NewNimiqRPC(client *http.Client, url string) *NimiqRPC {
 	return &NimiqRPC{url: url, client: client}
+}
+
+// WithBasicAuth scopes RPC credentials to this client only — reserved for
+// the escrow-signer node, which has the escrow wallet unlocked and must
+// never be reachable without authentication (an unauthenticated unlocked
+// node lets anyone who can reach it drain the escrow account).
+func (c *NimiqRPC) WithBasicAuth(user, password string) *NimiqRPC {
+	c.rpcUser = user
+	c.rpcPassword = password
+	return c
 }
 
 // rpcTx tolerates the field-name variants different node versions emit
@@ -70,7 +82,15 @@ func (c *NimiqRPC) call(method string, params []any, out any) error {
 	if err != nil {
 		return err
 	}
-	resp, err := c.client.Post(c.url, "application/json", bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost, c.url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if c.rpcUser != "" {
+		req.SetBasicAuth(c.rpcUser, c.rpcPassword)
+	}
+	resp, err := c.client.Do(req)
 	if err != nil {
 		return err
 	}
@@ -117,6 +137,19 @@ func (c *NimiqRPC) GetTransactionByHash(hash string) (*rpcTx, error) {
 	return &tx, nil
 }
 
+// GetBalance is a read-only lookup usable against the public gateway (unlike
+// the wallet-management methods below, which only make sense against our
+// own escrow-signer node).
+func (c *NimiqRPC) GetBalance(address string) (uint64, error) {
+	var account struct {
+		Balance uint64 `json:"balance"`
+	}
+	if err := c.call("getAccountByAddress", []any{address}, &account); err != nil {
+		return 0, err
+	}
+	return account.Balance, nil
+}
+
 // GetLastMacroBlockNumber returns the most recently macro-finalized block
 // height. Transactions at or below this height are final.
 func (c *NimiqRPC) GetLastMacroBlockNumber() (uint64, error) {
@@ -149,6 +182,57 @@ func (c *NimiqRPC) SendBasicTransactionWithData(sender, recipient string, valueL
 		return "", err
 	}
 	return hash, nil
+}
+
+// The methods below manage a node's local wallet (import/unlock/list) —
+// public gateways don't expose them, they only make sense against our own
+// escrow-signer node.
+
+func (c *NimiqRPC) IsConsensusEstablished() (bool, error) {
+	var established bool
+	if err := c.call("isConsensusEstablished", []any{}, &established); err != nil {
+		return false, err
+	}
+	return established, nil
+}
+
+// ImportRawKey loads a private key into the node's wallet and returns the
+// resulting address. It does not unlock the account.
+func (c *NimiqRPC) ImportRawKey(keyHex, passphrase string) (string, error) {
+	var address string
+	if err := c.call("importRawKey", []any{keyHex, passphrase}, &address); err != nil {
+		return "", err
+	}
+	return address, nil
+}
+
+func (c *NimiqRPC) ListAccounts() ([]string, error) {
+	var accounts []string
+	if err := c.call("listAccounts", []any{}, &accounts); err != nil {
+		return nil, err
+	}
+	return accounts, nil
+}
+
+func (c *NimiqRPC) IsAccountUnlocked(address string) (bool, error) {
+	var unlocked bool
+	if err := c.call("isAccountUnlocked", []any{address}, &unlocked); err != nil {
+		return false, err
+	}
+	return unlocked, nil
+}
+
+// UnlockAccount unlocks address for signing. duration is in milliseconds;
+// 0 means unlock indefinitely (until the node restarts).
+func (c *NimiqRPC) UnlockAccount(address, passphrase string, duration uint64) error {
+	var ok bool
+	if err := c.call("unlockAccount", []any{address, passphrase, duration}, &ok); err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("unlockAccount returned false for %s", address)
+	}
+	return nil
 }
 
 // SendRawTransaction broadcasts an already-signed, serialized transaction.

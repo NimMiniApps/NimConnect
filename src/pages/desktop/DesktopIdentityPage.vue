@@ -27,6 +27,12 @@ import Identicon from '../../components/Identicon.vue'
 import QrCode from '../../components/QrCode.vue'
 import TagChips from '../../components/TagChips.vue'
 import type { Profile } from '../../types/profile'
+import {
+  fetchTradesForWallet,
+  marketplaceTradesLookupMessage,
+  generateNonce,
+  type MarketplaceTrade,
+} from '../../services/marketplace'
 
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 
@@ -61,6 +67,7 @@ type Snapshot = {
 }
 
 const hubAddress = ref<string | null>(null)
+const activeTab = ref<'identity' | 'trades'>('identity')
 const connecting = ref(false)
 const connectError = ref<string | null>(null)
 const loadingIdentity = ref(false)
@@ -87,6 +94,48 @@ const publishing = ref(false)
 const publishNote = ref<string | null>(null)
 const saveError = ref<string | null>(null)
 const copyFeedback = ref<string | null>(null)
+
+const trades = ref<MarketplaceTrade[]>([])
+const tradesLoaded = ref(false)
+const tradesLoading = ref(false)
+const tradesError = ref<string | null>(null)
+
+function compactAddress(a: string): string {
+  return a.replace(/\s+/g, '').toUpperCase()
+}
+
+function roleFor(trade: MarketplaceTrade): string {
+  return compactAddress(trade.seller) === compactAddress(hubAddress.value || '') ? 'Selling' : 'Buying'
+}
+
+// A stored address alone doesn't carry a valid signature — every load signs
+// a fresh short-lived proof of ownership before fetching, since the backend
+// requires one on every request.
+async function loadTrades() {
+  if (!hubAddress.value) return
+  const addr = hubAddress.value
+  tradesLoading.value = true
+  tradesError.value = null
+  const nonce = generateNonce()
+  const expiresAt = Math.floor(Date.now() / 1000) + 600
+  let publicKey: string, signature: string
+  try {
+    const message = marketplaceTradesLookupMessage(addr, nonce, expiresAt)
+    ;({ publicKey, signature } = await hubSignMessage(message, addr))
+  } catch (e) {
+    tradesError.value = hubErrorMessage(e)
+    tradesLoading.value = false
+    return
+  }
+  try {
+    trades.value = await fetchTradesForWallet(addr, nonce, expiresAt, publicKey, signature)
+    tradesLoaded.value = true
+  } catch (e) {
+    tradesError.value = (e as Error).message
+  } finally {
+    tradesLoading.value = false
+  }
+}
 
 const connected = computed(() => !!hubAddress.value)
 const hasClaim = computed(() => !!claim.value)
@@ -230,6 +279,9 @@ function disconnect() {
   handleInput.value = ''
   availability.value = 'idle'
   resetProfileFields()
+  trades.value = []
+  tradesLoaded.value = false
+  tradesError.value = null
 }
 
 watch(handleInput, (value) => {
@@ -430,6 +482,31 @@ onMounted(async () => {
       </div>
       <p v-if="connectError" class="desktop-identity__error" role="alert">{{ connectError }}</p>
 
+      <div class="desktop-identity__tabs" role="tablist">
+        <button
+          type="button"
+          role="tab"
+          class="desktop-identity__tab"
+          :class="{ 'is-active': activeTab === 'identity' }"
+          :aria-selected="activeTab === 'identity'"
+          @click="activeTab = 'identity'"
+        >
+          Identity
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="desktop-identity__tab"
+          data-tab-trades
+          :class="{ 'is-active': activeTab === 'trades' }"
+          :aria-selected="activeTab === 'trades'"
+          @click="activeTab = 'trades'"
+        >
+          My Trades
+        </button>
+      </div>
+
+      <template v-if="activeTab === 'identity'">
       <p v-if="loadingIdentity" class="desktop-identity__hint">Checking your identity…</p>
 
       <div v-else-if="!hasClaim" class="desktop-identity__claim" data-desktop-identity-claim>
@@ -719,6 +796,39 @@ onMounted(async () => {
           </div>
         </aside>
       </div>
+      </template>
+
+      <div v-if="activeTab === 'trades'" class="desktop-identity__trades" data-desktop-identity-trades>
+        <h2 class="desktop-identity__section-title">My Trades</h2>
+        <div v-if="!tradesLoaded" class="desktop-identity__trades-prompt">
+          <p class="desktop-identity__hint">Sign to load handles you're buying or selling.</p>
+          <button
+            type="button"
+            class="desktop-identity__ghost-btn"
+            data-load-trades
+            :disabled="tradesLoading"
+            @click="loadTrades"
+          >
+            {{ tradesLoading ? 'Loading…' : 'Load My Trades' }}
+          </button>
+          <p v-if="tradesError" class="desktop-identity__error" role="alert">{{ tradesError }}</p>
+        </div>
+        <p v-else-if="trades.length === 0" class="desktop-identity__hint">
+          No trades yet. <RouterLink to="/marketplace">Browse the marketplace</RouterLink>.
+        </p>
+        <ul v-else class="desktop-identity__trades-list">
+          <li v-for="trade in trades" :key="trade.id" class="desktop-identity__trades-row">
+            <RouterLink :to="`/marketplace/trades/${trade.id}`" class="desktop-identity__trades-link">
+              <span class="desktop-identity__trades-handle">@{{ trade.handle }}</span>
+              <span
+                class="desktop-identity__trades-role"
+                :class="roleFor(trade) === 'Selling' ? 'is-selling' : 'is-buying'"
+              >{{ roleFor(trade) }}</span>
+              <span class="desktop-identity__trades-state">{{ trade.state }}</span>
+            </RouterLink>
+          </li>
+        </ul>
+      </div>
     </template>
   </section>
 </template>
@@ -917,6 +1027,61 @@ onMounted(async () => {
   opacity: 0.5;
   cursor: default;
 }
+
+.desktop-identity__tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: 4px;
+  padding: 4px;
+  border-radius: var(--nimiq-radius-pill);
+  background: color-mix(in srgb, var(--text) 6%, var(--card));
+  border: 1px solid var(--border);
+}
+.desktop-identity__tab {
+  min-height: 36px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--nimiq-radius-pill);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background var(--attr-duration) var(--nimiq-ease),
+    color var(--attr-duration) var(--nimiq-ease);
+}
+.desktop-identity__tab.is-active {
+  background: var(--card);
+  color: var(--nq-gold-dark);
+  box-shadow: var(--shadow);
+}
+
+.desktop-identity__trades {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.desktop-identity__trades-prompt { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.desktop-identity__trades-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.desktop-identity__trades-row { border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); }
+.desktop-identity__trades-link {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  color: var(--text); text-decoration: none;
+}
+.desktop-identity__trades-handle { flex: 1; font-weight: 700; }
+.desktop-identity__trades-role {
+  padding: 2px 10px; border-radius: var(--nimiq-radius-pill); font-size: 12px; font-weight: 700;
+}
+.desktop-identity__trades-role.is-selling { background: var(--nimiq-gold-bg); color: var(--nimiq-blue); }
+.desktop-identity__trades-role.is-buying { background: var(--nimiq-light-blue-bg); color: var(--nimiq-white); }
+.desktop-identity__trades-state { font-size: 13px; color: var(--text-2); }
 
 .desktop-identity__claim {
   display: flex;

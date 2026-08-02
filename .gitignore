@@ -28,6 +28,9 @@ dist-ssr
 # Local homelab stack (real domains)
 docker-compose.homelab.yml
 
+# Generated escrow wallets (real private keys — see scripts/create-escrow-wallet.sh)
+escrow-wallet-*.json
+
 # Local backend backup files (docker compose)
 data/
 .worktrees/

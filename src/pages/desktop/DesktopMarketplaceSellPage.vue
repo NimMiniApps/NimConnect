@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { chooseHubAddress, hubSignMessage, hubErrorMessage } from '../../services/hub'
-import { getDesktopHubAddress, setDesktopHubAddress } from '../../services/desktop-session'
+import { RouterLink } from 'vue-router'
+import { hubSignMessage, hubErrorMessage } from '../../services/hub'
+import { getDesktopHubAddress } from '../../services/desktop-session'
 import { findMyHandle, type HandleClaim } from '../../services/handles'
 import { createListing, marketplaceListingMessage, generateNonce } from '../../services/marketplace'
 
@@ -13,10 +14,9 @@ const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.p
 const FEE_BPS = 500 // 5%
 const LUNA_PER_NIM = 100000
 
-const hubAddress = ref<string | null>(null)
+const hubAddress = computed(() => getDesktopHubAddress())
 const claim = ref<HandleClaim | null>(null)
 const loadingIdentity = ref(false)
-const connecting = ref(false)
 const priceNim = ref('')
 const listing = ref(false)
 const error = ref<string | null>(null)
@@ -24,7 +24,7 @@ const listedLink = ref<string | null>(null)
 
 const priceLuna = computed(() => Math.round((parseFloat(priceNim.value) || 0) * LUNA_PER_NIM))
 const feeLuna = computed(() => Math.round((priceLuna.value * FEE_BPS) / 10000))
-const feeNim = computed(() => (feeLuna.value / LUNA_PER_NIM).toString())
+const feeNim = computed(() => (feeLuna.value / LUNA_PER_NIM).toLocaleString(undefined, { maximumFractionDigits: 5 }))
 
 async function loadIdentity(addr: string) {
   loadingIdentity.value = true
@@ -32,21 +32,6 @@ async function loadIdentity(addr: string) {
     claim.value = await findMyHandle([addr])
   } finally {
     loadingIdentity.value = false
-  }
-}
-
-async function connect() {
-  error.value = null
-  connecting.value = true
-  try {
-    const addr = await chooseHubAddress()
-    setDesktopHubAddress(addr)
-    hubAddress.value = addr
-    await loadIdentity(addr)
-  } catch (e) {
-    error.value = hubErrorMessage(e)
-  } finally {
-    connecting.value = false
   }
 }
 
@@ -84,10 +69,8 @@ async function submitListing() {
 }
 
 onMounted(async () => {
-  const stored = getDesktopHubAddress()
-  if (stored) {
-    hubAddress.value = stored
-    await loadIdentity(stored)
+  if (hubAddress.value) {
+    await loadIdentity(hubAddress.value)
   }
 })
 </script>
@@ -99,11 +82,9 @@ onMounted(async () => {
       <h1>Sell your @handle</h1>
     </header>
 
-    <div v-if="!hubAddress">
+    <div v-if="!hubAddress" class="desktop-marketplace-sell__connect">
       <p>Connect your Nimiq Hub wallet to list a handle for sale.</p>
-      <button type="button" :disabled="connecting" @click="connect">
-        {{ connecting ? 'Connecting…' : 'Connect Wallet' }}
-      </button>
+      <RouterLink to="/me" class="nq-button">Connect Wallet</RouterLink>
     </div>
     <div v-else-if="loadingIdentity">
       <p>Checking your identity…</p>
@@ -111,19 +92,22 @@ onMounted(async () => {
     <div v-else-if="!claim">
       <p>You need to claim a handle before you can list one for sale.</p>
     </div>
-    <div v-else-if="listedLink">
+    <div v-else-if="listedLink" class="desktop-marketplace-sell__done">
       <p>@{{ claim.handle }} is listed. Share its link:</p>
       <code>{{ listedLink }}</code>
     </div>
-    <form v-else @submit.prevent="submitListing">
-      <p>Listing <strong>@{{ claim.handle }}</strong> for sale.</p>
-      <label>
-        Price (NIM)
-        <input type="number" min="0" step="0.01" v-model="priceNim" />
-      </label>
-      <p>Marketplace fee: {{ FEE_BPS / 100 }}% ({{ feeNim }} NIM)</p>
+    <form v-else class="desktop-marketplace-sell__form" @submit.prevent="submitListing">
+      <p class="desktop-marketplace-sell__intro">Listing <strong>@{{ claim.handle }}</strong> for sale.</p>
+      <label class="desktop-marketplace-sell__label" for="desktop-marketplace-sell-price">Price (NIM)</label>
+      <input
+        id="desktop-marketplace-sell-price"
+        type="number" min="0" step="0.01" inputmode="decimal"
+        class="desktop-marketplace-sell__input"
+        v-model="priceNim"
+      />
+      <p class="desktop-marketplace-sell__fee">Marketplace fee: {{ FEE_BPS / 100 }}% ({{ feeNim }} NIM)</p>
       <p v-if="error" class="desktop-marketplace-sell__error">{{ error }}</p>
-      <button type="submit" data-list-button :disabled="listing || priceLuna <= 0">
+      <button type="submit" class="nq-button" data-list-button :disabled="listing || priceLuna <= 0">
         {{ listing ? 'Listing…' : 'List for sale' }}
       </button>
     </form>
@@ -134,5 +118,29 @@ onMounted(async () => {
 .desktop-marketplace-sell { max-width: 480px; margin: 0 auto; padding: 24px 16px; }
 .desktop-marketplace-sell__header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .desktop-marketplace-sell__header h1 { font-size: 20px; margin: 0; }
+.desktop-marketplace-sell__connect,
+.desktop-marketplace-sell__done {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 16px;
+  padding: 24px; border: 1px solid var(--border); border-radius: var(--nimiq-radius-card);
+}
+.desktop-marketplace-sell__done code {
+  padding: 8px 12px; border-radius: var(--nimiq-radius-input);
+  background: var(--card); font-family: 'Fira Mono', monospace; word-break: break-all;
+}
+.desktop-marketplace-sell__form {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 24px; border: 1px solid var(--border); border-radius: var(--nimiq-radius-card);
+}
+.desktop-marketplace-sell__intro { margin: 0 0 8px; }
+.desktop-marketplace-sell__label { font-size: 13px; font-weight: 700; color: var(--text-2); }
+.desktop-marketplace-sell__input {
+  height: 48px; padding: 0 14px; margin-bottom: 4px;
+  border: 1px solid var(--border); border-radius: var(--nimiq-radius-input);
+  background: var(--bg); font: inherit; font-size: 18px; color: var(--text);
+}
+.desktop-marketplace-sell__input:focus-visible { outline: 3px solid var(--nq-light-blue); outline-offset: 1px; }
+.desktop-marketplace-sell__fee { margin: 0 0 12px; font-size: 14px; color: var(--text-2); }
 .desktop-marketplace-sell__error { color: var(--nq-red); }
+.desktop-marketplace-sell__form .nq-button,
+.desktop-marketplace-sell__form button { align-self: flex-start; }
 </style>

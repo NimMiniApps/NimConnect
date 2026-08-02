@@ -218,6 +218,20 @@ func (s *MarketplaceStore) TradesInState(state TradeState) []MarketplaceTrade {
 	return trades
 }
 
+// AllTrades returns copies of every trade regardless of state — for admin
+// visibility, not for workers (which should use TradesInState so they only
+// ever see the stage they're built to process).
+func (s *MarketplaceStore) AllTrades() []MarketplaceTrade {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	trades := make([]MarketplaceTrade, 0, len(s.trades))
+	for _, trade := range s.trades {
+		trades = append(trades, trade)
+	}
+	return trades
+}
+
 // TradesForWallet returns every trade where the given address is either the
 // buyer or the seller — a wallet can't be both on the same trade, since
 // CreateListing/ReserveListing never let a listing's seller reserve their

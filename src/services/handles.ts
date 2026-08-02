@@ -2,8 +2,9 @@ import { sha256 } from '@noble/hashes/sha2'
 import { bytesToHex } from '@noble/hashes/utils'
 import { ValidationUtils } from '@nimiq/utils/validation-utils'
 import { apiUrl, hasApiBase } from './api'
-import { claimHandleWithHub } from './hub'
+import { hubSignClaimTransaction } from './hub'
 import { fetchTransactionsByAddress } from './history'
+import { fetchChainHeight } from './marketplace'
 import { sendNim, signChallenge } from './nimiq'
 import type { Profile } from '../types/profile'
 
@@ -456,26 +457,31 @@ export async function claimHandle(
   }
 }
 
-/** Send a Hub-checkout claim tx, then fast-path it to the indexer — no Nimiq Pay needed. */
+/**
+ * Signs a claim tx via the Hub (sign-only — Hub's checkout() requires
+ * value > 0 and can't be used for a value-0 registry message), then hands
+ * the raw hex to the backend to broadcast and fast-path to the indexer.
+ */
 export async function claimHandleViaHub(
   handle: string,
   address: string,
 ): Promise<{ status: 'indexed' | 'pending'; txHash: string; claim?: HandleClaim }> {
   if (!isValidHandle(handle)) throw new Error('Invalid handle')
   if (!REGISTRY_ADDRESS) throw new Error('Handle registry not configured')
-  const { txHash } = await claimHandleWithHub(handle, address)
+  const height = await fetchChainHeight()
+  const { rawHex, hash } = await hubSignClaimTransaction(handle, address, height)
   const res = await fetch(apiUrl('/api/handles/claims'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tx_hash: txHash }),
+    body: JSON.stringify({ raw_hex: rawHex }),
   })
-  if (!res.ok) return { status: 'pending', txHash }
+  if (!res.ok) throw new Error('Failed to submit claim — try again')
   const body = await res.json()
   const claim = body.claim as HandleClaim | undefined
   if (claim) saveMyHandle([address], claim)
   return {
     status: body.status === 'indexed' ? 'indexed' : 'pending',
-    txHash,
+    txHash: claim?.tx_hash ?? hash,
     claim,
   }
 }

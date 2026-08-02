@@ -35,6 +35,23 @@ services:
       # On-chain @handle registry (defaults to NimFeed catalog; set off to disable)
       # - REGISTRY_ADDRESS=off
       # - PUBLIC_APP_ORIGIN=https://nimconnect.nimiqminiapps.com
+      # Handle marketplace (buy/sell @handles) — leave ESCROW_ADDRESS unset to
+      # keep marketplace routes off. The signer must be our own node (below),
+      # never a public gateway: gateways expose no wallet RPCs, and this key
+      # should never sit on infrastructure we don't control. NIMIQ_WALLET_KEY
+      # is a Swarm secret, not a plain env var (see `secrets:` below).
+      # - ESCROW_ADDRESS=<Nimiq address that holds funds mid-trade>
+      # - ESCROW_SIGNER_RPC_URL=http://nimiq-node:8648
+      # Required, not optional, alongside the two above — the backend refuses
+      # to start without them. Must match the [rpc-server] username/password
+      # set in nimconnect_nimiq_client_toml below; network isolation and the
+      # methods allowlist aren't enough alone, since anything else able to
+      # reach the node's port would still find a live, unlocked wallet.
+      # - ESCROW_SIGNER_RPC_USER=<matches client.toml [rpc-server] username>
+      # - ESCROW_SIGNER_RPC_PASSWORD=<matches client.toml [rpc-server] password>
+    secrets:
+      - source: nimconnect_nimiq_wallet_key
+        target: NIMIQ_WALLET_KEY
     volumes:
       - nimconnect_backups:/data/backups
       - nimconnect_inbox:/data/inbox
@@ -52,6 +69,34 @@ services:
         - traefik.http.routers.nimconnect-api.entrypoints=websecure
         - traefik.http.routers.nimconnect-api.tls=true
         - traefik.http.services.nimconnect-api.loadbalancer.server.port=8787
+
+  # Escrow signer node — only needed if ESCROW_ADDRESS is set above. Holds the
+  # escrow wallet's unlocked key; its RPC has no concept of auth once unlocked,
+  # so isolation is what protects it. It's on the shared `web` network (Swarm
+  # service discovery needs that for the backend to reach it by name) but has
+  # no ports: and no Traefik labels, so nothing routes to it externally — if
+  # your homelab has other untrusted stacks on `web`, consider giving this
+  # service its own internal-only network instead.
+  # ESCROW_SIGNER_RPC_URL for the backend above: http://nimiq-node:8648
+  nimiq-node:
+    image: ghcr.io/nimiq/core-rs-albatross:1.7.1
+    user: "1001:1001"
+    environment:
+      - RPC_ENABLED=true
+      - NIMIQ_NETWORK=main-albatross
+    configs:
+      - source: nimconnect_nimiq_client_toml
+        target: /home/nimiq/.nimiq/client.toml
+    volumes:
+      - nimconnect_nimiq_node_data:/home/nimiq/.nimiq
+    networks:
+      - web
+    deploy:
+      restart_policy:
+        condition: any
+      placement:
+        constraints:
+          - node.role == worker
 
   frontend:
     image: ghcr.io/<github-username>/nimconnect-frontend:latest
@@ -77,3 +122,20 @@ networks:
 volumes:
   nimconnect_backups:
   nimconnect_inbox:
+  nimconnect_nimiq_node_data:
+
+# Create before first deploy (see comments on the fields above for what each
+# holds). Config content: start from the repo's nimiq/client.toml (already
+# mainnet + the methods allowlist) and add [rpc-server] username/password if
+# using ESCROW_SIGNER_RPC_USER/PASSWORD above.
+#   echo -n '<hex private key>' | docker secret create nimconnect_nimiq_wallet_key -
+#   docker config create nimconnect_nimiq_client_toml - < /secure/path/client-mainnet.toml
+# To rotate either, remove it only after no service references it (redeploy
+# without the old service first), then create again with the same name.
+secrets:
+  nimconnect_nimiq_wallet_key:
+    external: true
+
+configs:
+  nimconnect_nimiq_client_toml:
+    external: true

@@ -20,9 +20,14 @@ import {
 } from './handles'
 import type { Profile } from '../types/profile'
 
-const claimHandleWithHub = vi.fn()
+const hubSignClaimTransaction = vi.fn()
 vi.mock('./hub', () => ({
-  claimHandleWithHub: (...args: unknown[]) => claimHandleWithHub(...args),
+  hubSignClaimTransaction: (...args: unknown[]) => hubSignClaimTransaction(...args),
+}))
+
+const fetchChainHeight = vi.fn()
+vi.mock('./marketplace', () => ({
+  fetchChainHeight: (...args: unknown[]) => fetchChainHeight(...args),
 }))
 
 const sendNim = vi.fn()
@@ -175,11 +180,12 @@ describe('publishProfile / unpublishProfile with injected signer', () => {
 describe('claimHandleViaHub', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
-    claimHandleWithHub.mockReset()
+    hubSignClaimTransaction.mockReset()
+    fetchChainHeight.mockReset().mockResolvedValue(100)
   })
 
-  it('claims via Hub checkout and reports indexed status', async () => {
-    claimHandleWithHub.mockResolvedValue({ txHash: 'hub-tx-1' })
+  it('signs (without broadcasting) via the Hub, submits raw_hex, and reports indexed status', async () => {
+    hubSignClaimTransaction.mockResolvedValue({ rawHex: 'deadbeef', hash: 'hub-tx-1' })
     const claim: HandleClaim = {
       handle: 'chuck', address: 'NQ01 TEST', tx_hash: 'hub-tx-1', block_height: 1, tx_index: 0,
     }
@@ -191,22 +197,34 @@ describe('claimHandleViaHub', () => {
 
     const result = await claimHandleViaHub('chuck', 'NQ01 TEST')
 
-    expect(claimHandleWithHub).toHaveBeenCalledWith('chuck', 'NQ01 TEST')
+    expect(hubSignClaimTransaction).toHaveBeenCalledWith('chuck', 'NQ01 TEST', 100)
+    const [, init] = fetchMock.mock.calls[0]!
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({ raw_hex: 'deadbeef' })
     expect(result).toEqual({ status: 'indexed', txHash: 'hub-tx-1', claim })
   })
 
-  it('falls back to pending when the indexer call fails', async () => {
-    claimHandleWithHub.mockResolvedValue({ txHash: 'hub-tx-2' })
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+  it('falls back to pending using the locally signed hash when the claim is not yet indexed', async () => {
+    hubSignClaimTransaction.mockResolvedValue({ rawHex: 'deadbeef', hash: 'hub-tx-2' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ status: 'pending' }),
+    }))
 
     const result = await claimHandleViaHub('chuck', 'NQ01 TEST')
 
-    expect(result).toEqual({ status: 'pending', txHash: 'hub-tx-2' })
+    expect(result).toEqual({ status: 'pending', txHash: 'hub-tx-2', claim: undefined })
+  })
+
+  it('throws when the backend fails to broadcast — nothing was sent to the network', async () => {
+    hubSignClaimTransaction.mockResolvedValue({ rawHex: 'deadbeef', hash: 'hub-tx-3' })
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }))
+
+    await expect(claimHandleViaHub('chuck', 'NQ01 TEST')).rejects.toThrow('Failed to submit claim — try again')
   })
 
   it('rejects invalid handles without touching the Hub', async () => {
     await expect(claimHandleViaHub('AB', 'NQ01 TEST')).rejects.toThrow('Invalid handle')
-    expect(claimHandleWithHub).not.toHaveBeenCalled()
+    expect(hubSignClaimTransaction).not.toHaveBeenCalled()
   })
 })
 

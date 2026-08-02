@@ -38,28 +38,6 @@ describe('hub service', () => {
     })
   })
 
-  it('hubCheckoutClaim sends raw binary extraData and value 0', async () => {
-    checkout.mockResolvedValue({ hash: 'abcd' })
-    const { hubCheckoutClaim } = await import('./hub')
-    const extraData = new Uint8Array([0x4e, 0x46, 0x01, 0x01, 0x61])
-    await expect(
-      hubCheckoutClaim({
-        recipient: 'NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y',
-        extraData,
-        sender: 'NQ01 TEST',
-      }),
-    ).resolves.toEqual({ txHash: 'abcd' })
-    expect(checkout).toHaveBeenCalledWith(
-      expect.objectContaining({
-        appName: 'NimConnect',
-        recipient: 'NQ19 LLHP G0ML 37RM 5JJD RME1 GLFY 75PQ 402Y',
-        value: 0,
-        extraData,
-        sender: 'NQ01 TEST',
-      }),
-    )
-  })
-
   it('hubSignReleaseTransaction signs without broadcasting and returns raw hex + hash', async () => {
     signTransaction.mockResolvedValue({ serializedTx: 'deadbeef', hash: 'release-hash' })
     const { hubSignReleaseTransaction } = await import('./hub')
@@ -72,7 +50,7 @@ describe('hub service', () => {
       expect.objectContaining({
         appName: 'NimConnect',
         sender: 'NQ01 TEST',
-        value: 0,
+        value: 1000,
         validityStartHeight: 42,
       }),
     )
@@ -90,7 +68,7 @@ describe('hub service', () => {
       expect.objectContaining({
         appName: 'NimConnect',
         sender: 'NQ01 TEST',
-        value: 0,
+        value: 1000,
         validityStartHeight: 42,
       }),
     )
@@ -113,9 +91,14 @@ describe('hub service', () => {
     )
   })
 
-  it('hubErrorMessage maps a cancellation to a quiet message and anything else to the install hint', async () => {
+  it('hubErrorMessage maps a cancellation to a quiet message and a blocked popup to the install hint', async () => {
     const { hubErrorMessage } = await import('./hub')
     expect(hubErrorMessage(new Error('User canceled the request'))).toBe('Canceled — no changes were made.')
-    expect(hubErrorMessage(new Error('popup blocked'))).toBe('Install or open a Nimiq Hub compatible wallet')
+    expect(hubErrorMessage(new Error('Failed to open popup'))).toBe('Install or open a Nimiq Hub compatible wallet')
+  })
+
+  it('hubErrorMessage surfaces the real Hub rejection instead of a generic install hint', async () => {
+    const { hubErrorMessage } = await import('./hub')
+    expect(hubErrorMessage(new Error('Insufficient balance'))).toBe('Insufficient balance')
   })
 })

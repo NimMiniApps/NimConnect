@@ -236,6 +236,53 @@ func TestHandleCheckAdvisory(t *testing.T) {
 	}
 }
 
+func TestClaimSubmitHandler_BroadcastsHubRawHex(t *testing.T) {
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	txJSON, _ := json.Marshal(rpcTx{Hash: "h1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY", Data: hex.EncodeToString([]byte(makeClaimPayload("chuck")))})
+	txsJSON, _ := json.Marshal([]rpcTx{{
+		Hash: "h1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY",
+		Data:        hex.EncodeToString([]byte(makeClaimPayload("chuck"))),
+		BlockNumber: 5,
+	}})
+	srv := fakeRPC(t, map[string]string{
+		"sendRawTransaction":       `"h1"`,
+		"getTransactionByHash":     string(txJSON),
+		"getTransactionsByAddress": string(txsJSON),
+	})
+	defer srv.Close()
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+
+	body, _ := json.Marshal(map[string]string{"kind": "hub", "raw_hex": "deadbeef"})
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/handles/claims", bytes.NewReader(body)))
+	if rec.Code != 200 {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body)
+	}
+	var got struct {
+		Status string      `json:"status"`
+		Claim  HandleClaim `json:"claim"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Status != "indexed" || got.Claim.Handle != "chuck" {
+		t.Fatalf("unexpected response: %+v", got)
+	}
+}
+
+func TestClaimSubmitHandler_RejectsEmptyRequest(t *testing.T) {
+	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	syncer := NewHandleSyncer(NewNimiqRPC(nil, ""), registry, "NQ77 REGISTRY")
+	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/handles/claims", bytes.NewReader([]byte(`{}`))))
+	if rec.Code != 400 {
+		t.Fatalf("want 400, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
 func TestHandleByAddress(t *testing.T) {
 	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(t.TempDir()), nil)
 	rec := httptest.NewRecorder()

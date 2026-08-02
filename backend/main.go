@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -14,6 +16,20 @@ func getEnv(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+// secretEnv reads key from the environment, or from a mounted Docker/Swarm
+// secret file at /run/secrets/<key> if the env var isn't set. Lets the same
+// code work with a plain .env locally and Swarm secrets in production.
+func secretEnv(key string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	data, err := os.ReadFile("/run/secrets/" + key)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // parseActivationHeight parses RELEASE_ACTIVATION_HEIGHT. Empty or invalid
@@ -121,12 +137,46 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to open escrow ledger: %v", err)
 			}
-			escrowSignerRPC := NewNimiqRPC(httpClient, getEnv("ESCROW_SIGNER_RPC_URL", getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com")))
+			// The escrow signer must be our own node, never a public gateway:
+			// gateways expose no wallet RPCs, and this key should never sit on
+			// infrastructure we don't fully control. Deployed on an
+			// internal-only Swarm network with no published RPC port, that
+			// isolation is the accepted control here — RPC username/password
+			// (matching the node's own [rpc-server] config) are supported as
+			// an optional extra layer, not required.
+			escrowSignerURL := getEnv("ESCROW_SIGNER_RPC_URL", "")
+			walletKey := secretEnv("NIMIQ_WALLET_KEY")
+			if escrowSignerURL == "" {
+				log.Fatal("ESCROW_ADDRESS is set but ESCROW_SIGNER_RPC_URL is not — refusing to sign escrow payouts via a public gateway")
+			}
+			if walletKey == "" {
+				log.Fatal("ESCROW_ADDRESS is set but NIMIQ_WALLET_KEY is not — cannot unlock the escrow account")
+			}
+			escrowSignerRPC := NewNimiqRPC(httpClient, escrowSignerURL)
+			if user := getEnv("ESCROW_SIGNER_RPC_USER", ""); user != "" {
+				escrowSignerRPC = escrowSignerRPC.WithBasicAuth(user, getEnv("ESCROW_SIGNER_RPC_PASSWORD", ""))
+			}
+			if err := SetupEscrowWallet(escrowSignerRPC, walletKey, escrowAddress, 3*time.Minute, 5*time.Second); err != nil {
+				log.Fatalf("escrow wallet setup failed: %v", err)
+			}
 			settlement := NewSettlementWorker(marketplaceStore, ledger, escrowSignerRPC, escrowAddress)
 			escrowWatcher := NewEscrowWatcher(rpc, marketplaceStore, escrowAddress)
 			ownershipWatcher := NewOwnershipWatcher(rpc, marketplaceStore, registry, settlement)
 			go runSweepLoop(2*time.Minute, escrowWatcher.Sweep)
-			go runSweepLoop(2*time.Minute, ownershipWatcher.Sweep)
+			// UnlockAccount(..., 0) only holds "until the node restarts" — if
+			// the node container restarts on its own (crash, restart policy)
+			// after the one-time SetupEscrowWallet call above, the backend
+			// would otherwise have no way to notice. Settle/Refund treat any
+			// failed send as needing manual reconciliation rather than
+			// retrying, so re-checking (and re-unlocking if needed) before
+			// every sweep — not just once at startup — avoids ever attempting
+			// a payout against a wallet that silently went locked.
+			go runSweepLoop(2*time.Minute, func() error {
+				if err := trySetupEscrowWallet(escrowSignerRPC, walletKey, escrowAddress); err != nil {
+					return fmt.Errorf("escrow wallet not ready, skipping settlement sweep: %w", err)
+				}
+				return ownershipWatcher.Sweep()
+			})
 
 			maxFeeBps := parseUintEnv(getEnv("MARKETPLACE_MAX_FEE_BPS", "1000"), 1000)
 			mux.HandleFunc("POST /api/marketplace/listings", marketplaceListingCreateHandler(marketplaceStore, registry, maxFeeBps))
@@ -136,6 +186,7 @@ func main() {
 			mux.HandleFunc("GET /api/marketplace/trades/by-wallet/{address}", marketplaceTradesByWalletHandler(marketplaceStore))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/release", marketplaceTradeReleaseHandler(marketplaceStore, rpc, registryAddress))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/claim", marketplaceTradeClaimHandler(marketplaceStore, rpc, registryAddress))
+			mux.HandleFunc("GET /api/admin/marketplace", adminMarketplaceHandler(adminSessions, marketplaceStore, ledger, rpc, escrowAddress))
 		}
 	}
 

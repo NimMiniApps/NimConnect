@@ -130,8 +130,9 @@ function defer() {
       </template>
       <template v-else>
         <p class="intro">
-          Your @handle is claimed with a tiny on-chain transaction and belongs to
-          your wallet address — permanently, first come first served.
+          Once claimed, people can pay you by typing @{{ handle.trim().toLowerCase() || 'yourname' }}
+          instead of your long wallet address. It's yours with a tiny on-chain
+          transaction, permanently, first come first served.
         </p>
         <label class="handle-label">
           Handle

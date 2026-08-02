@@ -32,29 +32,13 @@ export async function hubSignMessage(
   }
 }
 
-export async function hubCheckoutClaim(opts: {
-  recipient: string
-  extraData: Uint8Array
-  sender?: string
-}): Promise<{ txHash: string }> {
-  const signed = await getHub().checkout({
-    appName: APP_NAME,
-    recipient: opts.recipient,
-    value: 0,
-    extraData: opts.extraData,
-    ...(opts.sender ? { sender: opts.sender } : {}),
-  })
-  return { txHash: signed.hash }
-}
-
-/** Convenience: build raw claim payload + Hub checkout. */
-export async function claimHandleWithHub(
-  handle: string,
-  sender?: string,
-): Promise<{ txHash: string }> {
-  const { recipient, extraDataBytes } = buildHandleClaimPayload(handle)
-  return hubCheckoutClaim({ recipient, extraData: extraDataBytes, sender })
-}
+// Hub's signTransaction() treats a 0 value as *missing* rather than valid
+// ("value is required") — the same falsy-check bug that makes checkout()
+// reject 0 with "value must be a number >0". A registry claim/release isn't
+// a payment, but it still needs to carry a token nonzero amount to get past
+// Hub's request validation. The backend never checks this value — only the
+// recipient and extraData matter for parsing a claim/release.
+const REGISTRY_TX_VALUE_LUNA = 1000 // 0.01 NIM
 
 async function hubSignTransaction(opts: {
   recipient: string
@@ -66,7 +50,7 @@ async function hubSignTransaction(opts: {
     appName: APP_NAME,
     sender: opts.sender,
     recipient: opts.recipient,
-    value: 0,
+    value: REGISTRY_TX_VALUE_LUNA,
     extraData: opts.extraData,
     validityStartHeight: opts.validityStartHeight,
   })
@@ -97,13 +81,18 @@ export async function hubSignClaimTransaction(
 export function hubErrorMessage(e: unknown): string {
   const message = e instanceof Error ? e.message : String(e)
   if (/cancel/i.test(message)) return 'Canceled — no changes were made.'
-  return 'Install or open a Nimiq Hub compatible wallet'
+  // Only window.open() itself failing means there's no Hub to talk to — every
+  // other rejection is Hub reporting a real reason (e.g. insufficient balance
+  // on the selected address), which is more useful to the user verbatim than
+  // a generic "no wallet" hint that doesn't match what they just saw.
+  if (/failed to open popup/i.test(message)) return 'Install or open a Nimiq Hub compatible wallet'
+  return message || 'Something went wrong in the Nimiq Hub popup — try again.'
 }
 
 /**
- * Generic value+text-data checkout — distinct from hubCheckoutClaim, which
- * is always value-0 with binary extraData. Used for the marketplace escrow
- * deposit, where the data is a plain-text "NME1:<reference>" string.
+ * Generic value+text-data checkout, used for the marketplace escrow deposit
+ * — a real payment, unlike handle claims/releases which only carry a token
+ * amount to a registry address (see hubSignClaimTransaction/hubSignReleaseTransaction).
  */
 export async function hubCheckoutPayment(opts: {
   recipient: string

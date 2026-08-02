@@ -24,6 +24,58 @@ func fakeRPC(t *testing.T, results map[string]string) *httptest.Server {
 	}))
 }
 
+// fakeRPCFunc is fakeRPC's dynamic counterpart: result is computed per call
+// (keyed by method name) instead of fixed, for tests that need behavior to
+// change across retries.
+func fakeRPCFunc(t *testing.T, result func(method string) string) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Method string `json:"method"`
+		}
+		json.NewDecoder(r.Body).Decode(&req)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":` + result(req.Method) + `}`))
+	}))
+}
+
+func TestWithBasicAuthSendsCredentialsOnEveryCall(t *testing.T) {
+	var gotUser, gotPass string
+	var gotOK bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUser, gotPass, gotOK = r.BasicAuth()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"h1"}`))
+	}))
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL).WithBasicAuth("escrow-user", "s3cret")
+	if _, err := rpc.SendRawTransaction("deadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	if !gotOK || gotUser != "escrow-user" || gotPass != "s3cret" {
+		t.Fatalf("expected basic auth escrow-user:s3cret, got ok=%v user=%q pass=%q", gotOK, gotUser, gotPass)
+	}
+}
+
+func TestWithoutBasicAuthSendsNoCredentials(t *testing.T) {
+	var gotOK bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _, gotOK = r.BasicAuth()
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":"h1"}`))
+	}))
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL)
+	if _, err := rpc.SendRawTransaction("deadbeef"); err != nil {
+		t.Fatal(err)
+	}
+	if gotOK {
+		t.Fatal("expected no basic auth header when WithBasicAuth was never called")
+	}
+}
+
 func TestGetTransactionsByAddressUnwrapsDataEnvelope(t *testing.T) {
 	// PoS RPC wraps results as {"data": ..., "metadata": ...}; field names vary.
 	srv := fakeRPC(t, map[string]string{
@@ -123,6 +175,22 @@ func TestSendRawTransaction(t *testing.T) {
 	}
 	if hash != "cafebabe" {
 		t.Fatalf("want cafebabe, got %q", hash)
+	}
+}
+
+func TestGetBalance(t *testing.T) {
+	srv := fakeRPC(t, map[string]string{
+		"getAccountByAddress": `{"data":{"address":"NQ77 ESCROW","balance":123456,"type":"basic"},"metadata":null}`,
+	})
+	defer srv.Close()
+
+	rpc := NewNimiqRPC(srv.Client(), srv.URL)
+	got, err := rpc.GetBalance("NQ77 ESCROW")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != 123456 {
+		t.Fatalf("want 123456, got %d", got)
 	}
 }
 

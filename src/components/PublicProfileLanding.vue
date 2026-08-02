@@ -11,6 +11,7 @@ import {
   makeWalletRequestLink,
 } from '../services/links'
 import { makeNimiqPayProfileLink, type SharedProfile } from '../services/profile-share'
+import { NIMPAY_OPEN_URL } from '../config/host-app'
 
 const props = withDefaults(defineProps<{ profile: SharedProfile; allowBrowserContinue?: boolean }>(), {
   allowBrowserContinue: true,
@@ -21,6 +22,8 @@ const nimiqUri = computed(() => makeRequestLink(props.profile.address))
 const payDeepLink = computed(() => makeNimiqPayDeepLink(props.profile.address))
 const walletLink = computed(() => makeWalletRequestLink(props.profile.address))
 const addInPayLink = computed(() => makeNimiqPayProfileLink(props.profile))
+// Straight into the claim sheet: the visitor just saw a working @handle, this is the moment to offer their own.
+const claimHandleLink = `${NIMPAY_OPEN_URL}#/me?sheet=claim`
 const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 </script>
 
@@ -59,7 +62,9 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 
     <template #secondary>
       <a class="nq-button light-blue" :href="walletLink" target="_blank" rel="noopener noreferrer">Pay with Nimiq Wallet</a>
-      <a :href="addInPayLink" class="public-action--outline">Add to NimConnect</a>
+      <a :href="addInPayLink" class="public-action--outline">Add {{ profile.name }} to your contacts</a>
+      <p class="claim-nudge">Want a page like this?</p>
+      <a :href="claimHandleLink" class="public-action--outline">Claim your own @handle</a>
     </template>
 
     <template #tertiary>
@@ -114,6 +119,7 @@ const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
   padding: 0.3125rem 0.75rem;
 }
 .payment-panel__label { color: var(--text-2); font-weight: 800; }
+.claim-nudge { margin: 0.375rem 0 0; color: var(--text-2); font-size: 0.8125rem; font-weight: 700; text-align: center; }
 .panel__pay-row {
   display: grid;
   gap: 0.5rem;
