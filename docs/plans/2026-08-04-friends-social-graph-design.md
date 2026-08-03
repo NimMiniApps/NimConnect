@@ -60,9 +60,9 @@ Local contacts (IndexedDB) stay private forever.
 
 ```text
 POST /api/session
-  body: { address, publicKey, signature, expiresAt }
-  signed message: nimconnect-session:v1:{address}:{expiresAt}
-  → { token, expiresAt }   // ~24h TTL
+  body: { address, publicKey, signature, timestamp }
+  signed message: nimconnect-session:v1:{compactAddress}:{timestamp}
+  → { token, expires_at }   // ~24h TTL (same shape as admin login)
   header for subsequent calls: X-NimConnect-Session: <token>
 
 DELETE /api/session
@@ -71,6 +71,7 @@ DELETE /api/session
 
 - Signature verification reuses existing Nimiq Pay / Hub `signMessage` format
   (`backend/auth.go`).
+- `timestamp` must be within ±5 minutes (same window as admin login).
 - Session maps token → address; friends handlers always act as that address.
 - Expired / missing session → `401`; clients re-prompt one wallet sign.
 - Pattern inspired by `AdminSessions`, but per-user (any wallet), not admin allow-list.
