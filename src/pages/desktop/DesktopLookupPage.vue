@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
 import Identicon from '../../components/Identicon.vue'
 import QrCode from '../../components/QrCode.vue'
@@ -13,7 +13,7 @@ import {
   type HandleClaim,
   type PublicProfile,
 } from '../../services/handles'
-import { makeRequestLink } from '../../services/links'
+import { makePublicHandleLink } from '../../services/links'
 
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 
@@ -43,6 +43,9 @@ const result = ref<{
 } | null>(null)
 const claimableHandle = ref<string | null>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
+const profileLink = computed(() =>
+  result.value ? makePublicHandleLink(result.value.claim.handle) : '',
+)
 
 function clearLookup() {
   query.value = ''
@@ -171,13 +174,13 @@ onUnmounted(() => {
               :disabled="pending"
             />
           </div>
-          <RouterLink
+          <a
             v-if="result && !pending"
             class="nq-button"
-            :to="`/u/${result.claim.handle}`"
+            :href="profileLink"
           >
             View full profile
-          </RouterLink>
+          </a>
           <button
             v-else
             type="submit"
@@ -245,11 +248,13 @@ onUnmounted(() => {
             <div>
               <p class="desktop-lookup__result-handle">@{{ result.claim.handle }}</p>
               <p class="desktop-lookup__result-badge">Verified on-chain</p>
-              <p class="desktop-lookup__result-url">/@{{ result.claim.handle }}</p>
+              <a class="desktop-lookup__result-url" :href="profileLink">
+                /@{{ result.claim.handle }}
+              </a>
             </div>
-            <div class="desktop-lookup__result-pay" title="Payment page available">
+            <div class="desktop-lookup__result-pay" title="Open public profile">
               <QrCode
-                :text="makeRequestLink(claimOwnerAddress(result.claim))"
+                :text="profileLink"
                 :size="56"
               />
             </div>
@@ -272,12 +277,12 @@ onUnmounted(() => {
             </li>
             <li v-for="tag in result.profile?.tags ?? []" :key="tag">{{ tag }}</li>
           </ul>
-          <RouterLink
+          <a
             class="nq-button desktop-lookup__result-cta"
-            :to="`/u/${result.claim.handle}`"
+            :href="profileLink"
           >
             View full profile
-          </RouterLink>
+          </a>
         </article>
       </Transition>
 
@@ -650,11 +655,13 @@ onUnmounted(() => {
 }
 
 .desktop-lookup__result-url {
+  display: inline-block;
   margin: 4px 0 0;
   font-family: var(--nimiq-font-family-mono);
   font-size: 12px;
   font-weight: 700;
   color: var(--text-2);
+  text-decoration: none;
 }
 
 .desktop-lookup__result-pay {

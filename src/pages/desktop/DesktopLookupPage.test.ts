@@ -1,5 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { makePublicHandleLink } from '../../services/links'
 import DesktopLookupPage from './DesktopLookupPage.vue'
 
 const mocks = vi.hoisted(() => ({
@@ -23,7 +24,7 @@ vi.mock('../../services/handles', async importOriginal => {
 const stubs = {
   RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
   Identicon: { template: '<div data-identicon />' },
-  QrCode: { template: '<div data-qr />' },
+  QrCode: { props: ['text'], template: '<div data-qr :data-text="text" />' },
 }
 
 const address = 'NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF'
@@ -86,8 +87,10 @@ describe('DesktopLookupPage', () => {
     expect(wrapper.text()).toContain('ada.dev')
     expect(wrapper.text()).toContain('github.com/ada')
     expect(wrapper.text()).toContain('dev')
+    const publicLink = makePublicHandleLink('ada')
     expect(wrapper.find('[data-qr]').exists()).toBe(true)
-    expect(wrapper.find('a[href="/u/ada"]').exists()).toBe(true)
+    expect(wrapper.find('[data-qr]').attributes('data-text')).toBe(publicLink)
+    expect(wrapper.findAll(`a[href="${publicLink}"]`).length).toBeGreaterThanOrEqual(2)
     expect(wrapper.text()).toContain('View full profile')
     expect(wrapper.text()).not.toContain('Try searching for')
   })
@@ -109,7 +112,7 @@ describe('DesktopLookupPage', () => {
     expect(mocks.handleForAddress).toHaveBeenCalled()
     expect(wrapper.find('[data-desktop-lookup-result]').exists()).toBe(true)
     expect(wrapper.text()).toContain('Found by wallet address')
-    expect(wrapper.find('a[href="/u/ada"]').exists()).toBe(true)
+    expect(wrapper.find(`a[href="${makePublicHandleLink('ada')}"]`).exists()).toBe(true)
   })
 
   it('shows a clearer not-found message when no claim exists', async () => {

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import Identicon from '../Identicon.vue'
 import PublicStoreLinks from '../PublicStoreLinks.vue'
+import { MARKETPLACE_ENABLED } from '../../config/features'
 import { desktopHubAddress } from '../../services/desktop-session'
 import { shortAddress } from '../../services/links'
 
@@ -22,7 +23,13 @@ const addressLabel = computed(() =>
       <nav class="desktop-shell__links" aria-label="Desktop">
         <router-link to="/" class="desktop-shell__link">Home</router-link>
         <router-link to="/lookup" class="desktop-shell__link">Lookup</router-link>
-        <router-link to="/marketplace" class="desktop-shell__link">Marketplace</router-link>
+        <router-link
+          v-if="MARKETPLACE_ENABLED"
+          to="/marketplace"
+          class="desktop-shell__link"
+        >
+          Marketplace
+        </router-link>
         <router-link
           v-if="connected"
           to="/me"

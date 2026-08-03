@@ -1,8 +1,20 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
+import { MARKETPLACE_ENABLED } from './config/features'
 import { canonicalHashRoute } from './services/hash-routing'
 
 const canonicalRoute = canonicalHashRoute(window.location.pathname, window.location.search, window.location.hash)
 if (canonicalRoute) window.history.replaceState(null, '', canonicalRoute)
+
+const marketplaceRoutes = MARKETPLACE_ENABLED
+  ? [
+      { path: '/marketplace', component: () => import('./pages/desktop/DesktopMarketplacePage.vue') },
+      { path: '/marketplace/sell', component: () => import('./pages/desktop/DesktopMarketplaceSellPage.vue') },
+      { path: '/marketplace/buy', component: () => import('./pages/desktop/DesktopMarketplaceBuyPage.vue') },
+      { path: '/marketplace/trades/:id', component: () => import('./pages/desktop/DesktopMarketplaceTradePage.vue') },
+    ]
+  : [
+      { path: '/marketplace/:pathMatch(.*)*', redirect: '/' },
+    ]
 
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -19,10 +31,7 @@ export const router = createRouter({
     { path: '/insights', component: () => import('./pages/InsightsPage.vue') },
     { path: '/lookup', component: () => import('./pages/desktop/DesktopLookupPage.vue') },
     { path: '/about', component: () => import('./pages/desktop/DesktopAboutPage.vue') },
-    { path: '/marketplace', component: () => import('./pages/desktop/DesktopMarketplacePage.vue') },
-    { path: '/marketplace/sell', component: () => import('./pages/desktop/DesktopMarketplaceSellPage.vue') },
-    { path: '/marketplace/buy', component: () => import('./pages/desktop/DesktopMarketplaceBuyPage.vue') },
-    { path: '/marketplace/trades/:id', component: () => import('./pages/desktop/DesktopMarketplaceTradePage.vue') },
+    ...marketplaceRoutes,
     { path: '/admin/stats', component: () => import('./pages/AdminStatsPage.vue') },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],

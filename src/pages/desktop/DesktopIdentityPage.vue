@@ -21,6 +21,7 @@ import {
   type HandleClaim,
   type ShareSelection,
 } from '../../services/handles'
+import { MARKETPLACE_ENABLED } from '../../config/features'
 import { makePublicHandleLink, shortAddress } from '../../services/links'
 import { copyText } from '../../services/share'
 import Identicon from '../../components/Identicon.vue'
@@ -482,7 +483,7 @@ onMounted(async () => {
       </div>
       <p v-if="connectError" class="desktop-identity__error" role="alert">{{ connectError }}</p>
 
-      <div class="desktop-identity__tabs" role="tablist">
+      <div v-if="MARKETPLACE_ENABLED" class="desktop-identity__tabs" role="tablist">
         <button
           type="button"
           role="tab"
