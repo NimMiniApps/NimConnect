@@ -46,6 +46,20 @@ func TestTradeStateTransitions_RejectsInvalid(t *testing.T) {
 	if StateRefunded.canTransitionTo(StateFunded) {
 		t.Error("REFUNDED must be terminal")
 	}
+	if StateExpired.canTransitionTo(StateAwaitingDeposit) {
+		t.Error("EXPIRED must be terminal")
+	}
+	if StateCanceled.canTransitionTo(StateAwaitingDeposit) {
+		t.Error("CANCELED must be terminal")
+	}
+}
+
+func TestTradeStateTransitions_UnpaidReservationTerminals(t *testing.T) {
+	for _, from := range []TradeState{StateReserved, StateAwaitingDeposit} {
+		if !from.canTransitionTo(StateExpired) || !from.canTransitionTo(StateCanceled) {
+			t.Errorf("%s should allow EXPIRED and CANCELED", from)
+		}
+	}
 }
 
 func TestTradeStateTransitions_ManualReviewReachableFromEveryNonTerminalState(t *testing.T) {

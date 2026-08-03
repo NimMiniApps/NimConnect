@@ -113,7 +113,7 @@ func TestGetTransactionByHash(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tx.Hash != "cc" || tx.BlockNumber != 9 || tx.TransactionIndex != 2 {
+	if tx.Hash != "cc" || tx.BlockNumber != 9 || tx.txIndexOrZero() != 2 {
 		t.Errorf("unexpected tx: %+v", tx)
 	}
 }

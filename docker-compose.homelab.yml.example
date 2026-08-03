@@ -48,7 +48,9 @@ services:
       # methods allowlist aren't enough alone, since anything else able to
       # reach the node's port would still find a live, unlocked wallet.
       # - ESCROW_SIGNER_RPC_USER=<matches client.toml [rpc-server] username>
+      # Prefer a Swarm secret for the password (env still works for local bring-up):
       # - ESCROW_SIGNER_RPC_PASSWORD=<matches client.toml [rpc-server] password>
+      #   or mount secret ESCROW_SIGNER_RPC_PASSWORD under /run/secrets/
     secrets:
       - source: nimconnect_nimiq_wallet_key
         target: NIMIQ_WALLET_KEY
@@ -57,6 +59,7 @@ services:
       - nimconnect_inbox:/data/inbox
     networks:
       - web
+      - escrow-internal
     deploy:
       placement:
         constraints:
@@ -71,13 +74,10 @@ services:
         - traefik.http.services.nimconnect-api.loadbalancer.server.port=8787
 
   # Escrow signer node — only needed if ESCROW_ADDRESS is set above. Holds the
-  # escrow wallet's unlocked key; its RPC has no concept of auth once unlocked,
-  # so isolation is what protects it. It's on the shared `web` network (Swarm
-  # service discovery needs that for the backend to reach it by name) but has
-  # no ports: and no Traefik labels, so nothing routes to it externally — if
-  # your homelab has other untrusted stacks on `web`, consider giving this
-  # service its own internal-only network instead.
-  # ESCROW_SIGNER_RPC_URL for the backend above: http://nimiq-node:8648
+  # unlocked escrow wallet. Lives only on the private escrow-internal overlay
+  # (not on shared `web`), with no published ports and no Traefik labels.
+  # Backend reaches it as http://nimiq-node:8648 and must supply matching
+  # ESCROW_SIGNER_RPC_USER / ESCROW_SIGNER_RPC_PASSWORD (startup fails closed).
   nimiq-node:
     image: ghcr.io/nimiq/core-rs-albatross:1.7.1
     user: "1001:1001"
@@ -90,7 +90,7 @@ services:
     volumes:
       - nimconnect_nimiq_node_data:/home/nimiq/.nimiq
     networks:
-      - web
+      - escrow-internal
     deploy:
       restart_policy:
         condition: any
@@ -118,6 +118,12 @@ services:
 networks:
   web:
     external: true
+  # Private overlay for backend ↔ escrow signer. Not on shared `web`, not
+  # attachable by other stacks. Not marked internal:true so the node can still
+  # reach Nimiq peers for sync. Do not publish the signer port on the host.
+  escrow-internal:
+    driver: overlay
+    attachable: false
 
 volumes:
   nimconnect_backups:

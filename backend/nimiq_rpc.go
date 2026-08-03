@@ -37,22 +37,32 @@ func (c *NimiqRPC) WithBasicAuth(user, password string) *NimiqRPC {
 // (from/to vs sender/recipient, data vs recipientData) — same normalization
 // NimFeed applies.
 type rpcTx struct {
-	Hash             string `json:"hash"`
-	Sender           string `json:"sender"`
-	From             string `json:"from"`
-	Recipient        string `json:"recipient"`
-	To               string `json:"to"`
-	Data             string `json:"data"`
-	RecipientData    string `json:"recipientData"`
-	Value            uint64 `json:"value"`
-	BlockNumber      uint64 `json:"blockNumber"`
-	TransactionIndex uint64 `json:"transactionIndex"`
-	Timestamp        int64  `json:"timestamp"`
+	Hash        string `json:"hash"`
+	Sender      string `json:"sender"`
+	From        string `json:"from"`
+	Recipient   string `json:"recipient"`
+	To          string `json:"to"`
+	Data        string `json:"data"`
+	RecipientData string `json:"recipientData"`
+	Value       uint64 `json:"value"`
+	BlockNumber uint64 `json:"blockNumber"`
+	// Pointer so a missing transactionIndex is distinguishable from 0 (SEC-004).
+	TransactionIndex *uint64 `json:"transactionIndex"`
+	Timestamp        int64   `json:"timestamp"`
 	// Account types: 0 basic, 1 vesting, 2 HTLC contract. Nimiq Pay routes
 	// payments through swap HTLCs, so claim txs arrive with FromType 2.
 	FromType int `json:"fromType"`
 	ToType   int `json:"toType"`
 }
+
+func (t rpcTx) txIndexOrZero() uint64 {
+	if t.TransactionIndex == nil {
+		return 0
+	}
+	return *t.TransactionIndex
+}
+
+func ptrUint64(v uint64) *uint64 { return &v }
 
 func (t rpcTx) sender() string {
 	if t.Sender != "" {
@@ -122,11 +132,53 @@ func (c *NimiqRPC) call(method string, params []any, out any) error {
 }
 
 func (c *NimiqRPC) GetTransactionsByAddress(address string, max int) ([]rpcTx, error) {
+	return c.getTransactionsByAddressPage(address, max, nil)
+}
+
+func (c *NimiqRPC) getTransactionsByAddressPage(address string, max int, startAt any) ([]rpcTx, error) {
 	var txs []rpcTx
-	if err := c.call("getTransactionsByAddress", []any{address, max, nil}, &txs); err != nil {
+	if err := c.call("getTransactionsByAddress", []any{address, max, startAt}, &txs); err != nil {
 		return nil, err
 	}
 	return txs, nil
+}
+
+// TxHistoryResult is a (possibly paginated) address history fetch.
+// Complete is true only when the final page was shorter than the page size,
+// proving the RPC returned the full available history (SEC-004).
+type TxHistoryResult struct {
+	Txs      []rpcTx
+	Complete bool
+}
+
+const (
+	defaultTxPageSize = 500
+	defaultTxMaxPages = 100 // 50k txs ceiling before declaring incomplete
+)
+
+// GetAllTransactionsByAddress walks startAt cursors newest→oldest until a
+// short page proves completeness, or maxPages is hit without completeness.
+func (c *NimiqRPC) GetAllTransactionsByAddress(address string, pageSize, maxPages int) (TxHistoryResult, error) {
+	if pageSize <= 0 {
+		pageSize = defaultTxPageSize
+	}
+	if maxPages <= 0 {
+		maxPages = defaultTxMaxPages
+	}
+	var all []rpcTx
+	var startAt any
+	for page := 0; page < maxPages; page++ {
+		txs, err := c.getTransactionsByAddressPage(address, pageSize, startAt)
+		if err != nil {
+			return TxHistoryResult{}, err
+		}
+		all = append(all, txs...)
+		if len(txs) < pageSize {
+			return TxHistoryResult{Txs: all, Complete: true}, nil
+		}
+		startAt = txs[len(txs)-1].Hash
+	}
+	return TxHistoryResult{Txs: all, Complete: false}, nil
 }
 
 func (c *NimiqRPC) GetTransactionByHash(hash string) (*rpcTx, error) {

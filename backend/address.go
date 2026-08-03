@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/blake2b"
@@ -100,4 +101,15 @@ func toBase32(buf []byte) string {
 
 func backupChallenge(address string, exportedAt int64) string {
 	return fmt.Sprintf("nimconnect-backup:v1:%s:%d", compactAddress(address), exportedAt)
+}
+
+// backupChallengeV2 binds the upload so a harvested v1 signature cannot
+// authorize replacement of salt or ciphertext (SEC-001).
+func backupChallengeV2(address string, exportedAt int64, salt string, ciphertextHashHex string) string {
+	return "nimconnect-backup:v2" +
+		"\naddress=" + compactAddress(address) +
+		"\nenvelope=2" +
+		"\nexportedAt=" + strconv.FormatInt(exportedAt, 10) +
+		"\nsalt=" + salt +
+		"\nciphertextHash=" + ciphertextHashHex
 }

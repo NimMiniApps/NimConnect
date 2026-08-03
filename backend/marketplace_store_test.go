@@ -1,9 +1,11 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestCreateListing_RejectsSecondActiveListingForSameHandle(t *testing.T) {
@@ -226,5 +228,93 @@ func TestTradesForWallet_EmptyForUnknownAddress(t *testing.T) {
 	got := s.TradesForWallet("NQ99 NOBODY")
 	if got == nil || len(got) != 0 {
 		t.Fatalf("expected an empty (non-nil) slice, got %+v", got)
+	}
+}
+
+func TestReserveListing_SetsDepositDeadline(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
+	before := time.Now().Unix()
+	trade, err := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trade.DepositDeadline < before+depositDeadlineDuration || trade.DepositDeadline > before+depositDeadlineDuration+2 {
+		t.Fatalf("unexpected deposit deadline %d (before=%d)", trade.DepositDeadline, before)
+	}
+}
+
+func TestExpireStaleReservations_RestoresListing(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
+	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
+	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
+
+	n, err := s.ExpireStaleReservations(time.Now().Unix() + depositDeadlineDuration + 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("want 1 expired, got %d", n)
+	}
+	got, _ := s.Resolve(trade.ID)
+	if got.State != StateExpired {
+		t.Fatalf("want EXPIRED, got %s", got.State)
+	}
+	listings := s.ActiveListings()
+	if len(listings) != 1 || listings[0].Handle != "chuck" {
+		t.Fatalf("listing should be active again, got %+v", listings)
+	}
+}
+
+func TestExpireStaleReservations_SkipsAfterDepositSeen(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
+	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
+	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
+	s.Transition(trade.ID, StateAwaitingDeposit, StateDepositFinalizing, func(tr *MarketplaceTrade) {
+		tr.DepositTxHash = "dep"
+	})
+	n, err := s.ExpireStaleReservations(time.Now().Unix() + depositDeadlineDuration + 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("must not expire after deposit seen, got %d", n)
+	}
+}
+
+func TestReserveListing_CapsConcurrentUnpaid(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	buyer := "NQ22 BUYER"
+	for i := 0; i < maxUnpaidReservations; i++ {
+		handle := fmt.Sprintf("hand%d", i)
+		s.CreateListing(handle, "NQ11 SELLER", 1000, 50, "tx"+handle)
+		trade, err := s.ReserveListing(handle, "t"+handle, "r"+handle, buyer)
+		if err != nil {
+			t.Fatalf("reserve %d: %v", i, err)
+		}
+		s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
+	}
+	s.CreateListing("overflow", "NQ11 SELLER", 1000, 50, "txoverflow")
+	if _, err := s.ReserveListing("overflow", "tover", "rover", buyer); err == nil {
+		t.Fatal("expected concurrent unpaid reservation cap")
+	}
+}
+
+func TestCancelUnpaidReservation_RestoresListing(t *testing.T) {
+	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
+	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
+	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
+	if err := s.CancelUnpaidReservation(trade.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Resolve(trade.ID)
+	if got.State != StateCanceled {
+		t.Fatalf("want CANCELED, got %s", got.State)
+	}
+	if len(s.ActiveListings()) != 1 {
+		t.Fatal("listing should be active after cancel")
 	}
 }

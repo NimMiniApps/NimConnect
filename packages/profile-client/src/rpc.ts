@@ -6,6 +6,9 @@ import type { ResolvedHandleClaim, RegistryTx, ResolveHandleRegistryOptions } fr
 /** Public mainnet RPC gateway — same default the backend uses. */
 export const DEFAULT_RPC_URL = 'https://rpc-mainnet.nimiqscan.com'
 
+const DEFAULT_TX_PAGE_SIZE = 500
+const DEFAULT_TX_MAX_PAGES = 100
+
 interface RpcTxRaw {
   hash: string
   sender?: string
@@ -15,7 +18,8 @@ interface RpcTxRaw {
   data?: string
   recipientData?: string
   blockNumber: number
-  transactionIndex: number
+  /** Absent on some gateways — treated as unknown, not zero (SEC-004). */
+  transactionIndex?: number
   fromType?: number
   toType?: number
 }
@@ -48,9 +52,68 @@ async function rpcCall<T>(rpcUrl: string, method: string, params: unknown[]): Pr
   return result as T
 }
 
-async function fetchTransactionsByAddress(rpcUrl: string, address: string, max: number): Promise<RpcTxRaw[]> {
-  const txs = await rpcCall<RpcTxRaw[] | null>(rpcUrl, 'getTransactionsByAddress', [address, max, null])
+async function fetchTransactionsByAddressPage(
+  rpcUrl: string,
+  address: string,
+  max: number,
+  startAt: string | null,
+): Promise<RpcTxRaw[]> {
+  const txs = await rpcCall<RpcTxRaw[] | null>(
+    rpcUrl,
+    'getTransactionsByAddress',
+    [address, max, startAt],
+  )
   return txs ?? []
+}
+
+export class IncompleteRegistryHistoryError extends Error {
+  constructor(message = 'registry history incomplete: pagination ceiling reached without a short page') {
+    super(message)
+    this.name = 'IncompleteRegistryHistoryError'
+  }
+}
+
+export class AmbiguousRegistryOrderingError extends Error {
+  constructor(message = 'registry history ordering ambiguous: missing transactionIndex in a shared block') {
+    super(message)
+    this.name = 'AmbiguousRegistryOrderingError'
+  }
+}
+
+/**
+ * Fetches full address history via startAt cursors. Throws if completeness
+ * cannot be proven (last page was not short) — callers must not treat a
+ * truncated map as payment authority (SEC-004).
+ */
+export async function fetchAllTransactionsByAddress(
+  rpcUrl: string,
+  address: string,
+  pageSize = DEFAULT_TX_PAGE_SIZE,
+  maxPages = DEFAULT_TX_MAX_PAGES,
+): Promise<RpcTxRaw[]> {
+  const all: RpcTxRaw[] = []
+  let startAt: string | null = null
+  for (let page = 0; page < maxPages; page++) {
+    const txs = await fetchTransactionsByAddressPage(rpcUrl, address, pageSize, startAt)
+    all.push(...txs)
+    if (txs.length < pageSize) return all
+    startAt = txs[txs.length - 1]!.hash
+  }
+  throw new IncompleteRegistryHistoryError()
+}
+
+function registryOrderingAmbiguous(txs: RegistryTx[]): boolean {
+  const byBlock = new Map<number, RegistryTx[]>()
+  for (const tx of txs) {
+    const group = byBlock.get(tx.blockHeight) ?? []
+    group.push(tx)
+    byBlock.set(tx.blockHeight, group)
+  }
+  for (const group of byBlock.values()) {
+    if (group.length < 2) continue
+    if (group.some((tx) => tx.txIndex == null || Number.isNaN(tx.txIndex))) return true
+  }
+  return false
 }
 
 async function fetchAccountByAddress(
@@ -71,7 +134,7 @@ async function resolveHtlcOwnerViaRpc(rpcUrl: string, contractAddress: string): 
   const account = await fetchAccountByAddress(rpcUrl, contractAddress).catch(() => null)
   if (account?.type === 'htlc' && account.sender) return account.sender
 
-  const txs = await fetchTransactionsByAddress(rpcUrl, contractAddress, 100).catch(() => [])
+  const txs = await fetchTransactionsByAddressPage(rpcUrl, contractAddress, 100, null).catch(() => [])
   const creation = txs.find(
     (tx) => tx.toType === HTLC_ACCOUNT_TYPE && compactAddress(txRecipient(tx)) === compactAddress(contractAddress),
   )
@@ -83,7 +146,14 @@ export interface FetchHandleRegistryOptions {
   rpcUrl?: string
   /** Defaults to the shared registry address (HANDLE_REGISTRY_ADDRESS). */
   registryAddress?: string
-  /** Caps how much of the registry's tx history to fetch. Defaults to 5000, same as the backend's sweep cap. */
+  /** Page size for address history. Defaults to 500. */
+  pageSize?: number
+  /** Max pages before declaring history incomplete. Defaults to 100. */
+  maxPages?: number
+  /**
+   * @deprecated Use pageSize/maxPages. Kept as an alias for max total txs
+   * (pageSize = maxTx, maxPages = 1) which fails closed when the page is full.
+   */
   maxTx?: number
   /** Override HTLC-owner resolution instead of the built-in RPC-backed lookup. */
   resolveHtlcOwner?: ResolveHandleRegistryOptions['resolveHtlcOwner']
@@ -95,19 +165,18 @@ export interface FetchHandleRegistryOptions {
  * Fetches the registry address's transaction history from a Nimiq RPC and
  * resolves the handle registry from it — including Nimiq Pay's swap-HTLC
  * claim attribution — with no dependency on NimConnect's server at all.
- * This is the "just give it an RPC URL" entry point; for more control
- * (your own fetching/pagination/caching), use resolveHandleRegistry directly.
- *
- * ponytail: refetches and replays the full tx history on every call, same
- * as the backend before its periodic-sweep cache — fine for occasional use,
- * cache the result yourself (e.g. on a timer) if you call this often.
+ * Throws IncompleteRegistryHistoryError / AmbiguousRegistryOrderingError
+ * when the result must not be treated as payment authority (SEC-004).
  */
 export async function fetchHandleRegistry(
   options: FetchHandleRegistryOptions = {},
 ): Promise<Map<string, ResolvedHandleClaim>> {
   const rpcUrl = options.rpcUrl ?? DEFAULT_RPC_URL
   const registryAddress = options.registryAddress ?? HANDLE_REGISTRY_ADDRESS
-  const rawTxs = await fetchTransactionsByAddress(rpcUrl, registryAddress, options.maxTx ?? 5000)
+  const pageSize = options.maxTx ?? options.pageSize ?? DEFAULT_TX_PAGE_SIZE
+  const maxPages = options.maxTx != null ? 1 : (options.maxPages ?? DEFAULT_TX_MAX_PAGES)
+
+  const rawTxs = await fetchAllTransactionsByAddress(rpcUrl, registryAddress, pageSize, maxPages)
 
   const txs: RegistryTx[] = rawTxs
     .filter((tx) => compactAddress(txRecipient(tx)) === compactAddress(registryAddress))
@@ -116,9 +185,19 @@ export async function fetchHandleRegistry(
       sender: txSender(tx),
       data: txData(tx),
       blockHeight: tx.blockNumber,
-      txIndex: tx.transactionIndex,
+      txIndex: tx.transactionIndex ?? Number.NaN,
       fromType: tx.fromType,
     }))
+
+  if (registryOrderingAmbiguous(txs)) {
+    throw new AmbiguousRegistryOrderingError()
+  }
+
+  // resolveHandleRegistry sorts by txIndex; NaN only appears for single-tx blocks
+  // (multi-tx-without-index already rejected above). Coerce missing to 0 for sort.
+  for (const tx of txs) {
+    if (Number.isNaN(tx.txIndex)) tx.txIndex = 0
+  }
 
   return resolveHandleRegistry(txs, {
     resolveHtlcOwner: options.resolveHtlcOwner ?? ((contractAddress) => resolveHtlcOwnerViaRpc(rpcUrl, contractAddress)),

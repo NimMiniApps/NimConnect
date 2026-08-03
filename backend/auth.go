@@ -58,3 +58,12 @@ func verifySignedMessage(claimedAddress string, publicKeyHex string, signatureHe
 func verifyBackupAuth(pathAddress string, publicKeyHex string, signatureHex string, exportedAt int64) error {
 	return verifySignedMessage(pathAddress, publicKeyHex, signatureHex, backupChallenge(pathAddress, exportedAt))
 }
+
+func verifyBackupAuthV2(pathAddress string, publicKeyHex string, signatureHex string, exportedAt int64, salt string, ciphertextHashHex string) error {
+	return verifySignedMessage(
+		pathAddress,
+		publicKeyHex,
+		signatureHex,
+		backupChallengeV2(pathAddress, exportedAt, salt, ciphertextHashHex),
+	)
+}

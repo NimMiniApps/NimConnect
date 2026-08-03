@@ -2,6 +2,8 @@ package main
 
 import (
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,28 @@ func signNimiqBackupChallenge(priv ed25519.PrivateKey, address string, exportedA
 	challenge := backupChallenge(address, exportedAt)
 	hash := nimiqSignedMessageHash(challenge)
 	return ed25519.Sign(priv, hash[:])
+}
+
+func signNimiqBackupChallengeV2(priv ed25519.PrivateKey, address string, exportedAt int64, salt, ciphertextB64 string) []byte {
+	raw, err := base64.StdEncoding.DecodeString(ciphertextB64)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(raw)
+	challenge := backupChallengeV2(address, exportedAt, salt, hex.EncodeToString(sum[:]))
+	hash := nimiqSignedMessageHash(challenge)
+	return ed25519.Sign(priv, hash[:])
+}
+
+func backupPutReq(priv ed25519.PrivateKey, pub ed25519.PublicKey, address string, exportedAt int64, salt, ciphertext string) BackupPutRequest {
+	sig := signNimiqBackupChallengeV2(priv, address, exportedAt, salt, ciphertext)
+	return BackupPutRequest{
+		ExportedAt: exportedAt,
+		Salt:       salt,
+		Ciphertext: ciphertext,
+		PublicKey:  hex.EncodeToString(pub),
+		Signature:  hex.EncodeToString(sig),
+	}
 }
 
 func TestNimiqSignedMessageHashMatchesJsLength(t *testing.T) {
@@ -95,15 +119,10 @@ func TestBackupStorePutGetConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	salt := "c2FsdA=="
+	ct := "Y2lwaGVydGV4dA=="
 	makeReq := func(exportedAt int64) BackupPutRequest {
-		sig := signNimiqBackupChallenge(priv, address, exportedAt)
-		return BackupPutRequest{
-			ExportedAt: exportedAt,
-			Salt:       "c2FsdA==",
-			Ciphertext: "Y2lwaGVydGV4dA==",
-			PublicKey:  hex.EncodeToString(pub),
-			Signature:  hex.EncodeToString(sig),
-		}
+		return backupPutReq(priv, pub, address, exportedAt, salt, ct)
 	}
 
 	if err := store.Put(address, makeReq(200)); err != nil {
@@ -129,13 +148,93 @@ func TestBackupStorePutGetConflict(t *testing.T) {
 	}
 }
 
+func TestBackupStoreRejectsEqualTimestampReplacement(t *testing.T) {
+	dir := t.TempDir()
+	store := NewBackupStore(dir)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+
+	first := backupPutReq(priv, pub, address, 200, "c2FsdA==", "Y2lwaGVydGV4dA==")
+	if err := store.Put(address, first); err != nil {
+		t.Fatal(err)
+	}
+	// Same timestamp, different ciphertext — classic SEC-001 exploit shape with a fresh v2 sig.
+	second := backupPutReq(priv, pub, address, 200, "c2FsdA==", "YXR0YWNrZXI=")
+	if err := store.Put(address, second); err != errConflict {
+		t.Fatalf("expected conflict for equal-timestamp replacement, got %v", err)
+	}
+	rec, _ := store.Get(address)
+	if rec.Ciphertext != first.Ciphertext {
+		t.Fatal("existing ciphertext was replaced")
+	}
+}
+
+func TestBackupStoreRejectsModifiedSaltOrCiphertextWithV1Sig(t *testing.T) {
+	dir := t.TempDir()
+	store := NewBackupStore(dir)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+
+	salt := "c2FsdA=="
+	ct := "Y2lwaGVydGV4dA=="
+	if err := store.Put(address, backupPutReq(priv, pub, address, 200, salt, ct)); err != nil {
+		t.Fatal(err)
+	}
+
+	// Harvested v1 signature must not authorize a write.
+	v1Sig := signNimiqBackupChallenge(priv, address, 300)
+	v1Req := BackupPutRequest{
+		ExportedAt: 300,
+		Salt:       "bmV3c2FsdA==",
+		Ciphertext: "YXR0YWNrZXI=",
+		PublicKey:  hex.EncodeToString(pub),
+		Signature:  hex.EncodeToString(v1Sig),
+	}
+	if err := store.Put(address, v1Req); err != errUnauthorized {
+		t.Fatalf("expected unauthorized for v1 signature, got %v", err)
+	}
+}
+
+func TestBackupStoreIdempotentExactRetry(t *testing.T) {
+	dir := t.TempDir()
+	store := NewBackupStore(dir)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+	req := backupPutReq(priv, pub, address, 200, "c2FsdA==", "Y2lwaGVydGV4dA==")
+	if err := store.Put(address, req); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Put(address, req); err != nil {
+		t.Fatalf("exact retry should be idempotent, got %v", err)
+	}
+}
+
+func TestBackupStoreRejectsMalformedBase64(t *testing.T) {
+	dir := t.TempDir()
+	store := NewBackupStore(dir)
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	address, _ := addressFromPublicKey(pub)
+	req := BackupPutRequest{
+		ExportedAt: 200,
+		Salt:       "c2FsdA==",
+		Ciphertext: "%%%not-base64%%%",
+		PublicKey:  hex.EncodeToString(pub),
+		Signature:  hex.EncodeToString(signNimiqBackupChallengeV2(priv, address, 200, "c2FsdA==", "Y2lwaGVydGV4dA==")),
+	}
+	if err := store.Put(address, req); err != errBadRequest {
+		t.Fatalf("expected bad request for malformed base64, got %v", err)
+	}
+}
+
 func TestBackupHTTPHandlers(t *testing.T) {
 	dir := t.TempDir()
 	store := NewBackupStore(dir)
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	address, _ := addressFromPublicKey(pub)
 	exportedAt := int64(500)
-	sig := signNimiqBackupChallenge(priv, address, exportedAt)
+	salt := "c2FsdA=="
+	ct := "Y2k="
+	sig := signNimiqBackupChallengeV2(priv, address, exportedAt, salt, ct)
 
 	body := `{"exported_at":500,"salt":"c2FsdA==","ciphertext":"Y2k=","public_key":"` + hex.EncodeToString(pub) + `","signature":"` + hex.EncodeToString(sig) + `"}`
 	putReq := httptest.NewRequest(http.MethodPut, "/api/backup/x", strings.NewReader(body))
@@ -152,5 +251,19 @@ func TestBackupHTTPHandlers(t *testing.T) {
 	backupGetHandler(store)(getRec, getReq)
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("get status %d", getRec.Code)
+	}
+}
+
+func TestBackupHTTPRejectsOversizedBody(t *testing.T) {
+	dir := t.TempDir()
+	store := NewBackupStore(dir)
+	huge := strings.Repeat("A", backupPutMaxBodyBytes+1024)
+	body := `{"exported_at":1,"salt":"c2FsdA==","ciphertext":"` + huge + `","public_key":"aa","signature":"bb"}`
+	putReq := httptest.NewRequest(http.MethodPut, "/api/backup/x", strings.NewReader(body))
+	putReq.SetPathValue("address", "NQ07 0000 0000 0000 0000 0000 0000 0000 0000")
+	putRec := httptest.NewRecorder()
+	backupPutHandler(store)(putRec, putReq)
+	if putRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for oversized body, got %d", putRec.Code)
 	}
 }

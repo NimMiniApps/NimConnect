@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import ActionSheet from './ActionSheet.vue'
+
+/** Minimum length when creating a new backup passphrase (SEC-002). */
+const MIN_PASSPHRASE_LENGTH = 10
 
 const props = defineProps<{
   open: boolean
@@ -17,6 +20,18 @@ const passphrase = ref('')
 const confirmPass = ref('')
 const error = ref('')
 
+const strengthHint = computed(() => {
+  if (!props.confirm || !passphrase.value) return ''
+  if (passphrase.value.length < MIN_PASSPHRASE_LENGTH) {
+    return `Use at least ${MIN_PASSPHRASE_LENGTH} characters.`
+  }
+  const simple = !/\d/.test(passphrase.value) && !/[^a-zA-Z0-9]/.test(passphrase.value)
+  if (passphrase.value.length < 14 || simple) {
+    return 'Short or simple passphrases are easier to guess offline.'
+  }
+  return ''
+})
+
 function close() {
   passphrase.value = ''
   confirmPass.value = ''
@@ -28,6 +43,11 @@ function submit() {
   error.value = ''
   if (!passphrase.value) {
     error.value = 'Enter a passphrase.'
+    return
+  }
+  // Enforce length only when creating (confirm mode); restores may use older short phrases.
+  if (props.confirm && passphrase.value.length < MIN_PASSPHRASE_LENGTH) {
+    error.value = `Passphrase must be at least ${MIN_PASSPHRASE_LENGTH} characters.`
     return
   }
   if (props.confirm && passphrase.value !== confirmPass.value) {
@@ -50,6 +70,7 @@ function submit() {
       <span>Confirm passphrase</span>
       <input v-model="confirmPass" type="password" autocomplete="new-password" />
     </label>
+    <p v-if="strengthHint && !error" class="warn">{{ strengthHint }}</p>
     <p v-if="error" class="error">{{ error }}</p>
     <button type="button" class="primary" @click="submit">Continue</button>
     <button type="button" class="secondary" @click="close">Cancel</button>
@@ -64,6 +85,7 @@ function submit() {
   width: 100%; font: inherit; padding: 12px; min-height: 44px;
   border: 1px solid var(--border); border-radius: var(--nimiq-radius-input); background: var(--bg); color: var(--text);
 }
+.warn { color: var(--text-2); font-size: 13px; margin: 0 0 8px; line-height: 1.35; }
 .error { color: var(--nq-red); font-size: 14px; margin: 0 0 8px; }
 .primary, .secondary {
   display: block; width: 100%; min-height: 44px; margin-top: 8px;

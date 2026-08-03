@@ -107,6 +107,17 @@ func (s *MarketplaceStore) CreateListing(handle, seller string, priceLuna, feeLu
 	return listing, nil
 }
 
+func (s *MarketplaceStore) unpaidReservationCountLocked(buyer string) int {
+	compact := compactAddress(buyer)
+	n := 0
+	for _, trade := range s.trades {
+		if compactAddress(trade.Buyer) == compact && trade.isUnpaidReservation() {
+			n++
+		}
+	}
+	return n
+}
+
 func (s *MarketplaceStore) ReserveListing(handle, tradeID, reference, buyer string) (MarketplaceTrade, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -121,12 +132,16 @@ func (s *MarketplaceStore) ReserveListing(handle, tradeID, reference, buyer stri
 	if _, taken := s.byRef[reference]; taken {
 		return MarketplaceTrade{}, fmt.Errorf("reference %q already in use", reference)
 	}
+	if s.unpaidReservationCountLocked(buyer) >= maxUnpaidReservations {
+		return MarketplaceTrade{}, fmt.Errorf("buyer has too many unpaid reservations")
+	}
 
 	now := time.Now().Unix()
 	trade := MarketplaceTrade{
 		ID: tradeID, Reference: reference, Handle: handle, Buyer: buyer, Seller: listing.Seller,
 		PriceLuna: listing.PriceLuna, FeeLuna: listing.FeeLuna, State: StateReserved, Version: 1,
-		CreatedAt: now, UpdatedAt: now,
+		DepositDeadline: now + depositDeadlineDuration,
+		CreatedAt:       now, UpdatedAt: now,
 	}
 	listing.Status = "reserved"
 	previousListing := s.listings[handle]
@@ -140,6 +155,72 @@ func (s *MarketplaceStore) ReserveListing(handle, tradeID, reference, buyer stri
 		return MarketplaceTrade{}, err
 	}
 	return trade, nil
+}
+
+// releaseUnpaidReservationLocked ends an unpaid reservation and restores the
+// listing to active. Caller holds s.mu.
+func (s *MarketplaceStore) releaseUnpaidReservationLocked(tradeID string, to TradeState) error {
+	trade, ok := s.trades[tradeID]
+	if !ok {
+		return fmt.Errorf("no trade %q", tradeID)
+	}
+	if !trade.isUnpaidReservation() {
+		return fmt.Errorf("trade %q is not an unpaid reservation", tradeID)
+	}
+	if !trade.State.canTransitionTo(to) {
+		return fmt.Errorf("transition %s -> %s is not allowed", trade.State, to)
+	}
+	listing, ok := s.listings[trade.Handle]
+	if !ok {
+		return fmt.Errorf("no listing for handle %q", trade.Handle)
+	}
+	previousTrade := trade
+	previousListing := listing
+	trade.State = to
+	trade.Version++
+	trade.UpdatedAt = time.Now().Unix()
+	listing.Status = "active"
+	s.trades[tradeID] = trade
+	s.listings[trade.Handle] = listing
+	if err := s.persistLocked(); err != nil {
+		s.trades[tradeID] = previousTrade
+		s.listings[trade.Handle] = previousListing
+		return err
+	}
+	return nil
+}
+
+// CancelUnpaidReservation lets buyer or seller free a listing before deposit (SEC-005).
+func (s *MarketplaceStore) CancelUnpaidReservation(tradeID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.releaseUnpaidReservationLocked(tradeID, StateCanceled)
+}
+
+// ExpireStaleReservations moves unpaid reservations past their deposit
+// deadline to EXPIRED and restores listings to active (SEC-005).
+func (s *MarketplaceStore) ExpireStaleReservations(now int64) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	stale := make([]string, 0)
+	for id, trade := range s.trades {
+		if !trade.isUnpaidReservation() {
+			continue
+		}
+		if trade.DepositDeadline == 0 || now < trade.DepositDeadline {
+			continue
+		}
+		stale = append(stale, id)
+	}
+	expired := 0
+	for _, id := range stale {
+		if err := s.releaseUnpaidReservationLocked(id, StateExpired); err != nil {
+			return expired, err
+		}
+		expired++
+	}
+	return expired, nil
 }
 
 func (s *MarketplaceStore) Transition(tradeID string, from, to TradeState, mutate func(*MarketplaceTrade)) error {

@@ -18,11 +18,20 @@ const (
 	StateRefundPending      TradeState = "REFUND_PENDING"
 	StateRefunded           TradeState = "REFUNDED"
 	StateManualReview       TradeState = "MANUAL_REVIEW"
+	// Unpaid reservation terminals (SEC-005) — listing is restored to active.
+	StateExpired  TradeState = "EXPIRED"
+	StateCanceled TradeState = "CANCELED"
+)
+
+// Deposit reservation policy (SEC-005).
+const (
+	depositDeadlineDuration = 30 * 60 // seconds
+	maxUnpaidReservations   = 3
 )
 
 var allowedTransitions = map[TradeState][]TradeState{
-	StateReserved:           {StateAwaitingDeposit, StateRefundPending, StateManualReview},
-	StateAwaitingDeposit:    {StateDepositFinalizing, StateRefundPending, StateManualReview},
+	StateReserved:           {StateAwaitingDeposit, StateRefundPending, StateManualReview, StateExpired, StateCanceled},
+	StateAwaitingDeposit:    {StateDepositFinalizing, StateRefundPending, StateManualReview, StateExpired, StateCanceled},
 	StateDepositFinalizing:  {StateFunded, StateManualReview},
 	StateFunded:             {StateAwaitingRelease, StateRefundPending, StateManualReview},
 	StateAwaitingRelease:    {StateReleaseConfirming, StateRefundPending, StateManualReview},
@@ -78,6 +87,12 @@ type MarketplaceTrade struct {
 	PayoutTxHash       string     `json:"payout_tx_hash,omitempty"`
 	RefundAttemptedAt  int64      `json:"refund_attempted_at,omitempty"`
 	RefundTxHash       string     `json:"refund_tx_hash,omitempty"`
-	CreatedAt          int64      `json:"created_at"`
-	UpdatedAt          int64      `json:"updated_at"`
+	// Unix seconds; unpaid reservations past this are expired back to active (SEC-005).
+	DepositDeadline int64 `json:"deposit_deadline,omitempty"`
+	CreatedAt       int64 `json:"created_at"`
+	UpdatedAt       int64 `json:"updated_at"`
+}
+
+func (t MarketplaceTrade) isUnpaidReservation() bool {
+	return (t.State == StateReserved || t.State == StateAwaitingDeposit) && t.DepositTxHash == ""
 }

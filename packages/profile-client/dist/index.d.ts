@@ -4,6 +4,6 @@ export { buildHandleClaimPayload, buildHandleReleasePayload, isValidHandle, HAND
 export { parseClaimTxData, resolveHandleRegistry, resolveHandleByAddress, isHandleAvailable, ownerFromHtlcCreationData, HTLC_ACCOUNT_TYPE, } from './registry.js';
 export type { RegistryTx, ResolvedHandleClaim, ResolveHandleRegistryOptions, ParsedRegistryAction } from './registry.js';
 export { userFriendlyAddress } from './nimiqAddress.js';
-export { fetchHandleRegistry, DEFAULT_RPC_URL } from './rpc.js';
+export { fetchHandleRegistry, fetchAllTransactionsByAddress, DEFAULT_RPC_URL, IncompleteRegistryHistoryError, AmbiguousRegistryOrderingError, } from './rpc.js';
 export type { FetchHandleRegistryOptions } from './rpc.js';
 export type { PublicProfileFields, StoredPublicProfile, HandleClaim, DisplayIdentity, ProfileClientOptions, HandleClaimPayload, } from './types.js';

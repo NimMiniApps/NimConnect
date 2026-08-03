@@ -101,15 +101,22 @@ export interface ExportDocument {
   buckets?: Bucket[]
 }
 
+export type BackupKdf =
+  | { name: 'pbkdf2-sha256'; iterations: number }
+  | { name: 'argon2id'; m: number; t: number; p: number }
+
 export interface EncryptedBackup {
   app: 'NimConnect'
   format: 'encrypted-backup'
-  version: 1
+  /** 1 = PBKDF2-100k (legacy); 2 = Argon2id */
+  version: 1 | 2
   /** Normalized NQ address — metadata only, not secret */
   address?: string
   salt: string
   exportedAt: number
   ciphertext: string
+  /** Present on v2; inferred for v1 when absent. */
+  kdf?: BackupKdf
 }
 
 export type InboxImportStatus = 'actionable' | 'unsupported' | 'invalid' | 'dismissed' | 'paid'

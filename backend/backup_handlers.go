@@ -43,9 +43,12 @@ func backupHeadHandler(store *BackupStore) http.HandlerFunc {
 	}
 }
 
+const backupPutMaxBodyBytes = 256 * 1024
+
 func backupPutHandler(store *BackupStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
+		r.Body = http.MaxBytesReader(w, r.Body, backupPutMaxBodyBytes)
 		var req BackupPutRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.Header().Set("Content-Type", "application/json")

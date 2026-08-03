@@ -1,3 +1,5 @@
+import { sha256 } from '@noble/hashes/sha2'
+import { bytesToHex } from '@noble/hashes/utils'
 import { apiUrl, hasApiBase } from './api'
 import { createEncryptedBackup } from './backup'
 import { cloudBackupEnabled, markCloudSync } from './backup-prefs'
@@ -16,8 +18,32 @@ function compactAddress(address: string) {
   return address.replace(/\s+/g, '')
 }
 
-function challenge(address: string, exportedAt: number) {
+/** Legacy v1 challenge — address + timestamp only. Server rejects v1 writes. */
+export function backupChallengeV1(address: string, exportedAt: number) {
   return `nimconnect-backup:v1:${compactAddress(address)}:${exportedAt}`
+}
+
+/** v2 binds salt and ciphertext digest so harvested signatures cannot replace ciphertext (SEC-001). */
+export function backupChallengeV2(
+  address: string,
+  exportedAt: number,
+  salt: string,
+  ciphertextHash: string,
+) {
+  return 'nimconnect-backup:v2'
+    + `\naddress=${compactAddress(address)}`
+    + '\nenvelope=2'
+    + `\nexportedAt=${exportedAt}`
+    + `\nsalt=${salt}`
+    + `\nciphertextHash=${ciphertextHash}`
+}
+
+function fromB64(s: string): Uint8Array {
+  return Uint8Array.from(atob(s), c => c.charCodeAt(0))
+}
+
+export function ciphertextSHA256Hex(ciphertextB64: string): string {
+  return bytesToHex(sha256(fromB64(ciphertextB64)))
 }
 
 function backupPath(address: string) {
@@ -56,7 +82,10 @@ export function cloudBackupAvailable(): boolean {
 export async function uploadCloudBackup(passphrase: string, address: string): Promise<void> {
   if (!hasApiBase()) throw new Error('cloud-backup-unavailable')
   const file = await createEncryptedBackup(passphrase, address)
-  const { publicKey, signature } = await signChallenge(challenge(address, file.exportedAt))
+  const ciphertextHash = ciphertextSHA256Hex(file.ciphertext)
+  const { publicKey, signature } = await signChallenge(
+    backupChallengeV2(address, file.exportedAt, file.salt, ciphertextHash),
+  )
   const res = await fetch(apiUrl(backupPath(address)), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -66,6 +95,8 @@ export async function uploadCloudBackup(passphrase: string, address: string): Pr
       ciphertext: file.ciphertext,
       public_key: publicKey,
       signature,
+      format_version: file.version,
+      kdf: file.kdf,
     }),
   })
   if (!res.ok) throw new Error(await backupErrorMessage(res))
@@ -77,15 +108,24 @@ export async function downloadCloudBackup(address: string): Promise<EncryptedBac
   const res = await fetch(apiUrl(backupPath(address)))
   if (res.status === 404) return null
   if (!res.ok) throw new Error(await backupErrorMessage(res))
-  const body = await res.json()
+  const body = await res.json() as {
+    address?: string
+    salt: string
+    exported_at: number
+    ciphertext: string
+    format_version?: number
+    kdf?: EncryptedBackup['kdf']
+  }
+  const version: 1 | 2 = body.format_version === 2 ? 2 : 1
   return {
     app: 'NimConnect',
     format: 'encrypted-backup',
-    version: 1,
+    version,
     address: body.address,
     salt: body.salt,
     exportedAt: body.exported_at,
     ciphertext: body.ciphertext,
+    kdf: body.kdf,
   }
 }
 

@@ -10,16 +10,18 @@ import (
 func claimTx(hash, sender, handle string, block, index uint64) rpcTx {
 	return rpcTx{
 		Hash: hash, Sender: sender, Recipient: "NQ77 REGISTRY",
-		Data:        hex.EncodeToString([]byte(makeClaimPayload(handle))),
-		BlockNumber: block, TransactionIndex: index,
+		Data:             hex.EncodeToString([]byte(makeClaimPayload(handle))),
+		BlockNumber:      block,
+		TransactionIndex: ptrUint64(index),
 	}
 }
 
 func releaseTx(hash, sender, handle string, block, index uint64) rpcTx {
 	return rpcTx{
 		Hash: hash, Sender: sender, Recipient: "NQ77 REGISTRY",
-		Data:        hex.EncodeToString([]byte(makeReleasePayload(handle))),
-		BlockNumber: block, TransactionIndex: index,
+		Data:             hex.EncodeToString([]byte(makeReleasePayload(handle))),
+		BlockNumber:      block,
+		TransactionIndex: ptrUint64(index),
 	}
 }
 

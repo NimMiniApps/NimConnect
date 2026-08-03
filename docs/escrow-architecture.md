@@ -251,24 +251,31 @@ is deliberately not in that list for the node that actually runs.
   in `marketplace_ledger.go` but never actually appended anywhere), so it's a
   cumulative outflow figure, not a balance.
 
-Still missing: nothing here can *act* — no force-transition, no way to mark
-a stuck trade resolved after manually checking the chain, no cancel/expire.
+Still missing: nothing here can *act* on funded stuck trades — no
+force-transition, no way to mark a stuck trade resolved after manually
+checking the chain. Unpaid reservation expiry/cancel is covered below.
 See the gaps below.
+
+## Reservation expiry (SEC-005)
+
+Unpaid reservations (`RESERVED` / `AWAITING_DEPOSIT` with no deposit tx)
+carry a `deposit_deadline` (30 minutes from reserve). A background sweep
+expires them to `EXPIRED` and restores the listing to `active`. Buyer or
+seller may also `POST /api/marketplace/trades/{tradeID}/cancel` with a
+wallet-signed cancel intent (`CANCELED`). Concurrent unpaid reservations
+per buyer are capped at 3.
 
 ## Known gaps
 
 Being direct about what "robust" doesn't yet cover:
 
-- **No expiry/cancellation.** `RESERVED`, `AWAITING_DEPOSIT`, `FUNDED`, and
-  `AWAITING_RELEASE` are all allowed to transition to `REFUND_PENDING` in the
-  state machine, but nothing in the codebase currently triggers any of
-  those — no timeout sweep, no cancel endpoint. A buyer who reserves and
-  never pays just leaves that trade open indefinitely (harmless — no funds
-  moved). A buyer who sends the **wrong amount** or omits the reference,
-  though, has real NIM sitting in the pooled escrow address that
-  `EscrowWatcher`'s exact-match logic will never attribute to their trade —
-  watch for it via `expected_escrow_balance_luna` vs. `chain_escrow_balance_luna`
-  above.
+- **Funded-trade refunds still need a trigger.** `FUNDED` and
+  `AWAITING_RELEASE` may transition to `REFUND_PENDING`, but nothing
+  automatically starts that path yet. A buyer who sends the **wrong amount**
+  or omits the reference has real NIM sitting in the pooled escrow address
+  that `EscrowWatcher`'s exact-match logic will never attribute to their
+  trade — watch for it via `expected_escrow_balance_luna` vs.
+  `chain_escrow_balance_luna` above.
 - **`MANUAL_REVIEW` is unreachable, and there's no action tooling yet.**
   It's allowed as a target from every state, but nothing transitions into
   it — the admin endpoint above can *show* a stuck trade, not resolve one.

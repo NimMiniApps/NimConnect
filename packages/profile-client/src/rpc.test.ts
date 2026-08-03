@@ -1,6 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { buildHandleClaimPayload, HANDLE_REGISTRY_ADDRESS } from './claim.js'
-import { fetchHandleRegistry, DEFAULT_RPC_URL } from './rpc.js'
+import {
+  fetchHandleRegistry,
+  DEFAULT_RPC_URL,
+  IncompleteRegistryHistoryError,
+  AmbiguousRegistryOrderingError,
+} from './rpc.js'
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -123,5 +128,49 @@ describe('fetchHandleRegistry', () => {
       vi.fn().mockResolvedValue({ ok: true, json: async () => ({ jsonrpc: '2.0', id: 1, error: { message: 'boom' } }) }),
     )
     await expect(fetchHandleRegistry()).rejects.toThrow(/boom/)
+  })
+
+  it('fails closed when history hits the pagination ceiling', async () => {
+    const fetchMock = mockRpc({
+      getTransactionsByAddress: () => [
+        { hash: 'a', sender: 'NQ11', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('alpha'), blockNumber: 2, transactionIndex: 0 },
+        { hash: 'b', sender: 'NQ11', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('bravo'), blockNumber: 1, transactionIndex: 0 },
+      ],
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchHandleRegistry({ pageSize: 2, maxPages: 1 })).rejects.toBeInstanceOf(IncompleteRegistryHistoryError)
+  })
+
+  it('fails closed when same-block claims lack transactionIndex', async () => {
+    const fetchMock = mockRpc({
+      getTransactionsByAddress: () => [
+        { hash: 'a', sender: 'NQ11', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('alpha'), blockNumber: 5 },
+        { hash: 'b', sender: 'NQ22', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('beta'), blockNumber: 5 },
+      ],
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(fetchHandleRegistry()).rejects.toBeInstanceOf(AmbiguousRegistryOrderingError)
+  })
+
+  it('paginates until a short page proves completeness', async () => {
+    let calls = 0
+    const fetchMock = mockRpc({
+      getTransactionsByAddress: (_params) => {
+        calls++
+        if (calls === 1) {
+          return [
+            { hash: 'h2', sender: 'NQ11', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('two'), blockNumber: 2, transactionIndex: 0 },
+            { hash: 'h1', sender: 'NQ11', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('one'), blockNumber: 1, transactionIndex: 0 },
+          ]
+        }
+        return [
+          { hash: 'h0', sender: 'NQ11', recipient: HANDLE_REGISTRY_ADDRESS, data: claimTxHex('zero'), blockNumber: 0, transactionIndex: 0 },
+        ]
+      },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const registry = await fetchHandleRegistry({ pageSize: 2, maxPages: 10 })
+    expect(calls).toBe(2)
+    expect(registry.size).toBe(3)
   })
 })

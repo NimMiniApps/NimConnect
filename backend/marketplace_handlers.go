@@ -123,14 +123,66 @@ func marketplaceTradeReserveHandler(store *MarketplaceStore, escrowAddress strin
 			writeJSONError(w, http.StatusInternalServerError, "marketplace unavailable")
 			return
 		}
+		updated, _ := store.Resolve(trade.ID)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
-			"trade_id":       trade.ID,
-			"escrow_address": escrowAddress,
-			"reference":      reference,
-			"price_luna":     trade.PriceLuna,
-			"fee_luna":       trade.FeeLuna,
+			"trade_id":         trade.ID,
+			"escrow_address":   escrowAddress,
+			"reference":        reference,
+			"price_luna":       trade.PriceLuna,
+			"fee_luna":         trade.FeeLuna,
+			"deposit_deadline": updated.DepositDeadline,
 		})
+	}
+}
+
+type marketplaceCancelRequest struct {
+	Actor     string `json:"actor"`
+	Nonce     string `json:"nonce"`
+	ExpiresAt int64  `json:"expires_at"`
+	PublicKey string `json:"public_key"`
+	Signature string `json:"signature"`
+}
+
+// marketplaceTradeCancelHandler lets the buyer or seller cancel an unpaid
+// reservation and restores the listing to active (SEC-005).
+func marketplaceTradeCancelHandler(store *MarketplaceStore) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		tradeID := r.PathValue("tradeID")
+		trade, ok := store.Resolve(tradeID)
+		if !ok {
+			writeJSONError(w, http.StatusNotFound, "no such trade")
+			return
+		}
+		var req marketplaceCancelRequest
+		r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid request")
+			return
+		}
+		if !isValidNimiqAddress(req.Actor) {
+			writeJSONError(w, http.StatusBadRequest, "invalid actor address")
+			return
+		}
+		actor := compactAddress(req.Actor)
+		if actor != compactAddress(trade.Buyer) && actor != compactAddress(trade.Seller) {
+			writeJSONError(w, http.StatusForbidden, "only buyer or seller may cancel")
+			return
+		}
+		if err := verifyCancelIntent(tradeID, req.Actor, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
+			writeJSONError(w, http.StatusUnauthorized, "invalid cancel signature")
+			return
+		}
+		if err := store.ConsumeNonce(req.Nonce); err != nil {
+			writeJSONError(w, http.StatusConflict, "nonce already used")
+			return
+		}
+		if err := store.CancelUnpaidReservation(tradeID); err != nil {
+			writeJSONError(w, http.StatusConflict, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "trade_id": tradeID, "state": StateCanceled})
 	}
 }
 

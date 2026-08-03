@@ -69,7 +69,7 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 		if ordered[i].BlockNumber != ordered[j].BlockNumber {
 			return ordered[i].BlockNumber < ordered[j].BlockNumber
 		}
-		return ordered[i].TransactionIndex < ordered[j].TransactionIndex
+		return ordered[i].txIndexOrZero() < ordered[j].txIndexOrZero()
 	})
 
 	next := map[string]HandleClaim{}
@@ -96,7 +96,7 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 				Address:     signer,
 				TxHash:      tx.Hash,
 				BlockHeight: tx.BlockNumber,
-				TxIndex:     tx.TransactionIndex,
+				TxIndex:     tx.txIndexOrZero(),
 				ClaimedAt:   tx.Timestamp,
 			}
 		}

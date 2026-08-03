@@ -51,6 +51,11 @@ func paymentResolveHandler(syncer *HandleSyncer, registry *HandleRegistry) http.
 			writeJSONError(w, http.StatusServiceUnavailable, "handle resolution unavailable")
 			return
 		}
+		// Fail closed when history completeness is not proven (SEC-004).
+		if !syncer.Complete() {
+			writeJSONError(w, http.StatusServiceUnavailable, "handle resolution unavailable")
+			return
+		}
 		claim, ok := registry.Resolve(handle)
 		if !ok {
 			writeJSONError(w, http.StatusNotFound, "unknown handle")

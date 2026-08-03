@@ -79,3 +79,23 @@ func verifyTradesLookupIntent(address, nonce string, expiresAt int64, publicKeyH
 	}
 	return nil
 }
+
+// marketplaceCancelMessage authorizes canceling an unpaid reservation (SEC-005).
+func marketplaceCancelMessage(tradeID, actor, nonce string, expiresAt int64) string {
+	return "nimconnect:marketplace-cancel:v1" +
+		"\ntrade_id=" + tradeID +
+		"\nactor=" + compactAddress(actor) +
+		"\nnonce=" + nonce +
+		"\nexpires_at=" + strconv.FormatInt(expiresAt, 10)
+}
+
+func verifyCancelIntent(tradeID, actor, nonce string, expiresAt int64, publicKeyHex, signatureHex string) error {
+	if time.Now().Unix() > expiresAt {
+		return fmt.Errorf("%w: cancel intent expired", errBadRequest)
+	}
+	message := marketplaceCancelMessage(tradeID, actor, nonce, expiresAt)
+	if err := verifySignedMessage(actor, publicKeyHex, signatureHex, message); err != nil {
+		return fmt.Errorf("%w: %s", errUnauthorized, err)
+	}
+	return nil
+}

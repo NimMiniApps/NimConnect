@@ -408,3 +408,39 @@ func TestMarketplaceTradesByWalletHandler_RejectsMissingOrInvalidSignature(t *te
 		t.Fatalf("expected 401 for a request with no signature, got %d", rec.Code)
 	}
 }
+
+func TestMarketplaceTradeCancelHandler_BuyerCanCancelUnpaid(t *testing.T) {
+	store, _ := newTestMarketplaceHandlerDeps(t)
+	_, seller := testKeypairAndAddress(t)
+	buyerPriv, buyer := testKeypairAndAddress(t)
+	if _, err := store.CreateListing("chuck", seller, 1000, 50, "t1"); err != nil {
+		t.Fatal(err)
+	}
+	trade, err := store.ReserveListing("chuck", "trade-cancel", "ref-cancel", buyer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	expiresAt := time.Now().Add(time.Hour).Unix()
+	message := marketplaceCancelMessage(trade.ID, buyer, "cancel-n1", expiresAt)
+	pubHex, sigHex := signMessage(t, buyerPriv, message)
+	body, _ := json.Marshal(map[string]any{
+		"actor": buyer, "nonce": "cancel-n1", "expires_at": expiresAt,
+		"public_key": pubHex, "signature": sigHex,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/marketplace/trades/"+trade.ID+"/cancel", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.SetPathValue("tradeID", trade.ID)
+	rec := httptest.NewRecorder()
+	marketplaceTradeCancelHandler(store)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	got, _ := store.Resolve(trade.ID)
+	if got.State != StateCanceled {
+		t.Fatalf("want CANCELED, got %s", got.State)
+	}
+}

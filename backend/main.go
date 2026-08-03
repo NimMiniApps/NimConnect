@@ -137,13 +137,9 @@ func main() {
 			if err != nil {
 				log.Fatalf("failed to open escrow ledger: %v", err)
 			}
-			// The escrow signer must be our own node, never a public gateway:
-			// gateways expose no wallet RPCs, and this key should never sit on
-			// infrastructure we don't fully control. Deployed on an
-			// internal-only Swarm network with no published RPC port, that
-			// isolation is the accepted control here — RPC username/password
-			// (matching the node's own [rpc-server] config) are supported as
-			// an optional extra layer, not required.
+			// The escrow signer must be our own node, never a public gateway.
+			// Network isolation (dedicated overlay, unpublished port) plus
+			// mandatory RPC Basic Auth are both required (SEC-003).
 			escrowSignerURL := getEnv("ESCROW_SIGNER_RPC_URL", "")
 			walletKey := secretEnv("NIMIQ_WALLET_KEY")
 			if escrowSignerURL == "" {
@@ -152,10 +148,14 @@ func main() {
 			if walletKey == "" {
 				log.Fatal("ESCROW_ADDRESS is set but NIMIQ_WALLET_KEY is not — cannot unlock the escrow account")
 			}
-			escrowSignerRPC := NewNimiqRPC(httpClient, escrowSignerURL)
-			if user := getEnv("ESCROW_SIGNER_RPC_USER", ""); user != "" {
-				escrowSignerRPC = escrowSignerRPC.WithBasicAuth(user, getEnv("ESCROW_SIGNER_RPC_PASSWORD", ""))
+			rpcUser, rpcPassword, err := requireEscrowSignerAuth(
+				getEnv("ESCROW_SIGNER_RPC_USER", ""),
+				secretEnv("ESCROW_SIGNER_RPC_PASSWORD"),
+			)
+			if err != nil {
+				log.Fatal(err)
 			}
+			escrowSignerRPC := NewNimiqRPC(httpClient, escrowSignerURL).WithBasicAuth(rpcUser, rpcPassword)
 			if err := SetupEscrowWallet(escrowSignerRPC, walletKey, escrowAddress, 3*time.Minute, 5*time.Second); err != nil {
 				log.Fatalf("escrow wallet setup failed: %v", err)
 			}
@@ -177,6 +177,17 @@ func main() {
 				}
 				return ownershipWatcher.Sweep()
 			})
+			// Expire unpaid reservations so listings cannot be held forever (SEC-005).
+			go runSweepLoop(2*time.Minute, func() error {
+				n, err := marketplaceStore.ExpireStaleReservations(time.Now().Unix())
+				if err != nil {
+					return err
+				}
+				if n > 0 {
+					log.Printf("marketplace: expired %d unpaid reservation(s)", n)
+				}
+				return nil
+			})
 
 			maxFeeBps := parseUintEnv(getEnv("MARKETPLACE_MAX_FEE_BPS", "1000"), 1000)
 			mux.HandleFunc("POST /api/marketplace/listings", marketplaceListingCreateHandler(marketplaceStore, registry, maxFeeBps))
@@ -184,6 +195,7 @@ func main() {
 			mux.HandleFunc("POST /api/marketplace/trades", marketplaceTradeReserveHandler(marketplaceStore, escrowAddress))
 			mux.HandleFunc("GET /api/marketplace/trades/{tradeID}", marketplaceTradeGetHandler(marketplaceStore))
 			mux.HandleFunc("GET /api/marketplace/trades/by-wallet/{address}", marketplaceTradesByWalletHandler(marketplaceStore))
+			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/cancel", marketplaceTradeCancelHandler(marketplaceStore))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/release", marketplaceTradeReleaseHandler(marketplaceStore, rpc, registryAddress))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/claim", marketplaceTradeClaimHandler(marketplaceStore, rpc, registryAddress))
 			mux.HandleFunc("GET /api/admin/marketplace", adminMarketplaceHandler(adminSessions, marketplaceStore, ledger, rpc, escrowAddress))

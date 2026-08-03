@@ -1,14 +1,18 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"sync"
 	"time"
 )
 
-const (
-	sweepCooldown   = 5 * time.Second
-	sweepMaxTxFetch = 5000
+const sweepCooldown = 5 * time.Second
+
+// Pagination knobs for registry sweeps (overridable in tests).
+var (
+	sweepTxPageSize = 500
+	sweepTxMaxPages = 100
 )
 
 // HandleSyncer keeps the registry in sync with the chain: a periodic full
@@ -21,6 +25,7 @@ type HandleSyncer struct {
 	registryAddress string
 	mu              sync.Mutex
 	lastSweep       time.Time
+	complete        bool
 	creatorMu       sync.Mutex
 	creators        map[string]string
 }
@@ -32,6 +37,14 @@ func NewHandleSyncer(rpc *NimiqRPC, registry *HandleRegistry, registryAddress st
 	}
 	registry.HTLCCreator = s.htlcCreator
 	return s
+}
+
+// Complete reports whether the last successful sweep proved full history
+// coverage. Payment resolution must fail closed when this is false (SEC-004).
+func (s *HandleSyncer) Complete() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.complete
 }
 
 // htlcCreator resolves an HTLC contract address to the wallet that created
@@ -75,7 +88,31 @@ func (s *HandleSyncer) htlcCreator(address string) string {
 	return resolved
 }
 
-// Sweep refetches the registry address's tx history and rebuilds the registry.
+// registryOrderingAmbiguous is true when two or more claim/release actions
+// share a block and any of them lacks transactionIndex (SEC-004).
+func registryOrderingAmbiguous(txs []rpcTx) bool {
+	byBlock := map[uint64][]rpcTx{}
+	for _, tx := range txs {
+		if parseClaimData(tx.data()) == nil {
+			continue
+		}
+		byBlock[tx.BlockNumber] = append(byBlock[tx.BlockNumber], tx)
+	}
+	for _, group := range byBlock {
+		if len(group) < 2 {
+			continue
+		}
+		for _, tx := range group {
+			if tx.TransactionIndex == nil {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// Sweep refetches the registry address's full tx history and rebuilds the
+// registry only when completeness and intra-block ordering are provable.
 // No-ops silently when called again within the cooldown window.
 func (s *HandleSyncer) Sweep() error {
 	s.mu.Lock()
@@ -83,19 +120,30 @@ func (s *HandleSyncer) Sweep() error {
 	if time.Since(s.lastSweep) < sweepCooldown {
 		return nil
 	}
-	txs, err := s.rpc.GetTransactionsByAddress(s.registryAddress, sweepMaxTxFetch)
+	hist, err := s.rpc.GetAllTransactionsByAddress(s.registryAddress, sweepTxPageSize, sweepTxMaxPages)
 	if err != nil {
+		s.complete = false
 		return err
 	}
-	inbound := txs[:0]
-	for _, tx := range txs {
+	if !hist.Complete {
+		s.complete = false
+		return fmt.Errorf("registry history incomplete: hit pagination ceiling without a short page")
+	}
+	inbound := make([]rpcTx, 0, len(hist.Txs))
+	for _, tx := range hist.Txs {
 		if compactAddress(tx.recipient()) == compactAddress(s.registryAddress) {
 			inbound = append(inbound, tx)
 		}
 	}
+	if registryOrderingAmbiguous(inbound) {
+		s.complete = false
+		return fmt.Errorf("registry history ordering ambiguous: missing transactionIndex in a shared block")
+	}
 	if err := s.registry.Rebuild(inbound); err != nil {
+		s.complete = false
 		return err
 	}
+	s.complete = true
 	s.lastSweep = time.Now()
 	return nil
 }
