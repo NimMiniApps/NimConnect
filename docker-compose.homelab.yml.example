@@ -68,6 +68,8 @@ services:
         condition: any
       labels:
         - traefik.enable=true
+        # Multi-network service: force Traefik onto shared web, not escrow-internal.
+        - traefik.docker.network=web
         - traefik.http.routers.nimconnect-api.rule=Host(`api-nimconnect.nimiqminiapps.com`)
         - traefik.http.routers.nimconnect-api.entrypoints=websecure
         - traefik.http.routers.nimconnect-api.tls=true
