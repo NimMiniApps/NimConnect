@@ -143,15 +143,43 @@ describe('DesktopIdentityPage', () => {
     expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(false)
   })
 
-  it('hides marketplace trades while MARKETPLACE_ENABLED is false', async () => {
+  it('loads and shows the connected wallet\'s trades on demand', async () => {
     mocks.getDesktopHubAddress.mockReturnValue(address)
     mocks.findMyHandle.mockResolvedValue(claim)
+    mocks.hubSignMessage.mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    mocks.fetchTradesForWallet.mockResolvedValue([
+      { id: 't1', handle: 'chuck', seller: address, buyer: 'NQ22 BUYER', state: 'AWAITING_RELEASE' },
+      { id: 't2', handle: 'alice', seller: 'NQ33 OTHER', buyer: address, state: 'SETTLED' },
+    ])
 
     const wrapper = await mountPage()
-
-    expect(wrapper.find('[data-tab-trades]').exists()).toBe(false)
     expect(wrapper.find('[data-desktop-identity-trades]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('My Trades')
+
+    await wrapper.find('[data-tab-trades]').trigger('click')
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+
+    expect(mocks.hubSignMessage).toHaveBeenCalledWith('the-message', address)
+    expect(mocks.fetchTradesForWallet).toHaveBeenCalledWith(address, 'the-nonce', expect.any(Number), 'pub', 'sig')
+    expect(wrapper.text()).toContain('chuck')
+    expect(wrapper.text()).toContain('Selling')
+    expect(wrapper.text()).toContain('alice')
+    expect(wrapper.text()).toContain('Buying')
+  })
+
+  it('shows an empty trades state with a link back to the marketplace', async () => {
+    mocks.getDesktopHubAddress.mockReturnValue(address)
+    mocks.findMyHandle.mockResolvedValue(claim)
+    mocks.hubSignMessage.mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
+    mocks.fetchTradesForWallet.mockResolvedValue([])
+
+    const wrapper = await mountPage()
+    await wrapper.find('[data-tab-trades]').trigger('click')
+    await wrapper.find('[data-load-trades]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('No trades yet')
+    expect(wrapper.find('a[href="/marketplace"]').exists()).toBe(true)
   })
 
   it('marks unsaved changes and enables publish after edits', async () => {

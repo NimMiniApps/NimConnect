@@ -3,5 +3,5 @@
  * without ripping out marketplace code (routes/services stay for later).
  */
 
-/** Handle marketplace UI — off during mini-app competition. */
-export const MARKETPLACE_ENABLED = false
+/** Handle marketplace UI. */
+export const MARKETPLACE_ENABLED = true
