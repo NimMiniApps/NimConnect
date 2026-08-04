@@ -19,7 +19,7 @@ friend list.
 | Auth | Wallet sign once → short-lived server session (`X-NimConnect-Session`) |
 | Discovery | By `@handle` / address + in-app Add from known players |
 | Contacts | Stay local-first / encrypted; never synced into friends |
-| First consumer | NimBomber (NimWorld follow-up) |
+| First consumer | NimBomber (wired; NimWorld follow-up) |
 | Client | Extend `@nimconnect/profile-client` with authenticated friends APIs |
 
 ## Non-goals (this slice)

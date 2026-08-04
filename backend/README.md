@@ -18,6 +18,14 @@ gaps before touching anything in `marketplace_*.go` or `escrow_wallet.go`.
 | `PUT` | `/api/backup/{address}` | Upload backup (requires wallet signature) |
 | `HEAD` | `/api/backup/{address}` | Check if backup exists |
 | `POST` | `/api/admin/login` | Wallet-signed admin login → session token |
+| `POST` | `/api/session` | Wallet-signed user session → `X-NimConnect-Session` token (friends auth) |
+| `DELETE` | `/api/session` | Revoke user session |
+| `GET` | `/api/friends` | Accepted friends (requires `X-NimConnect-Session`) |
+| `GET` | `/api/friends/requests` | Incoming + outgoing pending friend requests |
+| `POST` | `/api/friends/requests` | Send friend request by handle or address |
+| `POST` | `/api/friends/requests/{id}/accept` | Accept a pending request (recipient only) |
+| `POST` | `/api/friends/requests/{id}/decline` | Decline a pending request (recipient only) |
+| `DELETE` | `/api/friends/{address}` | Remove an accepted friendship |
 | `GET` | `/api/stats` | Usage stats (requires `X-Admin-Session` header from `/api/admin/login`) |
 | `GET` | `/api/admin/handles` | On-chain handle claims (requires `X-Admin-Session`) |
 | `GET` | `/api/admin/marketplace` | Trades by state (with a `stuck` flag), ledger vs. on-chain escrow balance (requires `X-Admin-Session`, `ESCROW_ADDRESS`) |
@@ -77,6 +85,8 @@ refuses to serve the warm-start claim if the RPC refresh fails.
 | `MARKETPLACE_MAX_FEE_BPS` | `1000` (10%) | Cap on the seller-set marketplace fee |
 | `MARKETPLACE_FILE` | `/data/marketplace.json` | **Import-only / deprecated** — legacy listings/trades JSON for one-shot migration |
 | `MARKETPLACE_LEDGER_FILE` | `/data/marketplace_ledger.jsonl` | **Import-only / deprecated** — legacy escrow ledger JSONL for one-shot migration |
+
+Friends API details: [`docs/api/friends.md`](../docs/api/friends.md).
 
 ## Local development
 

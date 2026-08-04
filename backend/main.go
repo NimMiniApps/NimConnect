@@ -109,8 +109,12 @@ func main() {
 	inboxStore := NewInboxStore(db)
 	stats := NewStats(db)
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
+	userSessions := NewUserSessions()
+	friendStore := NewFriendStore(db)
+	friendLimiter := newFriendRequestLimiter(30, time.Hour)
 	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
 	var registry *HandleRegistry
+	var profiles *ProfileStore
 	if registryAddress != "off" {
 		reserved := loadReservedHandles(getEnv("RESERVED_HANDLES_FILE", "/data/reserved-handles.json"))
 		releaseActivationHeight := parseActivationHeight(getEnv("RELEASE_ACTIVATION_HEIGHT", ""))
@@ -127,6 +131,8 @@ func main() {
 		ratesHandler(ratesCache)(w, r)
 	})
 	mux.HandleFunc("POST /api/admin/login", adminLoginHandler(adminSessions))
+	mux.HandleFunc("POST /api/session", userSessionLoginHandler(userSessions))
+	mux.HandleFunc("DELETE /api/session", userSessionLogoutHandler(userSessions))
 	mux.HandleFunc("GET /api/admin/handles", adminHandlesHandler(adminSessions, registry))
 	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions, registry))
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore)))
@@ -139,7 +145,7 @@ func main() {
 	// On-chain handle registry — defaults to the shared NimFeed catalog address.
 	if registry != nil {
 		rpc := NewNimiqRPC(httpClient, getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com"))
-		profiles := NewProfileStore(db)
+		profiles = NewProfileStore(db)
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))
 		mux.HandleFunc("POST /api/admin/handles/resync", adminHandlesResyncHandler(adminSessions, registry, syncer))
@@ -229,6 +235,8 @@ func main() {
 			mux.HandleFunc("GET /api/admin/marketplace", adminMarketplaceHandler(adminSessions, marketplaceStore, ledger, rpc, escrowAddress))
 		}
 	}
+
+	registerFriendsRoutes(mux, userSessions, friendStore, registry, profiles, friendLimiter)
 
 	log.Printf("NimConnect backend listening on :%s commit=%s build_time=%s", port, CommitHash, BuildTime)
 	if err := http.ListenAndServe(":"+port, withRequestLogging(withCORS(allowedOrigin, mux))); err != nil {

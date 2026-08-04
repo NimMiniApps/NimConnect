@@ -1,9 +1,10 @@
 export { createProfileClient, compactAddress, DEFAULT_BASE_URL } from './client.js';
 export type { ProfileClient } from './client.js';
+export { userSessionChallenge } from './session.js';
 export { buildHandleClaimPayload, buildHandleReleasePayload, isValidHandle, HANDLE_REGISTRY_ADDRESS } from './claim.js';
 export { parseClaimTxData, resolveHandleRegistry, resolveHandleByAddress, isHandleAvailable, ownerFromHtlcCreationData, HTLC_ACCOUNT_TYPE, } from './registry.js';
 export type { RegistryTx, ResolvedHandleClaim, ResolveHandleRegistryOptions, ParsedRegistryAction } from './registry.js';
 export { userFriendlyAddress } from './nimiqAddress.js';
 export { fetchHandleRegistry, fetchAllTransactionsByAddress, DEFAULT_RPC_URL, IncompleteRegistryHistoryError, AmbiguousRegistryOrderingError, } from './rpc.js';
 export type { FetchHandleRegistryOptions } from './rpc.js';
-export type { PublicProfileFields, StoredPublicProfile, HandleClaim, DisplayIdentity, ProfileClientOptions, HandleClaimPayload, } from './types.js';
+export type { PublicProfileFields, StoredPublicProfile, HandleClaim, DisplayIdentity, ProfileClientOptions, HandleClaimPayload, SignMessageFn, FriendEntry, } from './types.js';

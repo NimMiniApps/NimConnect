@@ -339,6 +339,7 @@ function cancelReset() {
       <ul class="privacy-list">
         <li><span class="privacy-check" aria-hidden="true">✓</span> Contacts stay on this device</li>
         <li><span class="privacy-check" aria-hidden="true">✓</span> Notes are never public</li>
+        <li><span class="privacy-check" aria-hidden="true">✓</span> Friends are shared only with apps you authorize</li>
         <li><span class="privacy-check" aria-hidden="true">✓</span> Public profile only shares selected fields</li>
       </ul>
     </div>

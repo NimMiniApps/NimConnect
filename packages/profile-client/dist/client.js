@@ -1,3 +1,4 @@
+import { userSessionChallenge } from './session.js';
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export function compactAddress(address) {
     return address.replace(/\s+/g, '').toUpperCase();
@@ -6,6 +7,7 @@ export function compactAddress(address) {
 export const DEFAULT_BASE_URL = 'https://api-nimconnect.nimiqminiapps.com';
 export function createProfileClient(options = {}) {
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+    let sessionToken = options.sessionToken ?? null;
     async function getProfileByAddress(address) {
         const res = await fetch(`${baseUrl}/api/profile/${compactAddress(address)}`, {
             headers: { Accept: 'application/json' },
@@ -80,11 +82,114 @@ export function createProfileClient(options = {}) {
                 : undefined,
         };
     }
+    async function createSession(args) {
+        const timestamp = Math.floor(Date.now() / 1000);
+        const message = userSessionChallenge(args.address, timestamp);
+        const { publicKey, signature } = await args.signMessage(message);
+        const res = await fetch(`${baseUrl}/api/session`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({
+                address: args.address,
+                publicKey,
+                signature,
+                timestamp,
+            }),
+        });
+        if (!res.ok)
+            throw new Error(`session create failed: ${res.status}`);
+        const body = await res.json();
+        sessionToken = body.token;
+        return { token: body.token, expiresAt: body.expires_at };
+    }
+    function clearSession() {
+        sessionToken = null;
+    }
+    function getSessionToken() {
+        return sessionToken;
+    }
+    function requireSessionHeaders() {
+        if (!sessionToken)
+            throw new Error('session required — call createSession first');
+        return {
+            Accept: 'application/json',
+            'X-NimConnect-Session': sessionToken,
+        };
+    }
+    function parseFriendEntry(body) {
+        return {
+            address: body.address,
+            handle: body.handle,
+            displayName: body.displayName,
+            status: body.status,
+            friendshipId: body.friendshipId,
+        };
+    }
+    async function listFriends() {
+        const res = await fetch(`${baseUrl}/api/friends`, { headers: requireSessionHeaders() });
+        if (!res.ok)
+            throw new Error(`list friends failed: ${res.status}`);
+        const body = await res.json();
+        return body.map(parseFriendEntry);
+    }
+    async function listFriendRequests() {
+        const res = await fetch(`${baseUrl}/api/friends/requests`, { headers: requireSessionHeaders() });
+        if (!res.ok)
+            throw new Error(`list friend requests failed: ${res.status}`);
+        const body = await res.json();
+        return body.map(parseFriendEntry);
+    }
+    async function sendFriendRequest(to) {
+        const res = await fetch(`${baseUrl}/api/friends/requests`, {
+            method: 'POST',
+            headers: {
+                ...requireSessionHeaders(),
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ to }),
+        });
+        if (!res.ok)
+            throw new Error(`send friend request failed: ${res.status}`);
+        return parseFriendEntry(await res.json());
+    }
+    async function acceptFriendRequest(id) {
+        const res = await fetch(`${baseUrl}/api/friends/requests/${encodeURIComponent(id)}/accept`, {
+            method: 'POST',
+            headers: requireSessionHeaders(),
+        });
+        if (!res.ok)
+            throw new Error(`accept friend request failed: ${res.status}`);
+    }
+    async function declineFriendRequest(id) {
+        const res = await fetch(`${baseUrl}/api/friends/requests/${encodeURIComponent(id)}/decline`, {
+            method: 'POST',
+            headers: requireSessionHeaders(),
+        });
+        if (!res.ok)
+            throw new Error(`decline friend request failed: ${res.status}`);
+    }
+    async function removeFriend(address) {
+        const res = await fetch(`${baseUrl}/api/friends/${compactAddress(address)}`, {
+            method: 'DELETE',
+            headers: requireSessionHeaders(),
+        });
+        if (!res.ok)
+            throw new Error(`remove friend failed: ${res.status}`);
+    }
     return {
         getProfileByAddress,
         resolveHandle,
         resolveHandleForPayment,
         getHandleByAddress,
         getDisplayIdentity,
+        createSession,
+        clearSession,
+        getSessionToken,
+        listFriends,
+        listFriendRequests,
+        sendFriendRequest,
+        acceptFriendRequest,
+        declineFriendRequest,
+        removeFriend,
     };
 }

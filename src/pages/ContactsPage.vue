@@ -49,6 +49,10 @@ function pendingCount(address: string): number {
   <div class="page">
     <header class="header">
       <h1>Contacts</h1>
+      <p class="privacy-blurb">
+        Contacts and notes stay on this device.
+        <router-link to="/friends">Friends</router-link> are shared with apps you authorize.
+      </p>
       <SearchBar v-model="query" placeholder="Search people, @handles, notes or tags…" />
     </header>
 
@@ -92,7 +96,14 @@ function pendingCount(address: string): number {
   flex-direction: column;
   padding: 16px;
 }
-.header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 12px; }
+.header h1 { font-size: 24px; line-height: 1.2; margin: 8px 0 8px; }
+.privacy-blurb {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.privacy-blurb a { color: inherit; }
 .section { margin-top: 18px; }
 .section-title {
   font-size: 13px;

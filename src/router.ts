@@ -21,6 +21,7 @@ export const router = createRouter({
   routes: [
     { path: '/', component: () => import('./pages/PortalHomePage.vue') },
     { path: '/contacts', component: () => import('./pages/ContactsPage.vue') },
+    { path: '/friends', component: () => import('./pages/FriendsPage.vue') },
     { path: '/profile/:id', component: () => import('./pages/ProfileDetailsPage.vue') },
     { path: '/add', component: () => import('./pages/ProfileFormPage.vue') },
     { path: '/edit/:id', component: () => import('./pages/ProfileFormPage.vue') },

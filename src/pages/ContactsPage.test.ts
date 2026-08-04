@@ -21,4 +21,9 @@ describe('ContactsPage', () => {
     expect(source).toMatch(/Search people, @handles, notes or tags/)
     expect(source).toMatch(/>Add contact</)
   })
+
+  it('distinguishes local Contacts from shared Friends', () => {
+    expect(source).toMatch(/Contacts and notes stay on this device/)
+    expect(source).toMatch(/to="\/friends"/)
+  })
 })
