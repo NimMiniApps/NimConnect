@@ -1,18 +1,8 @@
 package main
 
 import (
-	"os"
 	"testing"
 )
-
-func testDatabaseURL(t *testing.T) string {
-	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		url = "postgres://nimconnect:nimconnect@127.0.0.1:5432/nimconnect?sslmode=disable"
-	}
-	return url
-}
 
 func TestOpenAndMigrateCreatesSchema(t *testing.T) {
 	db, err := OpenDB(testDatabaseURL(t))
