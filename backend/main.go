@@ -109,6 +109,7 @@ func main() {
 	inboxStore := NewInboxStore(db)
 	stats := NewStats(db)
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
+	userSessions := NewUserSessions()
 	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
 	var registry *HandleRegistry
 	if registryAddress != "off" {
@@ -127,6 +128,8 @@ func main() {
 		ratesHandler(ratesCache)(w, r)
 	})
 	mux.HandleFunc("POST /api/admin/login", adminLoginHandler(adminSessions))
+	mux.HandleFunc("POST /api/session", userSessionLoginHandler(userSessions))
+	mux.HandleFunc("DELETE /api/session", userSessionLogoutHandler(userSessions))
 	mux.HandleFunc("GET /api/admin/handles", adminHandlesHandler(adminSessions, registry))
 	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions, registry))
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore)))
