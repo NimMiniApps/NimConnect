@@ -26,6 +26,7 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - run: npm run build --workspace=@nimconnect/profile-client
       - run: npm run test
       - run: npm run build:pages
         env:

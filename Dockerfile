@@ -4,6 +4,10 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 
+# Workspace package dist is committed incompletely under a root dist/ gitignore —
+# always rebuild before bundling the app.
+RUN npm run build --workspace=@nimconnect/profile-client
+
 # Baked in at build time — set to the public API URL (e.g. https://api-nimconnect.nimiqminiapps.com).
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
