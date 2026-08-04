@@ -2,13 +2,12 @@ package main
 
 import (
 	"errors"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestFriendStoreSendRequestCreatesPending(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	s.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
 
 	f, err := s.SendRequest(
@@ -36,7 +35,7 @@ func TestFriendStoreSendRequestCreatesPending(t *testing.T) {
 }
 
 func TestFriendStoreRejectsSelfFriend(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	_, err := s.SendRequest(
 		"NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD",
 		"NQ17VERVF3MQ283TNRSRFPJG55BJPMHCN8MD",
@@ -47,7 +46,7 @@ func TestFriendStoreRejectsSelfFriend(t *testing.T) {
 }
 
 func TestFriendStoreDuplicatePendingOrAcceptedConflicts(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	from := "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
 	to := "NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"
 
@@ -71,7 +70,7 @@ func TestFriendStoreDuplicatePendingOrAcceptedConflicts(t *testing.T) {
 }
 
 func TestFriendStoreRerequestAfterDeclined(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	s.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
 	from := "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
 	to := "NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"
@@ -98,7 +97,7 @@ func TestFriendStoreRerequestAfterDeclined(t *testing.T) {
 }
 
 func TestFriendStoreAcceptOnlyRecipient(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	from := "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
 	to := "NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"
 	f, err := s.SendRequest(from, to)
@@ -120,7 +119,7 @@ func TestFriendStoreAcceptOnlyRecipient(t *testing.T) {
 }
 
 func TestFriendStoreDeclineOnlyRecipient(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	from := "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
 	to := "NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"
 	f, err := s.SendRequest(from, to)
@@ -142,7 +141,7 @@ func TestFriendStoreDeclineOnlyRecipient(t *testing.T) {
 }
 
 func TestFriendStoreRemoveEitherSideDeletesAccepted(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	a := "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
 	b := "NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"
 	f, err := s.SendRequest(a, b)
@@ -184,7 +183,7 @@ func TestFriendStoreRemoveEitherSideDeletesAccepted(t *testing.T) {
 }
 
 func TestFriendStoreListFriendsAndRequestsScoped(t *testing.T) {
-	s := NewFriendStore(filepath.Join(t.TempDir(), "friends.json"))
+	s := newTestFriendStore(t)
 	a := "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
 	b := "NQ26 8MMT 8317 VD0D NNKE 3NVA GBVE UY1E 9YDF"
 	c := "NQ05 33M2 N93T MB5H CG42 GJFQ 4N4P DY45 YE6N"
@@ -237,8 +236,8 @@ func TestFriendStoreListFriendsAndRequestsScoped(t *testing.T) {
 }
 
 func TestFriendStorePersistenceRoundTrip(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "friends.json")
-	s := NewFriendStore(path)
+	db := withTestDB(t)
+	s := NewFriendStore(db)
 	s.now = func() time.Time { return time.Unix(1_700_000_000, 0) }
 
 	f, err := s.SendRequest(
@@ -249,7 +248,7 @@ func TestFriendStorePersistenceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reloaded := NewFriendStore(path)
+	reloaded := NewFriendStore(db)
 	got, err := reloaded.ListRequests("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
 	if err != nil {
 		t.Fatal(err)

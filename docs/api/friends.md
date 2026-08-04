@@ -4,7 +4,8 @@ Authenticated mutual-friends graph for NimConnect and ecosystem consumers
 (via `@nimconnect/profile-client`). Design:
 [`docs/plans/2026-08-04-friends-social-graph-design.md`](../plans/2026-08-04-friends-social-graph-design.md).
 
-Local contacts are **not** part of this API.
+Local contacts are **not** part of this API. The graph is stored in Postgres
+(`friendships` table; see `backend/migrations/001_init.sql`).
 
 ## Auth
 

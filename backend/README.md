@@ -83,16 +83,10 @@ refuses to serve the warm-start claim if the RPC refresh fails.
 | `ESCROW_SIGNER_RPC_URL` | _(unset, required with `ESCROW_ADDRESS`)_ | Our own node's RPC — must never be a public gateway |
 | `ESCROW_SIGNER_RPC_USER` / `ESCROW_SIGNER_RPC_PASSWORD` | _(unset, optional)_ | RPC basic auth, on top of network isolation |
 | `MARKETPLACE_MAX_FEE_BPS` | `1000` (10%) | Cap on the seller-set marketplace fee |
-<<<<<<< HEAD
 | `MARKETPLACE_FILE` | `/data/marketplace.json` | **Import-only / deprecated** — legacy listings/trades JSON for one-shot migration |
 | `MARKETPLACE_LEDGER_FILE` | `/data/marketplace_ledger.jsonl` | **Import-only / deprecated** — legacy escrow ledger JSONL for one-shot migration |
-=======
-| `MARKETPLACE_FILE` | `/data/marketplace.json` | Listings/trades persistence |
-| `MARKETPLACE_LEDGER_FILE` | `/data/marketplace_ledger.jsonl` | Append-only escrow money-movement log |
-| `FRIENDS_FILE` | `/data/friends.json` | Friends graph persistence |
 
 Friends API details: [`docs/api/friends.md`](../docs/api/friends.md).
->>>>>>> a658644 (feat(backend): expose authenticated friends HTTP API)
 
 ## Local development
 

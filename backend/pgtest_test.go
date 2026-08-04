@@ -81,3 +81,8 @@ func newTestHandleRegistry(t *testing.T, reserved map[string]bool, releaseActiva
 	t.Helper()
 	return NewHandleRegistry(withTestDB(t), reserved, releaseActivationHeight)
 }
+
+func newTestFriendStore(t *testing.T) *FriendStore {
+	t.Helper()
+	return NewFriendStore(withTestDB(t))
+}

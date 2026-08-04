@@ -2,10 +2,9 @@ package main
 
 import (
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
-	"encoding/json"
-	"os"
-	"sync"
+	"errors"
 	"time"
 )
 
@@ -26,47 +25,22 @@ type Friendship struct {
 	UpdatedAt        int64            `json:"updated_at"`
 }
 
+// FriendStore persists the mutual-friends graph in Postgres (`friendships`).
 type FriendStore struct {
-	path     string
-	mu       sync.Mutex
+	db       *sql.DB
 	now      func() time.Time
 	randRead func([]byte) (int, error)
-	byID     map[string]Friendship
 }
 
-type friendStoreSnapshot struct {
-	Friendships map[string]Friendship `json:"friendships"`
-}
-
-func NewFriendStore(path string) *FriendStore {
-	s := &FriendStore{
-		path:     path,
+func NewFriendStore(db *sql.DB) *FriendStore {
+	return &FriendStore{
+		db:       db,
 		now:      time.Now,
 		randRead: rand.Read,
-		byID:     map[string]Friendship{},
 	}
-	if data, err := readFileIfExists(path); err == nil && data != nil {
-		var snapshot friendStoreSnapshot
-		if json.Unmarshal(data, &snapshot) == nil && snapshot.Friendships != nil {
-			s.byID = snapshot.Friendships
-		}
-	}
-	return s
 }
 
-func (s *FriendStore) persistLocked() error {
-	data, err := json.Marshal(friendStoreSnapshot{Friendships: s.byID})
-	if err != nil {
-		return err
-	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, s.path)
-}
-
-func (s *FriendStore) newIDLocked() (string, error) {
+func (s *FriendStore) newID() (string, error) {
 	buf := make([]byte, 16)
 	if _, err := s.randRead(buf); err != nil {
 		return "", err
@@ -74,23 +48,37 @@ func (s *FriendStore) newIDLocked() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-func friendshipPairKey(a, b string) (string, string) {
-	ca, cb := compactAddress(a), compactAddress(b)
-	if ca < cb {
-		return ca, cb
+func scanFriendship(row interface{ Scan(...any) error }) (Friendship, error) {
+	var f Friendship
+	var status string
+	err := row.Scan(&f.ID, &f.RequesterAddress, &f.RecipientAddress, &status, &f.CreatedAt, &f.UpdatedAt)
+	if err != nil {
+		return Friendship{}, err
 	}
-	return cb, ca
+	f.Status = FriendshipStatus(status)
+	return f, nil
 }
 
-func (s *FriendStore) findPairLocked(a, b string) (Friendship, bool) {
-	lo, hi := friendshipPairKey(a, b)
-	for _, f := range s.byID {
-		flo, fhi := friendshipPairKey(f.RequesterAddress, f.RecipientAddress)
-		if flo == lo && fhi == hi {
-			return f, true
-		}
+func (s *FriendStore) findPair(tx *sql.Tx, a, b string) (Friendship, error) {
+	row := tx.QueryRow(`
+		SELECT id, requester_address, recipient_address, status, created_at, updated_at
+		FROM friendships
+		WHERE LEAST(requester_address, recipient_address) = LEAST($1, $2)
+		  AND GREATEST(requester_address, recipient_address) = GREATEST($1, $2)
+		ORDER BY
+			CASE status
+				WHEN 'pending' THEN 0
+				WHEN 'accepted' THEN 1
+				ELSE 2
+			END,
+			updated_at DESC
+		LIMIT 1
+		FOR UPDATE`, a, b)
+	f, err := scanFriendship(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Friendship{}, errNotFound
 	}
-	return Friendship{}, false
+	return f, err
 }
 
 func (s *FriendStore) SendRequest(from, to string) (Friendship, error) {
@@ -103,11 +91,18 @@ func (s *FriendStore) SendRequest(from, to string) (Friendship, error) {
 		return Friendship{}, errBadRequest
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Friendship{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
 
 	now := s.now().Unix()
-	if existing, ok := s.findPairLocked(from, to); ok {
+	existing, err := s.findPair(tx, from, to)
+	if err != nil && !errors.Is(err, errNotFound) {
+		return Friendship{}, err
+	}
+	if err == nil {
 		switch existing.Status {
 		case FriendshipPending, FriendshipAccepted:
 			return Friendship{}, errConflict
@@ -116,15 +111,23 @@ func (s *FriendStore) SendRequest(from, to string) (Friendship, error) {
 			existing.RecipientAddress = to
 			existing.Status = FriendshipPending
 			existing.UpdatedAt = now
-			s.byID[existing.ID] = existing
-			if err := s.persistLocked(); err != nil {
+			_, err = tx.Exec(`
+				UPDATE friendships
+				SET requester_address = $2, recipient_address = $3, status = $4, updated_at = $5
+				WHERE id = $1`,
+				existing.ID, from, to, string(FriendshipPending), now,
+			)
+			if err != nil {
+				return Friendship{}, err
+			}
+			if err := tx.Commit(); err != nil {
 				return Friendship{}, err
 			}
 			return existing, nil
 		}
 	}
 
-	id, err := s.newIDLocked()
+	id, err := s.newID()
 	if err != nil {
 		return Friendship{}, err
 	}
@@ -136,9 +139,18 @@ func (s *FriendStore) SendRequest(from, to string) (Friendship, error) {
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-	s.byID[id] = f
-	if err := s.persistLocked(); err != nil {
-		delete(s.byID, id)
+	_, err = tx.Exec(`
+		INSERT INTO friendships (id, requester_address, recipient_address, status, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`,
+		f.ID, f.RequesterAddress, f.RecipientAddress, string(f.Status), f.CreatedAt, f.UpdatedAt,
+	)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Friendship{}, errConflict
+		}
+		return Friendship{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return Friendship{}, err
 	}
 	return f, nil
@@ -154,22 +166,39 @@ func (s *FriendStore) Decline(id, actor string) (Friendship, error) {
 
 func (s *FriendStore) setPendingStatus(id, actor string, status FriendshipStatus) (Friendship, error) {
 	actor = compactAddress(actor)
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return Friendship{}, err
+	}
+	defer func() { _ = tx.Rollback() }()
 
-	f, ok := s.byID[id]
-	if !ok || f.Status != FriendshipPending {
+	row := tx.QueryRow(`
+		SELECT id, requester_address, recipient_address, status, created_at, updated_at
+		FROM friendships WHERE id = $1 FOR UPDATE`, id)
+	f, err := scanFriendship(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Friendship{}, errNotFound
+	}
+	if err != nil {
+		return Friendship{}, err
+	}
+	if f.Status != FriendshipPending {
 		return Friendship{}, errNotFound
 	}
 	if compactAddress(f.RecipientAddress) != actor {
 		return Friendship{}, errUnauthorized
 	}
-	prev := f
 	f.Status = status
 	f.UpdatedAt = s.now().Unix()
-	s.byID[id] = f
-	if err := s.persistLocked(); err != nil {
-		s.byID[id] = prev
+	_, err = tx.Exec(`UPDATE friendships SET status = $2, updated_at = $3 WHERE id = $1`,
+		f.ID, string(status), f.UpdatedAt)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return Friendship{}, errConflict
+		}
+		return Friendship{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return Friendship{}, err
 	}
 	return f, nil
@@ -179,22 +208,26 @@ func (s *FriendStore) Remove(actor, other string) error {
 	actor = compactAddress(actor)
 	other = compactAddress(other)
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
 
-	f, ok := s.findPairLocked(actor, other)
-	if !ok || f.Status != FriendshipAccepted {
+	f, err := s.findPair(tx, actor, other)
+	if errors.Is(err, errNotFound) || (err == nil && f.Status != FriendshipAccepted) {
 		return errNotFound
+	}
+	if err != nil {
+		return err
 	}
 	if compactAddress(f.RequesterAddress) != actor && compactAddress(f.RecipientAddress) != actor {
 		return errUnauthorized
 	}
-	delete(s.byID, f.ID)
-	if err := s.persistLocked(); err != nil {
-		s.byID[f.ID] = f
+	if _, err := tx.Exec(`DELETE FROM friendships WHERE id = $1`, f.ID); err != nil {
 		return err
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *FriendStore) ListFriends(actor string) ([]Friendship, error) {
@@ -207,17 +240,24 @@ func (s *FriendStore) ListRequests(actor string) ([]Friendship, error) {
 
 func (s *FriendStore) listByStatus(actor string, status FriendshipStatus) ([]Friendship, error) {
 	actor = compactAddress(actor)
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	rows, err := s.db.Query(`
+		SELECT id, requester_address, recipient_address, status, created_at, updated_at
+		FROM friendships
+		WHERE status = $1
+		  AND (requester_address = $2 OR recipient_address = $2)
+		ORDER BY updated_at DESC, id`, string(status), actor)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
 
 	out := make([]Friendship, 0)
-	for _, f := range s.byID {
-		if f.Status != status {
-			continue
+	for rows.Next() {
+		f, err := scanFriendship(rows)
+		if err != nil {
+			return nil, err
 		}
-		if compactAddress(f.RequesterAddress) == actor || compactAddress(f.RecipientAddress) == actor {
-			out = append(out, f)
-		}
+		out = append(out, f)
 	}
-	return out, nil
+	return out, rows.Err()
 }

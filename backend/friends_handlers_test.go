@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -27,30 +25,33 @@ type friendsTestEnv struct {
 
 func newFriendsTestEnv(t *testing.T) *friendsTestEnv {
 	t.Helper()
-	dir := t.TempDir()
+	db := withTestDB(t)
 
-	handlesPath := filepath.Join(dir, "handles.json")
-	handles := map[string]HandleClaim{
-		"alice": {Handle: "alice", Address: testAddrA},
-		"bob":   {Handle: "bob", Address: testAddrB},
-	}
-	data, err := json.Marshal(handles)
-	if err != nil {
+	if _, err := db.Exec(`
+		INSERT INTO handle_claims (handle, address, tx_hash, block_height, tx_index, claimed_at)
+		VALUES
+			('alice', $1, 't-alice', 1, 0, 0),
+			('bob', $2, 't-bob', 1, 0, 0)`,
+		compactAddress(testAddrA), compactAddress(testAddrB),
+	); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(handlesPath, data, 0o600); err != nil {
+	registry := NewHandleRegistry(db, map[string]bool{}, 0)
+
+	if _, err := db.Exec(`
+		INSERT INTO profiles (address, payload, updated_at, public_key, signature)
+		VALUES ($1, $2, 1, '00', '00')`,
+		compactAddress(testAddrB), `{"display_name":"Bob Nice"}`,
+	); err != nil {
 		t.Fatal(err)
 	}
-	registry := NewHandleRegistry(handlesPath, map[string]bool{}, 0)
-
-	profiles := NewProfileStore(filepath.Join(dir, "profiles"))
-	writeTestProfile(t, profiles, testAddrB, `{"display_name":"Bob Nice"}`)
+	profiles := NewProfileStore(db)
 
 	sessions := NewUserSessions()
 	fixedNow := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 	sessions.now = func() time.Time { return fixedNow }
 
-	store := NewFriendStore(filepath.Join(dir, "friends.json"))
+	store := NewFriendStore(db)
 	store.now = func() time.Time { return fixedNow }
 
 	limiter := newFriendRequestLimiter(30, time.Hour)
@@ -69,28 +70,6 @@ func newFriendsTestEnv(t *testing.T) *friendsTestEnv {
 	}
 
 	return &friendsTestEnv{mux: mux, sessions: sessions, store: store, tokenA: tokenA, tokenB: tokenB}
-}
-
-func writeTestProfile(t *testing.T, profiles *ProfileStore, address, profileJSON string) {
-	t.Helper()
-	compact := compactAddress(address)
-	if err := os.MkdirAll(profiles.dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	stored := StoredProfile{
-		Address:   normalizeAddress(address),
-		UpdatedAt: 1,
-		Profile:   profileJSON,
-		PublicKey: "00",
-		Signature: "00",
-	}
-	data, err := json.Marshal(stored)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(profiles.dir, compact+".json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
 }
 
 func (e *friendsTestEnv) do(method, path, token, body string) *httptest.ResponseRecorder {
@@ -168,7 +147,6 @@ func TestFriendsAcceptDeclineRemove(t *testing.T) {
 	var created friendEntry
 	json.Unmarshal(w.Body.Bytes(), &created)
 
-	// Requester cannot accept.
 	w = e.do(http.MethodPost, "/api/friends/requests/"+created.FriendshipID+"/accept", e.tokenA, "")
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("requester accept: got %d", w.Code)
@@ -240,11 +218,11 @@ func TestFriendsUnknownHandle(t *testing.T) {
 }
 
 func TestFriendsRequestRateLimit(t *testing.T) {
-	dir := t.TempDir()
+	db := withTestDB(t)
 	sessions := NewUserSessions()
 	fixedNow := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 	sessions.now = func() time.Time { return fixedNow }
-	store := NewFriendStore(filepath.Join(dir, "friends.json"))
+	store := NewFriendStore(db)
 	limiter := newFriendRequestLimiter(2, time.Hour)
 	limiter.now = func() time.Time { return fixedNow }
 

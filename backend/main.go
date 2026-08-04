@@ -110,7 +110,7 @@ func main() {
 	stats := NewStats(db)
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
 	userSessions := NewUserSessions()
-	friendStore := NewFriendStore(getEnv("FRIENDS_FILE", "/data/friends.json"))
+	friendStore := NewFriendStore(db)
 	friendLimiter := newFriendRequestLimiter(30, time.Hour)
 	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
 	var registry *HandleRegistry
