@@ -2,9 +2,8 @@ package main
 
 import (
 	"crypto/ed25519"
+	"database/sql"
 	"encoding/hex"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -46,9 +45,33 @@ func (s inboxTestSender) signedSend(recipient string, sentAt int64, nonce, objec
 
 func testStore(t *testing.T, now time.Time) *InboxStore {
 	t.Helper()
-	store := NewInboxStore(t.TempDir())
+	store := NewInboxStore(withTestDB(t))
 	store.now = func() time.Time { return now }
 	return store
+}
+
+func testStoreWithDB(t *testing.T, now time.Time) (*InboxStore, *sql.DB) {
+	t.Helper()
+	db := withTestDB(t)
+	store := NewInboxStore(db)
+	store.now = func() time.Time { return now }
+	return store, db
+}
+
+func insertInboxMessage(t *testing.T, db *sql.DB, msg InboxMessage) {
+	t.Helper()
+	_, err := db.Exec(`
+		INSERT INTO inbox_messages (
+			id, version, type, object_id, nonce, sender, recipient,
+			payload, sent_at, received_at, public_key, signature
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		msg.ID, msg.Version, msg.Type, msg.ObjectID, msg.Nonce,
+		compactAddress(msg.Sender), compactAddress(msg.Recipient),
+		msg.Payload, msg.SentAt, msg.ReceivedAt, msg.PublicKey, msg.Signature,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 const testNonce = "0123456789abcdef0123456789abcdef"
@@ -68,7 +91,7 @@ func TestInboxPutHappyPathAndReplay(t *testing.T) {
 	if err != nil || !replay2 || id2 != id {
 		t.Fatalf("replay: id2=%q replay=%v err=%v (want original id %q)", id2, replay2, err, id)
 	}
-	msgs, err := store.readMailbox(compactAddress(recipient.addr))
+	msgs, err := store.List(recipient.addr)
 	if err != nil || len(msgs) != 1 {
 		t.Fatalf("mailbox: %d messages, err=%v", len(msgs), err)
 	}
@@ -165,7 +188,7 @@ func TestInboxPutPerSenderCap(t *testing.T) {
 
 func TestInboxPutMailboxCapConcurrent(t *testing.T) {
 	now := time.Now()
-	store := testStore(t, now)
+	store, db := testStoreWithDB(t, now)
 	recipient := newInboxSender(t)
 
 	// Fill to 90 from 9 senders (respecting the per-sender cap of 10).
@@ -192,12 +215,14 @@ func TestInboxPutMailboxCapConcurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	entries, err := os.ReadDir(filepath.Join(store.dir, compactAddress(recipient.addr)))
-	if err != nil {
+	var count int
+	if err := db.QueryRow(`
+		SELECT COUNT(*) FROM inbox_messages WHERE recipient = $1`,
+		compactAddress(recipient.addr)).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != inboxMaxMailbox {
-		t.Fatalf("mailbox has %d files, want exactly %d", len(entries), inboxMaxMailbox)
+	if count != inboxMaxMailbox {
+		t.Fatalf("mailbox has %d rows, want exactly %d", count, inboxMaxMailbox)
 	}
 	tooMany := 0
 	for _, e := range errs {
@@ -212,7 +237,7 @@ func TestInboxPutMailboxCapConcurrent(t *testing.T) {
 
 func TestInboxListOrdersOldestFirstAndSweeps(t *testing.T) {
 	now := time.Now()
-	store := testStore(t, now)
+	store, db := testStoreWithDB(t, now)
 	recipient := newInboxSender(t)
 	sender := newInboxSender(t)
 
@@ -225,15 +250,13 @@ func TestInboxListOrdersOldestFirstAndSweeps(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// One message exactly past retention: write directly with old received_at.
+	// One message exactly past retention: insert directly with old received_at.
 	old := InboxMessage{
 		Version: 1, Type: "payment-request", ID: newMessageID(), ObjectID: "x",
 		Nonce: nonceN(9), Sender: sender.addr, Recipient: recipient.addr,
 		Payload: "p", SentAt: 1, ReceivedAt: now.Add(-inboxRetention - time.Millisecond).UnixMilli(),
 	}
-	if err := store.writeMessage(compactAddress(recipient.addr), old); err != nil {
-		t.Fatal(err)
-	}
+	insertInboxMessage(t, db, old)
 
 	store.now = func() time.Time { return now }
 	msgs, err := store.List(recipient.addr)
@@ -246,31 +269,12 @@ func TestInboxListOrdersOldestFirstAndSweeps(t *testing.T) {
 	if msgs[0].ReceivedAt > msgs[1].ReceivedAt {
 		t.Fatal("not oldest-first")
 	}
-	if _, err := os.Stat(filepath.Join(store.dir, compactAddress(recipient.addr), old.ID+".json")); !os.IsNotExist(err) {
+	var remaining int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM inbox_messages WHERE id = $1`, old.ID).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
 		t.Fatal("expired message not deleted")
-	}
-}
-
-func TestInboxListSkipsCorruptFile(t *testing.T) {
-	now := time.Now()
-	store := testStore(t, now)
-	recipient := newInboxSender(t)
-	sender := newInboxSender(t)
-	req := sender.signedSend(recipient.addr, now.UnixMilli(), testNonce, "inv", "p")
-	if _, _, err := store.Put(req); err != nil {
-		t.Fatal(err)
-	}
-	dir := filepath.Join(store.dir, compactAddress(recipient.addr))
-	corruptID := newMessageID()
-	if err := os.WriteFile(filepath.Join(dir, corruptID+".json"), []byte("{truncated"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	msgs, err := store.List(recipient.addr)
-	if err != nil || len(msgs) != 1 {
-		t.Fatalf("corrupt file broke read: %d msgs, err=%v", len(msgs), err)
-	}
-	if _, err := os.Stat(filepath.Join(dir, corruptID+".json.corrupt")); err != nil {
-		t.Fatal("corrupt file not quarantined")
 	}
 }
 

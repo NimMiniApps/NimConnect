@@ -71,3 +71,8 @@ func newTestStats(t *testing.T) *Stats {
 	t.Helper()
 	return NewStats(withTestDB(t))
 }
+
+func newTestInboxStore(t *testing.T) *InboxStore {
+	t.Helper()
+	return NewInboxStore(withTestDB(t))
+}

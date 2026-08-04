@@ -96,7 +96,7 @@ func main() {
 	})
 
 	backupStore := NewBackupStore(backupDir)
-	inboxStore := NewInboxStore(getEnv("INBOX_DIR", "/data/inbox"))
+	inboxStore := NewInboxStore(db)
 	stats := NewStats(db)
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
 	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)

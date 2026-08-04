@@ -1,25 +1,22 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
 	"errors"
-	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
 )
 
 type InboxStore struct {
-	dir   string
+	db    *sql.DB
 	now   func() time.Time
 	mu    sync.Mutex
 	locks map[string]*sync.Mutex
 }
 
-func NewInboxStore(dir string) *InboxStore {
-	return &InboxStore{dir: dir, now: time.Now, locks: map[string]*sync.Mutex{}}
+func NewInboxStore(db *sql.DB) *InboxStore {
+	return &InboxStore{db: db, now: time.Now, locks: map[string]*sync.Mutex{}}
 }
 
 // lock returns the mutex for one mailbox, creating it on first use.
@@ -32,66 +29,34 @@ func (s *InboxStore) lock(compact string) *sync.Mutex {
 	return s.locks[compact]
 }
 
-func (s *InboxStore) mailboxDir(compact string) string {
-	return filepath.Join(s.dir, compact)
+const inboxSelectCols = `id, version, type, object_id, nonce, sender, recipient,
+	payload, sent_at, received_at, public_key, signature`
+
+func scanInboxMessage(row interface{ Scan(...any) error }) (InboxMessage, error) {
+	var m InboxMessage
+	var sender, recipient string
+	err := row.Scan(
+		&m.ID, &m.Version, &m.Type, &m.ObjectID, &m.Nonce,
+		&sender, &recipient, &m.Payload, &m.SentAt, &m.ReceivedAt,
+		&m.PublicKey, &m.Signature,
+	)
+	if err != nil {
+		return InboxMessage{}, err
+	}
+	m.Sender = normalizeAddress(sender)
+	m.Recipient = normalizeAddress(recipient)
+	return m, nil
 }
 
-// readMailbox parses all messages in a mailbox. Callers hold the mailbox lock.
-// Skips symlinks, non-message filenames, and corrupt files (quarantined as .corrupt).
-func (s *InboxStore) readMailbox(compact string) ([]InboxMessage, error) {
-	dir := s.mailboxDir(compact)
-	entries, err := os.ReadDir(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+func (s *InboxStore) findBySenderNonce(sender, nonce string) (string, error) {
+	var id string
+	err := s.db.QueryRow(`
+		SELECT id FROM inbox_messages WHERE sender = $1 AND nonce = $2`,
+		sender, nonce).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", errNotFound
 	}
-	if err != nil {
-		return nil, err
-	}
-	if len(entries) > inboxMaxDirEntries {
-		entries = entries[:inboxMaxDirEntries]
-	}
-	var msgs []InboxMessage
-	for _, e := range entries {
-		name := e.Name()
-		if e.Type()&os.ModeSymlink != 0 {
-			log.Printf("inbox: skipping symlink mailbox=%q name=%q", compact, name)
-			continue
-		}
-		if filepath.Ext(name) != ".json" || !isMessageID(name[:len(name)-len(".json")]) {
-			continue
-		}
-		path := filepath.Join(dir, name)
-		data, err := os.ReadFile(path)
-		if err != nil {
-			log.Printf("inbox: unreadable file mailbox=%q name=%q err=%q", compact, name, err)
-			continue
-		}
-		var msg InboxMessage
-		if err := json.Unmarshal(data, &msg); err != nil {
-			log.Printf("inbox: quarantining corrupt file mailbox=%q name=%q err=%q", compact, name, err)
-			_ = os.Rename(path, path+".corrupt")
-			continue
-		}
-		msgs = append(msgs, msg)
-	}
-	return msgs, nil
-}
-
-func (s *InboxStore) writeMessage(compact string, msg InboxMessage) error {
-	dir := s.mailboxDir(compact)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(dir, msg.ID+".json")
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	return id, err
 }
 
 func (s *InboxStore) Put(req InboxSendRequest) (string, bool, error) {
@@ -132,20 +97,23 @@ func (s *InboxStore) Put(req InboxSendRequest) (string, bool, error) {
 	lock.Lock()
 	defer lock.Unlock()
 
-	existing, err := s.readMailbox(recipient)
-	if err != nil {
+	if id, err := s.findBySenderNonce(sender, req.Nonce); err == nil {
+		return id, true, nil
+	} else if !errors.Is(err, errNotFound) {
 		return "", false, err
 	}
-	fromSender := 0
-	for _, m := range existing {
-		if compactAddress(m.Sender) == sender {
-			if m.Nonce == req.Nonce {
-				return m.ID, true, nil // idempotent replay
-			}
-			fromSender++
-		}
+
+	var total, fromSender int
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM inbox_messages WHERE recipient = $1`, recipient).Scan(&total); err != nil {
+		return "", false, err
 	}
-	if len(existing) >= inboxMaxMailbox || fromSender >= inboxMaxPerSender {
+	if err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM inbox_messages WHERE recipient = $1 AND sender = $2`,
+		recipient, sender).Scan(&fromSender); err != nil {
+		return "", false, err
+	}
+	if total >= inboxMaxMailbox || fromSender >= inboxMaxPerSender {
 		return "", false, errTooMany
 	}
 
@@ -163,7 +131,23 @@ func (s *InboxStore) Put(req InboxSendRequest) (string, bool, error) {
 		PublicKey:  req.PublicKey,
 		Signature:  req.Signature,
 	}
-	if err := s.writeMessage(recipient, stored); err != nil {
+	_, err := s.db.Exec(`
+		INSERT INTO inbox_messages (
+			id, version, type, object_id, nonce, sender, recipient,
+			payload, sent_at, received_at, public_key, signature
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+		stored.ID, stored.Version, stored.Type, stored.ObjectID, stored.Nonce,
+		sender, recipient, stored.Payload, stored.SentAt, stored.ReceivedAt,
+		stored.PublicKey, stored.Signature,
+	)
+	if isUniqueViolation(err) {
+		id, lookupErr := s.findBySenderNonce(sender, req.Nonce)
+		if lookupErr != nil {
+			return "", false, lookupErr
+		}
+		return id, true, nil
+	}
+	if err != nil {
 		return "", false, err
 	}
 	return stored.ID, false, nil
@@ -178,21 +162,36 @@ func (s *InboxStore) List(address string) ([]InboxMessage, error) {
 	lock.Lock()
 	defer lock.Unlock()
 
-	msgs, err := s.readMailbox(compact)
+	cutoff := s.now().Add(-inboxRetention).UnixMilli()
+	if _, err := s.db.Exec(`
+		DELETE FROM inbox_messages WHERE recipient = $1 AND received_at < $2`,
+		compact, cutoff); err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.Query(`
+		SELECT `+inboxSelectCols+`
+		FROM inbox_messages
+		WHERE recipient = $1
+		ORDER BY received_at ASC`, compact)
 	if err != nil {
 		return nil, err
 	}
-	cutoff := s.now().Add(-inboxRetention).UnixMilli()
-	live := make([]InboxMessage, 0, len(msgs))
-	for _, m := range msgs {
-		if m.ReceivedAt < cutoff {
-			_ = os.Remove(filepath.Join(s.mailboxDir(compact), m.ID+".json"))
-			continue
+	defer rows.Close()
+
+	msgs := make([]InboxMessage, 0)
+	for rows.Next() {
+		m, err := scanInboxMessage(rows)
+		if err != nil {
+			return nil, err
 		}
-		live = append(live, m)
+		msgs = append(msgs, m)
 	}
-	sort.Slice(live, func(i, j int) bool { return live[i].ReceivedAt < live[j].ReceivedAt })
-	return live, nil
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(msgs, func(i, j int) bool { return msgs[i].ReceivedAt < msgs[j].ReceivedAt })
+	return msgs, nil
 }
 
 func (s *InboxStore) Delete(address, id string) error {
@@ -204,9 +203,17 @@ func (s *InboxStore) Delete(address, id string) error {
 	lock.Lock()
 	defer lock.Unlock()
 
-	err := os.Remove(filepath.Join(s.mailboxDir(compact), id+".json"))
-	if errors.Is(err, os.ErrNotExist) {
+	res, err := s.db.Exec(`
+		DELETE FROM inbox_messages WHERE recipient = $1 AND id = $2`, compact, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
 		return errNotFound
 	}
-	return err
+	return nil
 }
