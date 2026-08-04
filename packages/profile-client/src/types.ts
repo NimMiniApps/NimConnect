@@ -55,6 +55,12 @@ export interface ProfileClientOptions {
   baseUrl?: string
   /** Optional pre-existing `X-NimConnect-Session` token. */
   sessionToken?: string | null
+  /**
+   * App slug bound into the session challenge (e.g. `nimworld`).
+   * When set, `createSession` signs the v2 message and posts `audience`.
+   * When omitted, keeps the v1 challenge for 0.6.x compatibility.
+   */
+  audience?: string
 }
 
 /** Recipient + tx data for claiming a @handle — sign and send with your own wallet integration. */

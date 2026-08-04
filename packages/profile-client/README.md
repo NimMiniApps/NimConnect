@@ -148,8 +148,12 @@ path above instead — it's already doing this caching for you.
 Mutual friends require a short-lived server session. Wallet signing stays in
 your app; this client never holds keys.
 
+Pass your app's `audience` slug so the signed challenge names your app. That
+makes the signature reusable by *your* backend (verify the same message for
+your own session) without being replayable into another app.
+
 ```ts
-const client = createProfileClient()
+const client = createProfileClient({ audience: 'yourapp' })
 
 await client.createSession({
   address: myAddress,
@@ -173,6 +177,9 @@ Session token is held on the client instance after `createSession` (or pass
 `sessionToken` in options). Friends calls send `X-NimConnect-Session`.
 Persist the token in your app (`sessionStorage`, etc.) if you want it to
 survive reloads — inject it via `createProfileClient({ sessionToken })`.
+
+Omitting `audience` keeps the legacy v1 challenge (0.6.x behaviour). Prefer
+setting it.
 
 See [`docs/api/friends.md`](../../docs/api/friends.md).
 
