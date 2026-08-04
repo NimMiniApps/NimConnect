@@ -57,7 +57,7 @@ func TestOwnershipWatcher_SettlesWhenBuyerIsFinalizedOwner(t *testing.T) {
 	if got.State != StateSettled {
 		t.Fatalf("expected SETTLED, got %s (%+v)", got.State, got)
 	}
-	if len(signer.calls) != 1 || signer.calls[0].recipient != "NQ11 SELLER" {
+	if len(signer.calls) != 1 || signer.calls[0].recipient != compactAddress("NQ11 SELLER") {
 		t.Fatalf("expected one payout call to the seller, got %+v", signer.calls)
 	}
 }
@@ -104,7 +104,7 @@ func TestOwnershipWatcher_RefundsWhenSniped(t *testing.T) {
 	if got.State != StateRefunded {
 		t.Fatalf("expected REFUNDED after a snipe, got %s", got.State)
 	}
-	if len(signer.calls) != 1 || signer.calls[0].recipient != "NQ22 BUYER" {
+	if len(signer.calls) != 1 || signer.calls[0].recipient != compactAddress("NQ22 BUYER") {
 		t.Fatalf("expected one refund call to the buyer, got %+v", signer.calls)
 	}
 	_ = trade

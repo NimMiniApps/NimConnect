@@ -43,9 +43,12 @@ services:
     deploy:
       restart_policy:
         condition: any
+      # Local volume (no shared storage): pin Postgres to one labeled node.
+      # Label exactly one Swarm node before deploy:
+      #   docker node update --label-add nimconnect.pgdata=true <node>
       placement:
         constraints:
-          - node.role == worker
+          - node.labels.nimconnect.pgdata == true
 
   backend:
     image: ghcr.io/<github-username>/nimconnect-backend:latest

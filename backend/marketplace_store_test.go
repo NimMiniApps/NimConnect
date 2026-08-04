@@ -17,6 +17,71 @@ func TestCreateListing_RejectsSecondActiveListingForSameHandle(t *testing.T) {
 	}
 }
 
+func TestCreateListing_RejectsReservedListingWithOpenTrade(t *testing.T) {
+	s := newTestMarketplaceStore(t)
+	if _, err := s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ReserveListing("chuck", "trade-1", "ref-1", "NQ22 BUYER"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateListing("chuck", "NQ11 SELLER", 2000, 50, "tx2"); err == nil {
+		t.Fatal("expected CreateListing to reject reserved handle with open trade")
+	}
+}
+
+func TestCreateListing_StoresCompactSeller(t *testing.T) {
+	s := newTestMarketplaceStore(t)
+	listing, err := s.CreateListing("chuck", "NQ11 SELLER AAAA", 1000, 50, "tx1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := compactAddress("NQ11 SELLER AAAA")
+	if listing.Seller != want {
+		t.Fatalf("returned seller %q, want compact %q", listing.Seller, want)
+	}
+	var got MarketplaceListing
+	found := false
+	for _, l := range s.ActiveListings() {
+		if l.Handle == "chuck" {
+			got, found = l, true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("listing missing after create")
+	}
+	if got.Seller != want {
+		t.Fatalf("persisted seller %q, want compact %q", got.Seller, want)
+	}
+}
+
+func TestReserveListing_StoresCompactBuyer(t *testing.T) {
+	s := newTestMarketplaceStore(t)
+	if _, err := s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1"); err != nil {
+		t.Fatal(err)
+	}
+	trade, err := s.ReserveListing("chuck", "trade-1", "ref-1", "NQ22 BUYER BBBB")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantBuyer := compactAddress("NQ22 BUYER BBBB")
+	wantSeller := compactAddress("NQ11 SELLER")
+	if trade.Buyer != wantBuyer {
+		t.Fatalf("returned buyer %q, want %q", trade.Buyer, wantBuyer)
+	}
+	if trade.Seller != wantSeller {
+		t.Fatalf("returned seller %q, want %q", trade.Seller, wantSeller)
+	}
+	got, ok := s.Resolve("trade-1")
+	if !ok {
+		t.Fatal("trade missing")
+	}
+	if got.Buyer != wantBuyer || got.Seller != wantSeller {
+		t.Fatalf("persisted trade buyer/seller = %q/%q, want %q/%q", got.Buyer, got.Seller, wantBuyer, wantSeller)
+	}
+}
+
 func TestReserveListing_OnlyOneTradeWinsAConcurrentRace(t *testing.T) {
 	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")

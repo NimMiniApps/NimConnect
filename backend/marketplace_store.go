@@ -95,6 +95,15 @@ func (s *MarketplaceStore) ConsumeNonce(nonce string) error {
 	return nil
 }
 
+func listingTradeBlocksRelist(state TradeState) bool {
+	switch state {
+	case StateExpired, StateCanceled, StateSettled, StateRefunded:
+		return false
+	default:
+		return true
+	}
+}
+
 func (s *MarketplaceStore) CreateListing(handle, seller string, priceLuna, feeLuna uint64, ownershipEpochTxHash string) (MarketplaceListing, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -102,34 +111,34 @@ func (s *MarketplaceStore) CreateListing(handle, seller string, priceLuna, feeLu
 	}
 	defer tx.Rollback()
 
+	seller = compactAddress(seller)
+
 	var status sql.NullString
 	err = tx.QueryRow(`SELECT status FROM marketplace_listings WHERE handle = $1 FOR UPDATE`, handle).Scan(&status)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		createdAt := time.Now().Unix()
-		listing := MarketplaceListing{
-			Handle: handle, Seller: seller, PriceLuna: priceLuna, FeeLuna: feeLuna,
-			Status: "active", OwnershipEpochTxHash: ownershipEpochTxHash, CreatedAt: createdAt,
-		}
-		_, err = tx.Exec(`
-			INSERT INTO marketplace_listings (handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at)
-			VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
-			handle, seller, priceLuna, feeLuna, ownershipEpochTxHash, createdAt,
-		)
-		if err != nil {
-			if isUniqueViolation(err) {
-				return MarketplaceListing{}, fmt.Errorf("an active listing for %q already exists", handle)
-			}
-			return MarketplaceListing{}, err
-		}
-		if err := tx.Commit(); err != nil {
-			return MarketplaceListing{}, err
-		}
-		return listing, nil
+		// fall through to insert
 	case err != nil:
 		return MarketplaceListing{}, err
 	case status.String == "active":
 		return MarketplaceListing{}, fmt.Errorf("an active listing for %q already exists", handle)
+	case status.String == "reserved":
+		return MarketplaceListing{}, fmt.Errorf("listing for %q is reserved by an open trade", handle)
+	}
+
+	var openState sql.NullString
+	err = tx.QueryRow(`
+		SELECT state FROM marketplace_trades
+		WHERE handle = $1
+		  AND state NOT IN ('EXPIRED', 'CANCELED', 'SETTLED', 'REFUNDED')
+		ORDER BY created_at DESC
+		LIMIT 1
+		FOR UPDATE`, handle).Scan(&openState)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return MarketplaceListing{}, err
+	}
+	if openState.Valid && listingTradeBlocksRelist(TradeState(openState.String)) {
+		return MarketplaceListing{}, fmt.Errorf("listing for %q has an open trade", handle)
 	}
 
 	createdAt := time.Now().Unix()
@@ -137,12 +146,23 @@ func (s *MarketplaceStore) CreateListing(handle, seller string, priceLuna, feeLu
 		Handle: handle, Seller: seller, PriceLuna: priceLuna, FeeLuna: feeLuna,
 		Status: "active", OwnershipEpochTxHash: ownershipEpochTxHash, CreatedAt: createdAt,
 	}
-	_, err = tx.Exec(`
-		UPDATE marketplace_listings SET seller = $2, price_luna = $3, fee_luna = $4,
-			status = 'active', ownership_epoch_tx_hash = $5, created_at = $6
-		WHERE handle = $1`,
-		handle, seller, priceLuna, feeLuna, ownershipEpochTxHash, createdAt,
-	)
+	if status.Valid {
+		_, err = tx.Exec(`
+			UPDATE marketplace_listings SET seller = $2, price_luna = $3, fee_luna = $4,
+				status = 'active', ownership_epoch_tx_hash = $5, created_at = $6
+			WHERE handle = $1`,
+			handle, seller, priceLuna, feeLuna, ownershipEpochTxHash, createdAt,
+		)
+	} else {
+		_, err = tx.Exec(`
+			INSERT INTO marketplace_listings (handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at)
+			VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
+			handle, seller, priceLuna, feeLuna, ownershipEpochTxHash, createdAt,
+		)
+		if isUniqueViolation(err) {
+			return MarketplaceListing{}, fmt.Errorf("an active listing for %q already exists", handle)
+		}
+	}
 	if err != nil {
 		return MarketplaceListing{}, err
 	}
@@ -208,9 +228,11 @@ func (s *MarketplaceStore) ReserveListing(handle, tradeID, reference, buyer stri
 		return MarketplaceTrade{}, fmt.Errorf("buyer has too many unpaid reservations")
 	}
 
+	buyer = compactAddress(buyer)
+	seller := compactAddress(listing.Seller)
 	now := time.Now().Unix()
 	trade := MarketplaceTrade{
-		ID: tradeID, Reference: reference, Handle: handle, Buyer: buyer, Seller: listing.Seller,
+		ID: tradeID, Reference: reference, Handle: handle, Buyer: buyer, Seller: seller,
 		PriceLuna: listing.PriceLuna, FeeLuna: listing.FeeLuna, State: StateReserved, Version: 1,
 		DepositDeadline: now + depositDeadlineDuration,
 		CreatedAt:       now, UpdatedAt: now,

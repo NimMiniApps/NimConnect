@@ -56,7 +56,7 @@ func TestSettle_PaysSellerMinusFeeAndRecordsLedger(t *testing.T) {
 	if got.State != StateSettled || got.PayoutTxHash == "" {
 		t.Fatalf("expected SETTLED with a payout hash, got %+v", got)
 	}
-	if len(signer.calls) != 1 || signer.calls[0].recipient != "NQ11 SELLER" || signer.calls[0].valueLuna != 950 {
+	if len(signer.calls) != 1 || signer.calls[0].recipient != compactAddress("NQ11 SELLER") || signer.calls[0].valueLuna != 950 {
 		t.Fatalf("expected one payout call of 950 to the seller, got %+v", signer.calls)
 	}
 	if got := ledger.Balance(); got != -1000 {
@@ -130,7 +130,7 @@ func TestRefund_ReturnsFullPrincipalToBuyer(t *testing.T) {
 	if got.State != StateRefunded || got.RefundTxHash == "" {
 		t.Fatalf("expected REFUNDED with a refund hash, got %+v", got)
 	}
-	if len(signer.calls) != 1 || signer.calls[0].recipient != "NQ22 BUYER" || signer.calls[0].valueLuna != 1000 {
+	if len(signer.calls) != 1 || signer.calls[0].recipient != compactAddress("NQ22 BUYER") || signer.calls[0].valueLuna != 1000 {
 		t.Fatalf("expected a full-principal refund to the buyer, got %+v", signer.calls)
 	}
 	if got := ledger.Balance(); got != -1000 {

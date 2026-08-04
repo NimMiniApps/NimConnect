@@ -44,7 +44,9 @@ func (w *SettlementWorker) Settle(tradeID string) error {
 		return err
 	}
 	payout := trade.PriceLuna - trade.FeeLuna
-	txHash, err := w.signer.SendBasicTransactionWithData(w.escrowAddress, trade.Seller, payout, "")
+	txHash, err := w.signer.SendBasicTransactionWithData(
+		addressForRPC(w.escrowAddress), addressForRPC(trade.Seller), payout, "",
+	)
 	if err != nil {
 		return err
 	}
@@ -83,7 +85,9 @@ func (w *SettlementWorker) Refund(tradeID string) error {
 	if err != nil {
 		return err
 	}
-	txHash, err := w.signer.SendBasicTransactionWithData(w.escrowAddress, trade.Buyer, trade.PriceLuna, "")
+	txHash, err := w.signer.SendBasicTransactionWithData(
+		addressForRPC(w.escrowAddress), addressForRPC(trade.Buyer), trade.PriceLuna, "",
+	)
 	if err != nil {
 		return err
 	}
@@ -95,4 +99,13 @@ func (w *SettlementWorker) Refund(tradeID string) error {
 	return w.store.Transition(tradeID, StateRefundPending, StateRefunded, func(t *MarketplaceTrade) {
 		t.RefundTxHash = txHash
 	})
+}
+
+// addressForRPC returns the user-friendly spaced form for valid Nimiq addresses.
+// Compact/invalid test placeholders are passed through unchanged.
+func addressForRPC(addr string) string {
+	if isValidNimiqAddress(addr) {
+		return normalizeAddress(addr)
+	}
+	return addr
 }
