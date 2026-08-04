@@ -53,23 +53,24 @@ refuses to serve the warm-start claim if the RPC refresh fails.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `8787` | Listen port |
+| `DATABASE_URL` | _(required)_ | Postgres connection string (e.g. `postgres://user:pass@host:5432/nimconnect?sslmode=disable`) |
 | `COINGECKO_API_BASE` | CoinGecko v3 URL | Rates source |
 | `ALLOWED_ORIGIN` | `*` | CORS origins (comma-separated) |
 | `BACKUP_DIR` | `/data/backups` | Filesystem path for backup JSON files |
-| `STATS_FILE` | `/data/stats.json` | Usage stats persistence file |
+| `STATS_FILE` | `/data/stats.json` | **Import-only / deprecated** — legacy stats JSON for one-shot migration |
 | `ADMIN_ADDRESSES` | _(unset)_ | Comma-separated Nimiq addresses allowed to sign in at `/api/admin/login`; unset = `/api/stats` always returns 401 |
 | `REGISTRY_ADDRESS` | _(unset)_ | Enables handle registry + profile API; unset = routes 404 |
 | `NIMIQ_RPC_URL` | `https://rpc-mainnet.nimiqscan.com` | JSON-RPC endpoint for claim indexing |
-| `HANDLES_FILE` | `/data/handles.json` | Persisted handle→claim map (warm-start cache) |
-| `PROFILES_DIR` | `/data/profiles` | One signed profile JSON file per address |
+| `HANDLES_FILE` | `/data/handles.json` | **Import-only / deprecated** — legacy handle cache for one-shot migration |
+| `PROFILES_DIR` | `/data/profiles` | **Import-only / deprecated** — legacy profile JSON files for one-shot migration |
 | `RESERVED_HANDLES_FILE` | `/data/reserved-handles.json` | Optional JSON array overriding builtin reserved handles |
 | `ESCROW_ADDRESS` | _(unset)_ | Enables the handle marketplace; unset = marketplace routes 404. See [escrow architecture](../docs/escrow-architecture.md) |
 | `NIMIQ_WALLET_KEY` | _(unset, required with `ESCROW_ADDRESS`)_ | Escrow account's private key (hex) — imported into `ESCROW_SIGNER_RPC_URL`'s node at startup, never sent anywhere else |
 | `ESCROW_SIGNER_RPC_URL` | _(unset, required with `ESCROW_ADDRESS`)_ | Our own node's RPC — must never be a public gateway |
 | `ESCROW_SIGNER_RPC_USER` / `ESCROW_SIGNER_RPC_PASSWORD` | _(unset, optional)_ | RPC basic auth, on top of network isolation |
 | `MARKETPLACE_MAX_FEE_BPS` | `1000` (10%) | Cap on the seller-set marketplace fee |
-| `MARKETPLACE_FILE` | `/data/marketplace.json` | Listings/trades persistence |
-| `MARKETPLACE_LEDGER_FILE` | `/data/marketplace_ledger.jsonl` | Append-only escrow money-movement log |
+| `MARKETPLACE_FILE` | `/data/marketplace.json` | **Import-only / deprecated** — legacy listings/trades JSON for one-shot migration |
+| `MARKETPLACE_LEDGER_FILE` | `/data/marketplace_ledger.jsonl` | **Import-only / deprecated** — legacy escrow ledger JSONL for one-shot migration |
 
 ## Local development
 

@@ -29,6 +29,23 @@
 # up, without blocking startup on a single long timeout.
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nimconnect
+      POSTGRES_PASSWORD: nimconnect
+      POSTGRES_DB: nimconnect
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nimconnect -d nimconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./backend
@@ -36,10 +53,14 @@ services:
         COMMIT_HASH: local
         BUILD_TIME: local
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "8787:8787"
     environment:
       PORT: "8787"
+      DATABASE_URL: postgres://nimconnect:nimconnect@postgres:5432/nimconnect?sslmode=disable
       COINGECKO_API_BASE: https://api.coingecko.com/api/v3
       ALLOWED_ORIGIN: "*"
       BACKUP_DIR: /data/backups
@@ -110,4 +131,5 @@ services:
       start_period: 120s
 
 volumes:
+  postgres_data:
   nimiq_escrow_node_data:
