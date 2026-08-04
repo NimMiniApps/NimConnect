@@ -268,6 +268,9 @@ async function handleIncomingPaymentLink() {
         <router-link to="/contacts" class="nav-item" :class="{ active: $route.path === '/contacts' }">
           <span class="nav-icon">👥</span><span>Contacts</span>
         </router-link>
+        <router-link to="/friends" class="nav-item" :class="{ active: $route.path === '/friends' }">
+          <span class="nav-icon">🤝</span><span>Friends</span>
+        </router-link>
         <button type="button" class="nav-item nav-scan" aria-label="Scan QR code" @click="scanOpen = true">
           <span class="scan-icon">▣</span><span>Scan</span>
         </button>
