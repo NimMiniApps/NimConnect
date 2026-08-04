@@ -90,3 +90,8 @@ Accept / decline / remove return **204**.
 
 - Never returns notes, tags, invoices, backups, or another user's graph
 - Contacts remain local-only in the NimConnect Mini App
+
+## First consumer
+
+**NimBomber** is the first ecosystem app wired to this API (lobby / leaderboard
+Add friend, profile Friends section) via `@nimconnect/profile-client@0.6.0`.
