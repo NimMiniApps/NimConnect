@@ -1,4 +1,4 @@
-import { userSessionChallenge } from './session.js';
+import { userSessionChallenge, userSessionChallengeV1 } from './session.js';
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export function compactAddress(address) {
     return address.replace(/\s+/g, '').toUpperCase();
@@ -7,6 +7,7 @@ export function compactAddress(address) {
 export const DEFAULT_BASE_URL = 'https://api-nimconnect.nimiqminiapps.com';
 export function createProfileClient(options = {}) {
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
+    const audience = options.audience;
     let sessionToken = options.sessionToken ?? null;
     async function getProfileByAddress(address) {
         const res = await fetch(`${baseUrl}/api/profile/${compactAddress(address)}`, {
@@ -84,17 +85,22 @@ export function createProfileClient(options = {}) {
     }
     async function createSession(args) {
         const timestamp = Math.floor(Date.now() / 1000);
-        const message = userSessionChallenge(args.address, timestamp);
+        const message = audience
+            ? userSessionChallenge(args.address, timestamp, audience)
+            : userSessionChallengeV1(args.address, timestamp);
         const { publicKey, signature } = await args.signMessage(message);
+        const payload = {
+            address: args.address,
+            publicKey,
+            signature,
+            timestamp,
+        };
+        if (audience)
+            payload.audience = audience;
         const res = await fetch(`${baseUrl}/api/session`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-            body: JSON.stringify({
-                address: args.address,
-                publicKey,
-                signature,
-                timestamp,
-            }),
+            body: JSON.stringify(payload),
         });
         if (!res.ok)
             throw new Error(`session create failed: ${res.status}`);
