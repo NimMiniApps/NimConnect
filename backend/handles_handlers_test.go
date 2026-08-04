@@ -39,7 +39,7 @@ func seededRegistry(t *testing.T) *HandleRegistry {
 }
 
 func TestResolveHandler(t *testing.T) {
-	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(t.TempDir()), nil)
+	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(withTestDB(t)), nil)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/resolve/chuck", nil))
@@ -75,7 +75,7 @@ func TestPaymentResolveHandlerRefreshesBeforeResolving(t *testing.T) {
 
 	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
-	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/chuck", nil))
@@ -105,7 +105,7 @@ func TestPaymentResolveHandlerDoesNotServeStaleDataWhenRefreshFails(t *testing.T
 
 	registry := seededRegistry(t)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
-	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/chuck", nil))
@@ -124,7 +124,7 @@ func TestPaymentResolveHandlerValidatesAndReportsUnknownHandles(t *testing.T) {
 
 	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
-	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/pay/resolve/NOPE", nil))
@@ -143,7 +143,7 @@ func TestPaymentResolveHandlerValidatesAndReportsUnknownHandles(t *testing.T) {
 }
 
 func TestProfilePutGetDeleteOverHTTP(t *testing.T) {
-	profiles := NewProfileStore(t.TempDir())
+	profiles := NewProfileStore(withTestDB(t))
 	mux := handlesTestMux(t, seededRegistry(t), profiles, nil)
 
 	address, pubHex, sign := testSigner(t)
@@ -200,7 +200,7 @@ func TestProfilePutGetDeleteOverHTTP(t *testing.T) {
 }
 
 func TestProfilePutAddressMismatch(t *testing.T) {
-	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(t.TempDir()), nil)
+	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(withTestDB(t)), nil)
 	address, pubHex, sign := testSigner(t)
 	profile := validProfileJSON()
 	body, _ := json.Marshal(ProfilePutRequest{
@@ -215,7 +215,7 @@ func TestProfilePutAddressMismatch(t *testing.T) {
 }
 
 func TestHandleCheckAdvisory(t *testing.T) {
-	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(t.TempDir()), nil)
+	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(withTestDB(t)), nil)
 	cases := map[string]string{
 		"chuck":    `{"handle":"chuck","available":false,"reason":"taken"}`,
 		"nimiq":    `{"handle":"nimiq","available":false,"reason":"reserved"}`,
@@ -251,7 +251,7 @@ func TestClaimSubmitHandler_BroadcastsHubRawHex(t *testing.T) {
 	})
 	defer srv.Close()
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
-	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
 	body, _ := json.Marshal(map[string]string{"kind": "hub", "raw_hex": "deadbeef"})
 	rec := httptest.NewRecorder()
@@ -274,7 +274,7 @@ func TestClaimSubmitHandler_BroadcastsHubRawHex(t *testing.T) {
 func TestClaimSubmitHandler_RejectsEmptyRequest(t *testing.T) {
 	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(nil, ""), registry, "NQ77 REGISTRY")
-	mux := handlesTestMux(t, registry, NewProfileStore(t.TempDir()), syncer)
+	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/handles/claims", bytes.NewReader([]byte(`{}`))))
@@ -284,7 +284,7 @@ func TestClaimSubmitHandler_RejectsEmptyRequest(t *testing.T) {
 }
 
 func TestHandleByAddress(t *testing.T) {
-	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(t.TempDir()), nil)
+	mux := handlesTestMux(t, seededRegistry(t), NewProfileStore(withTestDB(t)), nil)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/handles/by-address/NQ11OWNER", nil))
 	if rec.Code != 200 {

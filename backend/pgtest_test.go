@@ -61,3 +61,13 @@ func newTestMarketplaceAndLedger(t *testing.T) (*MarketplaceStore, *EscrowLedger
 	}
 	return store, ledger
 }
+
+func newTestProfileStore(t *testing.T) *ProfileStore {
+	t.Helper()
+	return NewProfileStore(withTestDB(t))
+}
+
+func newTestStats(t *testing.T) *Stats {
+	t.Helper()
+	return NewStats(withTestDB(t))
+}

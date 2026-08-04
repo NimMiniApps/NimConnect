@@ -10,8 +10,8 @@ import (
 )
 
 func TestStatsRecordAndSummary(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "stats.json")
-	s := NewStats(path)
+	db := withTestDB(t)
+	s := NewStats(db)
 	s.now = func() time.Time { return time.Date(2026, 7, 13, 10, 0, 0, 0, time.UTC) }
 
 	s.RecordWallet("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
@@ -35,15 +35,15 @@ func TestStatsRecordAndSummary(t *testing.T) {
 		t.Fatalf("unexpected days: %+v", sum.Days)
 	}
 
-	// Persistence: reload from disk.
-	s2 := NewStats(path)
+	// Persistence: reload from Postgres.
+	s2 := NewStats(db)
 	if got := s2.Summary(HandleStats{}).UniqueWallets; got != 2 {
 		t.Fatalf("reloaded unique wallets = %d, want 2", got)
 	}
 }
 
 func TestStatsSummaryMergesUsageAndHandleDays(t *testing.T) {
-	s := NewStats("")
+	s := newTestStats(t)
 	s.now = func() time.Time { return time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC) }
 	s.RecordWallet("NQ11 OWNER")
 	s.RecordOpen()
@@ -73,7 +73,7 @@ func TestStatsSummaryMergesUsageAndHandleDays(t *testing.T) {
 }
 
 func TestStatsHandlerAuth(t *testing.T) {
-	s := NewStats("") // no persistence
+	s := newTestStats(t)
 	s.RecordWallet("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
 
 	sessions := NewAdminSessions(nil)
@@ -169,7 +169,7 @@ func TestAdminHandlesHandler(t *testing.T) {
 }
 
 func TestWithWalletStat(t *testing.T) {
-	s := NewStats("")
+	s := newTestStats(t)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(s, func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)

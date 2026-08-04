@@ -1,11 +1,10 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 )
@@ -102,34 +101,33 @@ type StoredProfile struct {
 	Signature string `json:"signature"`
 }
 
-// ProfileStore holds one signed profile JSON file per address.
-// ponytail: one global mutex; per-address locks if write volume ever matters.
+// ProfileStore holds one signed profile row per address in Postgres.
 type ProfileStore struct {
-	dir string
-	mu  sync.Mutex
+	db *sql.DB
+	mu sync.Mutex
 }
 
-func NewProfileStore(dir string) *ProfileStore {
-	return &ProfileStore{dir: dir}
-}
-
-func (s *ProfileStore) path(compact string) string {
-	return filepath.Join(s.dir, compact+".json")
+func NewProfileStore(db *sql.DB) *ProfileStore {
+	return &ProfileStore{db: db}
 }
 
 // read returns the stored profile, errNotFound when absent. Callers hold s.mu.
 func (s *ProfileStore) read(compact string) (StoredProfile, error) {
 	var p StoredProfile
-	data, err := readFileIfExists(s.path(compact))
+	var payload string
+	err := s.db.QueryRow(`
+		SELECT address, payload, updated_at, public_key, signature
+		FROM profiles WHERE address = $1`, compact).Scan(
+		&p.Address, &payload, &p.UpdatedAt, &p.PublicKey, &p.Signature,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return StoredProfile{}, errNotFound
+	}
 	if err != nil {
-		return p, err
+		return StoredProfile{}, err
 	}
-	if data == nil {
-		return p, errNotFound
-	}
-	if err := json.Unmarshal(data, &p); err != nil {
-		return p, err
-	}
+	p.Address = normalizeAddress(p.Address)
+	p.Profile = payload
 	return p, nil
 }
 
@@ -147,7 +145,8 @@ func (s *ProfileStore) Put(req ProfilePutRequest) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	existing, err := s.read(compactAddress(req.Address))
+	compact := compactAddress(req.Address)
+	existing, err := s.read(compact)
 	if err != nil && !errors.Is(err, errNotFound) {
 		return err
 	}
@@ -155,26 +154,17 @@ func (s *ProfileStore) Put(req ProfilePutRequest) error {
 		return errConflict // replay or stale update
 	}
 
-	stored := StoredProfile{
-		Address:   normalizeAddress(req.Address),
-		UpdatedAt: req.UpdatedAt,
-		Profile:   req.Profile,
-		PublicKey: req.PublicKey,
-		Signature: req.Signature,
-	}
-	if err := os.MkdirAll(s.dir, 0o755); err != nil {
-		return err
-	}
-	data, err := json.Marshal(stored)
-	if err != nil {
-		return err
-	}
-	path := s.path(compactAddress(req.Address))
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
-	}
-	return os.Rename(tmp, path)
+	_, err = s.db.Exec(`
+		INSERT INTO profiles (address, payload, updated_at, public_key, signature)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (address) DO UPDATE SET
+			payload = EXCLUDED.payload,
+			updated_at = EXCLUDED.updated_at,
+			public_key = EXCLUDED.public_key,
+			signature = EXCLUDED.signature`,
+		compact, req.Profile, req.UpdatedAt, req.PublicKey, req.Signature,
+	)
+	return err
 }
 
 func (s *ProfileStore) Get(address string) (StoredProfile, error) {
@@ -196,12 +186,14 @@ func (s *ProfileStore) Delete(address string, updatedAt int64, publicKey, signat
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	existing, err := s.read(compactAddress(address))
+	compact := compactAddress(address)
+	existing, err := s.read(compact)
 	if err != nil {
 		return err
 	}
 	if updatedAt <= existing.UpdatedAt {
 		return errConflict
 	}
-	return os.Remove(s.path(compactAddress(address)))
+	_, err = s.db.Exec(`DELETE FROM profiles WHERE address = $1`, compact)
+	return err
 }

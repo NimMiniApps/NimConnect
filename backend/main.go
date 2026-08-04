@@ -97,7 +97,7 @@ func main() {
 
 	backupStore := NewBackupStore(backupDir)
 	inboxStore := NewInboxStore(getEnv("INBOX_DIR", "/data/inbox"))
-	stats := NewStats(getEnv("STATS_FILE", "/data/stats.json"))
+	stats := NewStats(db)
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
 	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
 	var registry *HandleRegistry
@@ -128,7 +128,7 @@ func main() {
 	// On-chain handle registry — defaults to the shared NimFeed catalog address.
 	if registry != nil {
 		rpc := NewNimiqRPC(httpClient, getEnv("NIMIQ_RPC_URL", "https://rpc-mainnet.nimiqscan.com"))
-		profiles := NewProfileStore(getEnv("PROFILES_DIR", "/data/profiles"))
+		profiles := NewProfileStore(db)
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))
 

@@ -44,7 +44,7 @@ func putReq(t *testing.T, updatedAt int64, profile string) (ProfilePutRequest, s
 }
 
 func TestProfilePutGetRoundTrip(t *testing.T) {
-	store := NewProfileStore(t.TempDir())
+	store := newTestProfileStore(t)
 	req, address := putReq(t, 1000, validProfileJSON())
 	if err := store.Put(req); err != nil {
 		t.Fatal(err)
@@ -59,7 +59,7 @@ func TestProfilePutGetRoundTrip(t *testing.T) {
 }
 
 func TestProfilePutRejectsBadSignature(t *testing.T) {
-	store := NewProfileStore(t.TempDir())
+	store := newTestProfileStore(t)
 	req, _ := putReq(t, 1000, validProfileJSON())
 	req.Profile = `{"display_name":"Tampered"}` // signature no longer matches
 	if err := store.Put(req); !errors.Is(err, errUnauthorized) {
@@ -68,7 +68,7 @@ func TestProfilePutRejectsBadSignature(t *testing.T) {
 }
 
 func TestProfilePutRejectsReplay(t *testing.T) {
-	store := NewProfileStore(t.TempDir())
+	store := newTestProfileStore(t)
 	address, pubHex, sign := testSigner(t)
 	mkReq := func(updatedAt int64, profile string) ProfilePutRequest {
 		return ProfilePutRequest{
@@ -93,7 +93,7 @@ func TestProfilePutRejectsReplay(t *testing.T) {
 }
 
 func TestProfilePayloadValidation(t *testing.T) {
-	store := NewProfileStore(t.TempDir())
+	store := newTestProfileStore(t)
 	bad := []string{
 		`not json`,
 		`[]`,                                     // not an object
@@ -115,7 +115,7 @@ func TestProfilePayloadValidation(t *testing.T) {
 }
 
 func TestProfileDelete(t *testing.T) {
-	store := NewProfileStore(t.TempDir())
+	store := newTestProfileStore(t)
 	address, pubHex, sign := testSigner(t)
 	put := ProfilePutRequest{
 		Address: address, UpdatedAt: 1000, Profile: validProfileJSON(), PublicKey: pubHex,

@@ -18,7 +18,7 @@ func TestPublicPageServesOGTags(t *testing.T) {
 	// seededRegistry owns @chuck (see handles_handlers_test.go); no published
 	// profile, so this asserts the fallback title/description path.
 	registry := seededRegistry(t)
-	profiles := NewProfileStore(t.TempDir())
+	profiles := NewProfileStore(withTestDB(t))
 
 	rec := httptest.NewRecorder()
 	publicPageMux(t, registry, profiles).ServeHTTP(rec, httptest.NewRequest("GET", "/p/chuck", nil))
@@ -38,7 +38,7 @@ func TestPublicPageServesOGTags(t *testing.T) {
 func TestPublicPageUnknownHandleIs404ButRedirects(t *testing.T) {
 	registry := seededRegistry(t)
 	rec := httptest.NewRecorder()
-	publicPageMux(t, registry, NewProfileStore(t.TempDir())).ServeHTTP(rec, httptest.NewRequest("GET", "/p/ghost", nil))
+	publicPageMux(t, registry, NewProfileStore(withTestDB(t))).ServeHTTP(rec, httptest.NewRequest("GET", "/p/ghost", nil))
 	if rec.Code != 404 {
 		t.Fatalf("want 404, got %d", rec.Code)
 	}
@@ -50,7 +50,7 @@ func TestPublicPageUnknownHandleIs404ButRedirects(t *testing.T) {
 func TestPublicPageInvalidHandle(t *testing.T) {
 	registry := seededRegistry(t)
 	rec := httptest.NewRecorder()
-	publicPageMux(t, registry, NewProfileStore(t.TempDir())).ServeHTTP(rec, httptest.NewRequest("GET", "/p/NOT_valid!", nil))
+	publicPageMux(t, registry, NewProfileStore(withTestDB(t))).ServeHTTP(rec, httptest.NewRequest("GET", "/p/NOT_valid!", nil))
 	if rec.Code != 400 {
 		t.Fatalf("want 400, got %d", rec.Code)
 	}
@@ -59,7 +59,7 @@ func TestPublicPageInvalidHandle(t *testing.T) {
 func TestPublicPageEscapesProfileContent(t *testing.T) {
 	// A handle whose owner we control end-to-end: seed registry claim from a
 	// signer-derived address, publish a bio containing HTML, expect it escaped.
-	profiles := NewProfileStore(t.TempDir())
+	profiles := NewProfileStore(withTestDB(t))
 	req, address := putReq(t, 1000, `{"display_name":"Evil","bio":"<script>alert(1)</script>"}`)
 	if err := profiles.Put(req); err != nil {
 		t.Fatal(err)
