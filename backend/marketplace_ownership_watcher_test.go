@@ -1,14 +1,13 @@
 package main
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func ownershipFixture(t *testing.T, macroHeight uint64) (*MarketplaceStore, *HandleRegistry, *fakeSigner, *OwnershipWatcher, MarketplaceTrade) {
 	t.Helper()
 	store, ledger := newTestMarketplaceAndLedger(t)
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	t.Cleanup(func() { ledger.Close() })
 	signer := newFakeSigner()
 	settlement := NewSettlementWorker(store, ledger, signer, "NQ99 ESCROW")

@@ -104,7 +104,7 @@ func main() {
 	if registryAddress != "off" {
 		reserved := loadReservedHandles(getEnv("RESERVED_HANDLES_FILE", "/data/reserved-handles.json"))
 		releaseActivationHeight := parseActivationHeight(getEnv("RELEASE_ACTIVATION_HEIGHT", ""))
-		registry = NewHandleRegistry(getEnv("HANDLES_FILE", "/data/handles.json"), reserved, releaseActivationHeight)
+		registry = NewHandleRegistry(db, reserved, releaseActivationHeight)
 	}
 
 	mux := http.NewServeMux()
@@ -131,6 +131,7 @@ func main() {
 		profiles := NewProfileStore(db)
 		syncer := NewHandleSyncer(rpc, registry, registryAddress)
 		go syncer.Run(2*time.Minute, make(chan struct{}))
+		mux.HandleFunc("POST /api/admin/handles/resync", adminHandlesResyncHandler(adminSessions, registry, syncer))
 
 		chainHeightCache := NewChainHeightCache(2*time.Second, rpc.GetBlockNumber)
 		mux.HandleFunc("GET /api/chain/height", chainHeightHandler(chainHeightCache))

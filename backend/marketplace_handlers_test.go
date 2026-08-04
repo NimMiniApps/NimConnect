@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -16,7 +15,7 @@ import (
 func newTestMarketplaceHandlerDeps(t *testing.T) (*MarketplaceStore, *HandleRegistry) {
 	t.Helper()
 	store := newTestMarketplaceStore(t)
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	return store, registry
 }
 

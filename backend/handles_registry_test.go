@@ -1,8 +1,8 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/hex"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -25,8 +25,17 @@ func releaseTx(hash, sender, handle string, block, index uint64) rpcTx {
 	}
 }
 
+func countHandleClaims(t *testing.T, db *sql.DB) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM handle_claims`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
 func TestRebuild_ReleaseThenReclaim(t *testing.T) {
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
+	r := newTestHandleRegistry(t, map[string]bool{}, 100)
 	err := r.Rebuild([]rpcTx{
 		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
 		releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0),
@@ -42,8 +51,8 @@ func TestRebuild_ReleaseThenReclaim(t *testing.T) {
 }
 
 func TestHandleRegistryStatsFollowCurrentWinningClaims(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "handles.json")
-	r := NewHandleRegistry(path, map[string]bool{}, 100)
+	db := withTestDB(t)
+	r := NewHandleRegistry(db, map[string]bool{}, 100)
 
 	first := claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)
 	first.Timestamp = time.Date(2026, 7, 20, 1, 0, 0, 0, time.UTC).UnixMilli()
@@ -64,7 +73,7 @@ func TestHandleRegistryStatsFollowCurrentWinningClaims(t *testing.T) {
 		t.Fatalf("released claim still counted on its old day: %+v", got)
 	}
 
-	reloaded := NewHandleRegistry(path, map[string]bool{}, 100)
+	reloaded := NewHandleRegistry(db, map[string]bool{}, 100)
 	reloadedClaim, ok := reloaded.Resolve("chuck")
 	if !ok || reloadedClaim.ClaimedAt != reclaim.Timestamp {
 		t.Fatalf("reloaded claim timestamp = %d, want %d", reloadedClaim.ClaimedAt, reclaim.Timestamp)
@@ -75,7 +84,7 @@ func TestHandleRegistryStatsFollowCurrentWinningClaims(t *testing.T) {
 }
 
 func TestHandleRegistryStatsIncludeLegacyClaimWithoutDailyBucket(t *testing.T) {
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	r := newTestHandleRegistry(t, map[string]bool{}, 0)
 	if err := r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)}); err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +99,7 @@ func TestHandleRegistryStatsIncludeLegacyClaimWithoutDailyBucket(t *testing.T) {
 }
 
 func TestHandleRegistryClaimsReturnsCurrentClaimsAlphabetically(t *testing.T) {
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
+	r := newTestHandleRegistry(t, map[string]bool{}, 100)
 	if err := r.Rebuild([]rpcTx{
 		claimTx("t1", "NQ11 OLD", "chuck", 5, 0),
 		claimTx("t2", "NQ22 OWNER", "alice", 6, 0),
@@ -117,7 +126,7 @@ func TestHandleRegistryClaimsReturnsCurrentClaimsAlphabetically(t *testing.T) {
 }
 
 func TestRebuild_ReleaseFromNonOwnerIsNoOp(t *testing.T) {
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 100)
+	r := newTestHandleRegistry(t, map[string]bool{}, 100)
 	r.Rebuild([]rpcTx{
 		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
 		releaseTx("t2", "NQ99 IMPOSTOR", "chuck", 200, 0),
@@ -130,7 +139,7 @@ func TestRebuild_ReleaseFromNonOwnerIsNoOp(t *testing.T) {
 }
 
 func TestRebuild_ReleaseBeforeActivationHeightIgnored(t *testing.T) {
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 1000)
+	r := newTestHandleRegistry(t, map[string]bool{}, 1000)
 	r.Rebuild([]rpcTx{
 		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
 		releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0),
@@ -143,7 +152,7 @@ func TestRebuild_ReleaseBeforeActivationHeightIgnored(t *testing.T) {
 }
 
 func TestRebuild_ReleaseAtActivationHeightIsHonored(t *testing.T) {
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 200)
+	r := newTestHandleRegistry(t, map[string]bool{}, 200)
 	r.Rebuild([]rpcTx{
 		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
 		releaseTx("t2", "NQ11 OWNER", "chuck", 200, 0),
@@ -157,7 +166,7 @@ func TestRebuild_ReleaseAtActivationHeightIsHonored(t *testing.T) {
 
 func newTestRegistry(t *testing.T) *HandleRegistry {
 	t.Helper()
-	return NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true}, 0)
+	return newTestHandleRegistry(t, map[string]bool{"nimiq": true}, 0)
 }
 
 func TestRebuildEarliestClaimWins(t *testing.T) {
@@ -255,12 +264,60 @@ func TestResolveAddress_MultipleClaimsSameAddress_EarliestWins(t *testing.T) {
 }
 
 func TestRegistryPersistsAcrossRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "handles.json")
-	r := NewHandleRegistry(path, map[string]bool{}, 0)
-	r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)})
+	db := withTestDB(t)
+	r := NewHandleRegistry(db, map[string]bool{}, 0)
+	if err := r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	if countHandleClaims(t, db) != 1 {
+		t.Fatalf("expected one persisted claim")
+	}
 
-	reloaded := NewHandleRegistry(path, map[string]bool{}, 0)
+	reloaded := NewHandleRegistry(db, map[string]bool{}, 0)
 	if _, ok := reloaded.Resolve("chuck"); !ok {
 		t.Fatal("registry should load persisted state")
+	}
+}
+
+func TestPurgeHandlesEmptiesTableAndMemory(t *testing.T) {
+	db := withTestDB(t)
+	r := NewHandleRegistry(db, map[string]bool{}, 0)
+	if err := r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PurgeHandles(); err != nil {
+		t.Fatal(err)
+	}
+	if countHandleClaims(t, db) != 0 {
+		t.Fatal("purge should empty handle_claims")
+	}
+	if _, ok := r.Resolve("chuck"); ok {
+		t.Fatal("purge should clear in-memory map")
+	}
+}
+
+func TestRebuildAfterPurgeRepopulates(t *testing.T) {
+	db := withTestDB(t)
+	r := NewHandleRegistry(db, map[string]bool{}, 0)
+	if err := r.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.PurgeHandles(); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Rebuild([]rpcTx{
+		claimTx("t1", "NQ11 OWNER", "chuck", 5, 0),
+		claimTx("t2", "NQ22 OWNER", "alice", 6, 0),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if countHandleClaims(t, db) != 2 {
+		t.Fatalf("rebuild should repopulate handle_claims")
+	}
+	if _, ok := r.Resolve("chuck"); !ok {
+		t.Fatal("chuck should resolve after rebuild")
+	}
+	if _, ok := r.Resolve("alice"); !ok {
+		t.Fatal("alice should resolve after rebuild")
 	}
 }

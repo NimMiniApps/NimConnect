@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -29,7 +28,7 @@ func TestSweepRebuildsRegistry(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 
 	if err := syncer.Sweep(); err != nil {
@@ -45,7 +44,7 @@ func TestSweepIsRateLimited(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 
 	syncer.Sweep()
@@ -66,12 +65,10 @@ func TestSweepDoesNotRateLimitAFailedRebuild(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(
-		filepath.Join(t.TempDir(), "missing-directory", "handles.json"),
-		map[string]bool{},
-		0,
-	)
+	db := withTestDB(t)
+	registry := NewHandleRegistry(db, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+	_ = db.Close()
 
 	if err := syncer.Sweep(); err == nil {
 		t.Fatal("want persistence failure")
@@ -91,7 +88,7 @@ func TestSweepMarksCompleteAfterShortPage(t *testing.T) {
 	var calls atomic.Int64
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 	if err := syncer.Sweep(); err != nil {
 		t.Fatal(err)
@@ -160,7 +157,7 @@ func TestSweepDoesNotClobberOnIncompleteHistory(t *testing.T) {
 	sweepTxPageSize, sweepTxMaxPages = 2, 2
 	t.Cleanup(func() { sweepTxPageSize, sweepTxMaxPages = oldSize, oldPages })
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	if err := registry.Rebuild([]rpcTx{claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)}); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +209,7 @@ func TestSweepRejectsAmbiguousOrdering(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	_ = registry.Rebuild([]rpcTx{claimTx("old", "NQ11 A", "alpha", 1, 0)})
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 	if err := syncer.Sweep(); err == nil {
@@ -223,5 +220,22 @@ func TestSweepRejectsAmbiguousOrdering(t *testing.T) {
 	}
 	if claim, ok := registry.Resolve("alpha"); !ok || claim.TxHash != "old" {
 		t.Fatalf("prior state must remain, got %+v ok=%v", claim, ok)
+	}
+}
+
+func TestForceSweepBypassesCooldown(t *testing.T) {
+	var calls atomic.Int64
+	srv := syncTestServer(t, &calls)
+	defer srv.Close()
+
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+
+	syncer.Sweep()
+	if err := syncer.ForceSweep(); err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("ForceSweep should bypass cooldown: want 2 RPC calls, got %d", got)
 	}
 }

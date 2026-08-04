@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 )
@@ -43,12 +42,13 @@ func TestStatsRecordAndSummary(t *testing.T) {
 }
 
 func TestStatsSummaryMergesUsageAndHandleDays(t *testing.T) {
-	s := newTestStats(t)
+	db := withTestDB(t)
+	s := NewStats(db)
 	s.now = func() time.Time { return time.Date(2026, 7, 21, 10, 0, 0, 0, time.UTC) }
 	s.RecordWallet("NQ11 OWNER")
 	s.RecordOpen()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := NewHandleRegistry(db, map[string]bool{}, 0)
 	onUsageDay := claimTx("t1", "NQ11 OWNER", "chuck", 5, 0)
 	onUsageDay.Timestamp = time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC).UnixMilli()
 	onClaimOnlyDay := claimTx("t2", "NQ22 OWNER", "alice", 6, 0)
@@ -116,7 +116,7 @@ func TestStatsHandlerAuth(t *testing.T) {
 }
 
 func TestAdminHandlesHandler(t *testing.T) {
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	if err := registry.Rebuild([]rpcTx{
 		claimTx("t2", "NQ22 OWNER", "chuck", 6, 0),
 		claimTx("t1", "NQ11 OWNER", "alice", 5, 0),

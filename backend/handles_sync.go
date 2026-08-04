@@ -115,9 +115,18 @@ func registryOrderingAmbiguous(txs []rpcTx) bool {
 // registry only when completeness and intra-block ordering are provable.
 // No-ops silently when called again within the cooldown window.
 func (s *HandleSyncer) Sweep() error {
+	return s.sweep(false)
+}
+
+// ForceSweep runs a sweep immediately, bypassing the cooldown window.
+func (s *HandleSyncer) ForceSweep() error {
+	return s.sweep(true)
+}
+
+func (s *HandleSyncer) sweep(force bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if time.Since(s.lastSweep) < sweepCooldown {
+	if !force && time.Since(s.lastSweep) < sweepCooldown {
 		return nil
 	}
 	hist, err := s.rpc.GetAllTransactionsByAddress(s.registryAddress, sweepTxPageSize, sweepTxMaxPages)

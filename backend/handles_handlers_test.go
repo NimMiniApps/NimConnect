@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"sync/atomic"
 	"testing"
 )
@@ -30,7 +29,7 @@ func handlesTestMux(t *testing.T, registry *HandleRegistry, profiles *ProfileSto
 
 func seededRegistry(t *testing.T) *HandleRegistry {
 	t.Helper()
-	r := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{"nimiq": true}, 0)
+	r := newTestHandleRegistry(t, map[string]bool{"nimiq": true}, 0)
 	r.Rebuild([]rpcTx{{
 		Hash: "t1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY",
 		Data: hex.EncodeToString([]byte(makeClaimPayload("chuck"))), BlockNumber: 5,
@@ -73,7 +72,7 @@ func TestPaymentResolveHandlerRefreshesBeforeResolving(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
@@ -122,7 +121,7 @@ func TestPaymentResolveHandlerValidatesAndReportsUnknownHandles(t *testing.T) {
 	srv := syncTestServer(t, &calls)
 	defer srv.Close()
 
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
 	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
@@ -237,7 +236,7 @@ func TestHandleCheckAdvisory(t *testing.T) {
 }
 
 func TestClaimSubmitHandler_BroadcastsHubRawHex(t *testing.T) {
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	txJSON, _ := json.Marshal(rpcTx{Hash: "h1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY", Data: hex.EncodeToString([]byte(makeClaimPayload("chuck")))})
 	txsJSON, _ := json.Marshal([]rpcTx{{
 		Hash: "h1", Sender: "NQ11 OWNER", Recipient: "NQ77 REGISTRY",
@@ -272,7 +271,7 @@ func TestClaimSubmitHandler_BroadcastsHubRawHex(t *testing.T) {
 }
 
 func TestClaimSubmitHandler_RejectsEmptyRequest(t *testing.T) {
-	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
 	syncer := NewHandleSyncer(NewNimiqRPC(nil, ""), registry, "NQ77 REGISTRY")
 	mux := handlesTestMux(t, registry, NewProfileStore(withTestDB(t)), syncer)
 
@@ -299,5 +298,55 @@ func TestHandleByAddress(t *testing.T) {
 	mux.ServeHTTP(rec, httptest.NewRequest("GET", "/api/handles/by-address/NQ11000000000000000000000000000000AB", nil))
 	if rec.Code != 404 && rec.Code != 400 {
 		t.Fatalf("unknown address: want 404 (or 400 for invalid), got %d", rec.Code)
+	}
+}
+
+func TestAdminHandlesResync_PurgesAndSweeps(t *testing.T) {
+	var calls atomic.Int64
+	srv := syncTestServer(t, &calls)
+	defer srv.Close()
+
+	db := withTestDB(t)
+	registry := NewHandleRegistry(db, map[string]bool{}, 0)
+	if err := registry.Rebuild([]rpcTx{claimTx("old", "NQ11 OWNER", "ghost", 1, 0)}); err != nil {
+		t.Fatal(err)
+	}
+	syncer := NewHandleSyncer(NewNimiqRPC(srv.Client(), srv.URL), registry, "NQ77 REGISTRY")
+	sessions, token := adminToken(t)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/admin/handles/resync", adminHandlesResyncHandler(sessions, registry, syncer))
+
+	req := httptest.NewRequest("POST", "/api/admin/handles/resync", nil)
+	req.Header.Set("X-Admin-Session", token)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("want 204, got %d: %s", rec.Code, rec.Body)
+	}
+	if countHandleClaims(t, db) != 1 {
+		t.Fatalf("resync should repopulate from chain sweep")
+	}
+	if _, ok := registry.Resolve("chuck"); !ok {
+		t.Fatal("resync should index claim from sweep")
+	}
+	if _, ok := registry.Resolve("ghost"); ok {
+		t.Fatal("resync should replace stale in-memory state")
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("want 1 RPC sweep, got %d", calls.Load())
+	}
+}
+
+func TestAdminHandlesResync_RequiresSession(t *testing.T) {
+	registry := newTestHandleRegistry(t, map[string]bool{}, 0)
+	sessions, _ := adminToken(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/admin/handles/resync", adminHandlesResyncHandler(sessions, registry, nil))
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest("POST", "/api/admin/handles/resync", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("want 401, got %d", rec.Code)
 	}
 }

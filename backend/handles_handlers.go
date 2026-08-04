@@ -225,6 +225,32 @@ func claimSubmitHandler(syncer *HandleSyncer, registry *HandleRegistry) http.Han
 	}
 }
 
+func adminHandlesResyncHandler(sessions *AdminSessions, registry *HandleRegistry, syncer *HandleSyncer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !sessions.Valid(r.Header.Get("X-Admin-Session")) {
+			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if registry == nil {
+			writeJSONError(w, http.StatusServiceUnavailable, "handles disabled")
+			return
+		}
+		if err := registry.PurgeHandles(); err != nil {
+			log.Printf("handle resync purge failed err=%q", err)
+			writeJSONError(w, http.StatusInternalServerError, "purge failed")
+			return
+		}
+		if syncer != nil {
+			if err := syncer.ForceSweep(); err != nil {
+				log.Printf("handle resync sweep failed err=%q", err)
+				writeJSONError(w, http.StatusInternalServerError, "sync failed")
+				return
+			}
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func handleByAddressHandler(registry *HandleRegistry) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claim, ok := registry.ResolveAddress(r.PathValue("address"))

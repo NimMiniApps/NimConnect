@@ -1,8 +1,7 @@
 package main
 
 import (
-	"encoding/json"
-	"os"
+	"database/sql"
 	"sort"
 	"sync"
 	"time"
@@ -24,32 +23,56 @@ type HandleStats struct {
 
 // HandleRegistry maps handle -> winning claim. The whole map is recomputed
 // from the registry address's tx history on every sweep (Rebuild), so ordering
-// mistakes and reorgs self-heal; the JSON file is only a warm-start cache.
+// mistakes and reorgs self-heal; handle_claims in Postgres is only a warm-start cache.
 type HandleRegistry struct {
-	path     string
-	reserved map[string]bool
-	// HTLCCreator resolves an HTLC contract address to the account that
-	// created it (set by the syncer; nil = attribute to the raw sender).
+	db                      *sql.DB
+	reserved                map[string]bool
 	HTLCCreator             func(address string) string
 	releaseActivationHeight uint64
 	mu                      sync.RWMutex
 	handles                 map[string]HandleClaim
 }
 
-func NewHandleRegistry(path string, reserved map[string]bool, releaseActivationHeight uint64) *HandleRegistry {
+func NewHandleRegistry(db *sql.DB, reserved map[string]bool, releaseActivationHeight uint64) *HandleRegistry {
 	r := &HandleRegistry{
-		path:                    path,
+		db:                      db,
 		reserved:                reserved,
 		releaseActivationHeight: releaseActivationHeight,
 		handles:                 map[string]HandleClaim{},
 	}
-	if data, err := readFileIfExists(path); err == nil && data != nil {
-		var stored map[string]HandleClaim
-		if json.Unmarshal(data, &stored) == nil && stored != nil {
-			r.handles = stored
-		}
-	}
+	_ = r.loadFromDB()
 	return r
+}
+
+func (r *HandleRegistry) loadFromDB() error {
+	rows, err := r.db.Query(`
+		SELECT handle, address, tx_hash, block_height, tx_index, claimed_at
+		FROM handle_claims`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	handles := map[string]HandleClaim{}
+	for rows.Next() {
+		var claim HandleClaim
+		var blockHeight, txIndex int64
+		if err := rows.Scan(&claim.Handle, &claim.Address, &claim.TxHash, &blockHeight, &txIndex, &claim.ClaimedAt); err != nil {
+			return err
+		}
+		claim.BlockHeight = uint64(blockHeight)
+		claim.TxIndex = uint64(txIndex)
+		claim.Address = normalizeAddress(claim.Address)
+		handles[claim.Handle] = claim
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	r.mu.Lock()
+	r.handles = handles
+	r.mu.Unlock()
+	return nil
 }
 
 // Rebuild replaces the registry from the registry address's full inbound tx
@@ -109,15 +132,51 @@ func (r *HandleRegistry) Rebuild(txs []rpcTx) error {
 }
 
 func (r *HandleRegistry) persist(handles map[string]HandleClaim) error {
-	data, err := json.Marshal(handles)
+	tx, err := r.db.Begin()
 	if err != nil {
 		return err
 	}
-	tmp := r.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(`TRUNCATE handle_claims`); err != nil {
 		return err
 	}
-	return os.Rename(tmp, r.path)
+
+	if len(handles) > 0 {
+		stmt, err := tx.Prepare(`
+			INSERT INTO handle_claims (handle, address, tx_hash, block_height, tx_index, claimed_at)
+			VALUES ($1, $2, $3, $4, $5, $6)`)
+		if err != nil {
+			return err
+		}
+		defer stmt.Close()
+
+		for _, claim := range handles {
+			if _, err := stmt.Exec(
+				claim.Handle,
+				compactAddress(claim.Address),
+				claim.TxHash,
+				int64(claim.BlockHeight),
+				int64(claim.TxIndex),
+				claim.ClaimedAt,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// PurgeHandles truncates handle_claims and clears the in-memory map.
+func (r *HandleRegistry) PurgeHandles() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, err := r.db.Exec(`TRUNCATE handle_claims`); err != nil {
+		return err
+	}
+	r.handles = map[string]HandleClaim{}
+	return nil
 }
 
 func (r *HandleRegistry) Resolve(handle string) (HandleClaim, bool) {

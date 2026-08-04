@@ -76,3 +76,8 @@ func newTestInboxStore(t *testing.T) *InboxStore {
 	t.Helper()
 	return NewInboxStore(withTestDB(t))
 }
+
+func newTestHandleRegistry(t *testing.T, reserved map[string]bool, releaseActivationHeight uint64) *HandleRegistry {
+	t.Helper()
+	return NewHandleRegistry(withTestDB(t), reserved, releaseActivationHeight)
+}
