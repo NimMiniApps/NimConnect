@@ -22,23 +22,50 @@ Body:
   "address": "NQ…",
   "publicKey": "<hex>",
   "signature": "<hex>",
-  "timestamp": 1700000000
+  "timestamp": 1700000000,
+  "audience": "yourapp"
 }
 ```
 
+`audience` is a lowercase slug (`^[a-z0-9][a-z0-9_-]{1,31}$`) naming the app
+the session is for. Omit it only for legacy clients — the server then accepts
+the v1 challenge and records `audience=nimconnect`.
+
 Signed message (Nimiq Pay / Hub `signMessage` format):
+
+```text
+nimconnect-session:v2:{compactAddress}:{timestamp}:{audience}
+```
+
+Legacy (empty `audience` only):
 
 ```text
 nimconnect-session:v1:{compactAddress}:{timestamp}
 ```
 
-`timestamp` must be within ±5 minutes of server time.
+`timestamp` must be within ±5 minutes of server time. Each signature mints
+exactly one token (replay within the window returns 401).
 
 **200 OK**
 
 ```json
-{ "token": "<opaque>", "expires_at": 1700086400 }
+{ "token": "<opaque>", "expires_at": 1700086400, "audience": "yourapp" }
 ```
+
+### Verifying the signature yourself
+
+Because the challenge names your app, your backend can verify the same
+signature for its own session and skip a second Hub popup:
+
+1. Rebuild `nimconnect-session:v2:{compact}:{timestamp}:{yourAudience}`
+2. Check address matches, audience is yours, `|now - timestamp| ≤ 5m`
+3. Verify the Ed25519 signature the same way NimConnect does (Nimiq
+   `signMessage` hash)
+4. Issue your own cookie/session — do **not** present a NimConnect token as
+   proof to another app; each audience gets its own token
+
+`userSessionChallenge(address, timestamp, audience)` is exported from
+`@nimconnect/profile-client` for this.
 
 ### `DELETE /api/session`
 
@@ -94,5 +121,5 @@ Accept / decline / remove return **204**.
 
 ## First consumer
 
-**NimBomber** is the first ecosystem app wired to this API (lobby / leaderboard
-Add friend, profile Friends section) via `@nimconnect/profile-client@0.6.0`.
+**NimBomber** / **NimWorld** consume this API via
+`@nimconnect/profile-client` with an app-specific `audience`.

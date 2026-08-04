@@ -51,6 +51,7 @@ function getClient(): ProfileClient {
     client = createProfileClient({
       baseUrl: resolveApiBase(),
       sessionToken: getStoredFriendsSessionToken(),
+      audience: 'nimconnect',
     })
   }
   return client

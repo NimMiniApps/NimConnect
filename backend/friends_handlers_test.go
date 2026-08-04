@@ -60,11 +60,11 @@ func newFriendsTestEnv(t *testing.T) *friendsTestEnv {
 	mux := http.NewServeMux()
 	registerFriendsRoutes(mux, sessions, store, registry, profiles, limiter)
 
-	tokenA, _, err := sessions.Issue(testAddrA)
+	tokenA, _, err := sessions.Issue(testAddrA, defaultAudience)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tokenB, _, err := sessions.Issue(testAddrB)
+	tokenB, _, err := sessions.Issue(testAddrB, defaultAudience)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestFriendsRequestRateLimit(t *testing.T) {
 
 	mux := http.NewServeMux()
 	registerFriendsRoutes(mux, sessions, store, nil, nil, limiter)
-	token, _, _ := sessions.Issue(testAddrA)
+	token, _, _ := sessions.Issue(testAddrA, defaultAudience)
 
 	targets := make([]string, 3)
 	for i := range targets {

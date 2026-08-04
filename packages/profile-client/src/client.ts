@@ -6,7 +6,7 @@ import type {
   SignMessageFn,
   StoredPublicProfile,
 } from './types.js'
-import { userSessionChallenge } from './session.js'
+import { userSessionChallenge, userSessionChallengeV1 } from './session.js'
 
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export function compactAddress(address: string): string {
@@ -38,6 +38,7 @@ export interface ProfileClient {
 
 export function createProfileClient(options: ProfileClientOptions = {}): ProfileClient {
   const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '')
+  const audience = options.audience
   let sessionToken: string | null = options.sessionToken ?? null
 
   async function getProfileByAddress(address: string): Promise<StoredPublicProfile | null> {
@@ -118,17 +119,21 @@ export function createProfileClient(options: ProfileClientOptions = {}): Profile
     signMessage: SignMessageFn
   }): Promise<{ token: string; expiresAt: number }> {
     const timestamp = Math.floor(Date.now() / 1000)
-    const message = userSessionChallenge(args.address, timestamp)
+    const message = audience
+      ? userSessionChallenge(args.address, timestamp, audience)
+      : userSessionChallengeV1(args.address, timestamp)
     const { publicKey, signature } = await args.signMessage(message)
+    const payload: Record<string, string | number> = {
+      address: args.address,
+      publicKey,
+      signature,
+      timestamp,
+    }
+    if (audience) payload.audience = audience
     const res = await fetch(`${baseUrl}/api/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        address: args.address,
-        publicKey,
-        signature,
-        timestamp,
-      }),
+      body: JSON.stringify(payload),
     })
     if (!res.ok) throw new Error(`session create failed: ${res.status}`)
     const body = await res.json()
