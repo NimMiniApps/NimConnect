@@ -14,22 +14,70 @@ import { getDesktopHubAddress } from '../services/desktop-session'
 import { shortAddress, transactionExplorerUrl } from '../services/links'
 
 type ViewState = 'connect' | 'loading' | 'loaded' | 'error'
+type SortKey = 'handle' | 'owner' | 'claimed' | 'transaction'
+type SortDir = 'asc' | 'desc'
 
 const state = ref<ViewState>('connect')
 const summary = ref<StatsSummary | null>(null)
 const handles = ref<AdminHandle[]>([])
 const handleQuery = ref('')
+const sortKey = ref<SortKey>('claimed')
+const sortDir = ref<SortDir>('desc')
+const sortColumns = [
+  { key: 'handle', label: 'Handle' },
+  { key: 'owner', label: 'Owner' },
+  { key: 'claimed', label: 'Claimed' },
+  { key: 'transaction', label: 'Transaction' },
+] as const
 const connectLabel = computed(() =>
   getDesktopHubAddress() ? 'Sign to view stats' : 'Connect wallet',
 )
+
+function defaultDirFor(key: SortKey): SortDir {
+  return key === 'claimed' || key === 'transaction' ? 'desc' : 'asc'
+}
+
+function setSort(key: SortKey) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+    return
+  }
+  sortKey.value = key
+  sortDir.value = defaultDirFor(key)
+}
+
+function compareHandles(a: AdminHandle, b: AdminHandle): number {
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  if (sortKey.value === 'claimed') {
+    const aUnknown = a.claimed_at <= 0
+    const bUnknown = b.claimed_at <= 0
+    if (aUnknown && bUnknown) return a.handle.localeCompare(b.handle)
+    if (aUnknown) return 1
+    if (bUnknown) return -1
+    return (a.claimed_at - b.claimed_at) * dir
+  }
+  const field =
+    sortKey.value === 'handle' ? a.handle
+    : sortKey.value === 'owner' ? a.address
+    : a.tx_hash
+  const other =
+    sortKey.value === 'handle' ? b.handle
+    : sortKey.value === 'owner' ? b.address
+    : b.tx_hash
+  return field.localeCompare(other, undefined, { sensitivity: 'base' }) * dir
+}
+
 const filteredHandles = computed(() => {
   const query = handleQuery.value.trim().toLowerCase()
-  if (!query) return handles.value
   const compactQuery = query.replace(/\s+/g, '')
-  return handles.value.filter(claim =>
-    claim.handle.toLowerCase().includes(query)
-    || claim.address.toLowerCase().replace(/\s+/g, '').includes(compactQuery),
-  )
+  let rows = handles.value
+  if (query) {
+    rows = rows.filter(claim =>
+      claim.handle.toLowerCase().includes(query)
+      || claim.address.toLowerCase().replace(/\s+/g, '').includes(compactQuery),
+    )
+  }
+  return [...rows].sort(compareHandles)
 })
 
 function publicProfileUrl(handle: string): string {
@@ -159,7 +207,25 @@ onMounted(() => {
         <div v-else class="directory-table-wrap">
           <table class="stats-table directory-table">
             <thead>
-              <tr><th>Handle</th><th>Owner</th><th>Claimed</th><th>Transaction</th></tr>
+              <tr>
+                <th
+                  v-for="col in sortColumns"
+                  :key="col.key"
+                  :aria-sort="sortKey === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'"
+                >
+                  <button
+                    type="button"
+                    class="sort-button"
+                    :data-sort="col.key"
+                    @click="setSort(col.key)"
+                  >
+                    {{ col.label }}
+                    <span v-if="sortKey === col.key" class="sort-indicator" aria-hidden="true">
+                      {{ sortDir === 'asc' ? '↑' : '↓' }}
+                    </span>
+                  </button>
+                </th>
+              </tr>
             </thead>
             <tbody>
               <tr v-for="claim in filteredHandles" :key="claim.handle" data-handle-row>
@@ -221,6 +287,26 @@ onMounted(() => {
 .directory-table { min-width: 620px; }
 .directory-table a { color: var(--primary); font-weight: 600; text-decoration: none; }
 .directory-table a:hover { text-decoration: underline; }
+.sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.sort-button:hover { color: var(--text); }
+.sort-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.sort-indicator { font-size: 11px; opacity: 0.85; }
 @media (max-width: 560px) {
   .directory-heading { align-items: stretch; flex-direction: column; }
   .directory-search { width: 100%; }

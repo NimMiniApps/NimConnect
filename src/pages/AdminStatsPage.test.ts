@@ -44,10 +44,22 @@ const handles = [
     claimed_at: Date.UTC(2026, 6, 21),
   },
   {
+    handle: 'bob',
+    address: 'NQ33 BOB WALLET',
+    tx_hash: 'bob-tx',
+    claimed_at: 0,
+  },
+  {
     handle: 'chuck',
     address: 'NQ22 CHUCK WALLET',
     tx_hash: 'chuck-tx',
     claimed_at: Date.UTC(2026, 6, 22),
+  },
+  {
+    handle: 'alicia',
+    address: 'NQ44 ALICIA WALLET',
+    tx_hash: 'alicia-tx',
+    claimed_at: Date.UTC(2026, 6, 23),
   },
 ]
 
@@ -101,17 +113,85 @@ describe('AdminStatsPage', () => {
     await wrapper.vm.$nextTick()
     expect(dailyTable.text()).toContain('2026-07-22')
     expect(dailyTable.text()).toContain('25')
-    expect(wrapper.text()).toContain('Current handles (2)')
-    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
-      expect.stringContaining('@alice'),
-      expect.stringContaining('@chuck'),
-    ])
+    expect(wrapper.text()).toContain('Current handles (4)')
+    expect(wrapper.findAll('[data-handle-row]')).toHaveLength(4)
     expect(wrapper.get('[data-handle-profile="alice"]').attributes('href')).toBe('/#/u/alice')
+    expect(wrapper.get('[data-handle-profile="bob"]').text()).toBe('@bob')
+    expect(wrapper.get('[data-handle-profile="chuck"]').text()).toBe('@chuck')
+    expect(wrapper.get('[data-handle-profile="alicia"]').text()).toBe('@alicia')
     expect(wrapper.get('[data-handle-tx="alice"]').attributes('href')).toBe(
       'https://nimiqscan.com/transaction/alice-tx',
     )
     expect(wrapper.get('[data-handle-address="alice"]').attributes('title')).toBe('NQ11 ALICE WALLET')
     expect(wrapper.get('[data-handle-tx="alice"]').attributes('title')).toBe('alice-tx')
+  })
+
+  it('defaults current handles to claimed newest-first with unknown last', async () => {
+    mocks.getSessionToken.mockReturnValue('tok')
+    mocks.fetchStats.mockResolvedValue(summary)
+    mocks.fetchAdminHandles.mockResolvedValue(handles)
+    const wrapper = mount(AdminStatsPage)
+    await flushPromises()
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@alicia'),
+      expect.stringContaining('@chuck'),
+      expect.stringContaining('@alice'),
+      expect.stringContaining('@bob'),
+    ])
+  })
+
+  it('toggles claimed sort and sorts by handle', async () => {
+    mocks.getSessionToken.mockReturnValue('tok')
+    mocks.fetchStats.mockResolvedValue(summary)
+    mocks.fetchAdminHandles.mockResolvedValue(handles)
+    const wrapper = mount(AdminStatsPage)
+    await flushPromises()
+
+    await wrapper.get('[data-sort="claimed"]').trigger('click')
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@alice'),
+      expect.stringContaining('@chuck'),
+      expect.stringContaining('@alicia'),
+      expect.stringContaining('@bob'),
+    ])
+
+    await wrapper.get('[data-sort="handle"]').trigger('click')
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@alice'),
+      expect.stringContaining('@alicia'),
+      expect.stringContaining('@bob'),
+      expect.stringContaining('@chuck'),
+    ])
+
+    await wrapper.get('[data-sort="handle"]').trigger('click')
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@chuck'),
+      expect.stringContaining('@bob'),
+      expect.stringContaining('@alicia'),
+      expect.stringContaining('@alice'),
+    ])
+  })
+
+  it('applies search before sort', async () => {
+    mocks.getSessionToken.mockReturnValue('tok')
+    mocks.fetchStats.mockResolvedValue(summary)
+    mocks.fetchAdminHandles.mockResolvedValue(handles)
+    const wrapper = mount(AdminStatsPage)
+    await flushPromises()
+
+    await wrapper.get('[data-sort="handle"]').trigger('click')
+    await wrapper.get('[data-handle-search]').setValue('ali')
+    expect(wrapper.findAll('[data-handle-row]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@alice'),
+      expect.stringContaining('@alicia'),
+    ])
+
+    await wrapper.get('[data-sort="handle"]').trigger('click')
+    expect(wrapper.findAll('[data-handle-row]').map(row => row.text())).toEqual([
+      expect.stringContaining('@alicia'),
+      expect.stringContaining('@alice'),
+    ])
   })
 
   it('filters current handles by handle or compact wallet address', async () => {
