@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -314,14 +315,17 @@ func (s *MarketplaceStore) ExpireStaleReservations(now int64) (int, error) {
 	for _, id := range stale {
 		tx, err := s.db.Begin()
 		if err != nil {
-			return expired, err
+			log.Printf("marketplace: expire stale reservation %q: begin tx: %v", id, err)
+			continue
 		}
 		if err := s.releaseUnpaidReservationTx(tx, id, StateExpired); err != nil {
 			tx.Rollback()
-			return expired, err
+			log.Printf("marketplace: expire stale reservation %q: %v", id, err)
+			continue
 		}
 		if err := tx.Commit(); err != nil {
-			return expired, err
+			log.Printf("marketplace: expire stale reservation %q: commit: %v", id, err)
+			continue
 		}
 		expired++
 	}
