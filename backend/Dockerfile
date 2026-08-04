@@ -3,6 +3,7 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY *.go ./
+COPY migrations/ ./migrations/
 ARG COMMIT_HASH="dev"
 ARG BUILD_TIME="unknown"
 RUN go build -ldflags "-X main.CommitHash=${COMMIT_HASH} -X main.BuildTime=${BUILD_TIME}" -o nimconnect-backend .

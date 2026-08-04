@@ -1,11 +1,7 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
-	"fmt"
-	"os"
-	"sync"
+	"database/sql"
 	"time"
 )
 
@@ -30,81 +26,38 @@ type LedgerEntry struct {
 	Timestamp  int64           `json:"timestamp"`
 }
 
-// EscrowLedger is an append-only JSONL ledger. Corrections are represented by
-// new compensating entries, never changes to existing rows.
+// EscrowLedger is an append-only Postgres ledger. Corrections are represented
+// by new compensating entries, never changes to existing rows.
 type EscrowLedger struct {
-	mu      sync.Mutex
-	file    *os.File
-	nextSeq uint64
-	balance int64
+	db *sql.DB
 }
 
-func OpenEscrowLedger(path string) (*EscrowLedger, error) {
-	l := &EscrowLedger{nextSeq: 1}
-
-	if existing, err := os.Open(path); err == nil {
-		scanner := bufio.NewScanner(existing)
-		for scanner.Scan() {
-			var entry LedgerEntry
-			if err := json.Unmarshal(scanner.Bytes(), &entry); err != nil {
-				existing.Close()
-				return nil, fmt.Errorf("decode escrow ledger: %w", err)
-			}
-			l.balance += entry.AmountLuna
-			if entry.Sequence >= l.nextSeq {
-				l.nextSeq = entry.Sequence + 1
-			}
-		}
-		if err := scanner.Err(); err != nil {
-			existing.Close()
-			return nil, fmt.Errorf("read escrow ledger: %w", err)
-		}
-		if err := existing.Close(); err != nil {
-			return nil, err
-		}
-	} else if !os.IsNotExist(err) {
-		return nil, err
-	}
-
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return nil, err
-	}
-	l.file = file
-	return l, nil
+func OpenEscrowLedger(db *sql.DB) (*EscrowLedger, error) {
+	return &EscrowLedger{db: db}, nil
 }
 
 func (l *EscrowLedger) Append(entry LedgerEntry) (LedgerEntry, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	entry.Sequence = l.nextSeq
 	if entry.Timestamp == 0 {
 		entry.Timestamp = time.Now().Unix()
 	}
-	line, err := json.Marshal(entry)
+	err := l.db.QueryRow(`
+		INSERT INTO escrow_ledger (trade_id, type, amount_luna, tx_hash, timestamp)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING sequence`,
+		entry.TradeID, string(entry.Type), entry.AmountLuna, entry.TxHash, entry.Timestamp,
+	).Scan(&entry.Sequence)
 	if err != nil {
 		return LedgerEntry{}, err
 	}
-	if _, err := l.file.Write(append(line, '\n')); err != nil {
-		return LedgerEntry{}, err
-	}
-	if err := l.file.Sync(); err != nil {
-		return LedgerEntry{}, err
-	}
-	l.nextSeq++
-	l.balance += entry.AmountLuna
 	return entry, nil
 }
 
 func (l *EscrowLedger) Balance() int64 {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.balance
+	var balance int64
+	_ = l.db.QueryRow(`SELECT COALESCE(SUM(amount_luna), 0) FROM escrow_ledger`).Scan(&balance)
+	return balance
 }
 
 func (l *EscrowLedger) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.file.Close()
+	return nil
 }

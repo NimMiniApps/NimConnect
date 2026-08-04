@@ -4,18 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 )
-
-func newTestEscrowLedger(t *testing.T) *EscrowLedger {
-	t.Helper()
-	ledger, err := OpenEscrowLedger(filepath.Join(t.TempDir(), "ledger.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return ledger
-}
 
 func adminToken(t *testing.T) (*AdminSessions, string) {
 	t.Helper()
@@ -28,9 +18,8 @@ func adminToken(t *testing.T) (*AdminSessions, string) {
 }
 
 func TestAdminMarketplaceHandler_RequiresSession(t *testing.T) {
-	store, _ := newTestMarketplaceHandlerDeps(t)
+	store, ledger := newTestMarketplaceAndLedger(t)
 	sessions, _ := adminToken(t)
-	ledger := newTestEscrowLedger(t)
 	srv := fakeRPC(t, map[string]string{"getAccountByAddress": `{"balance":0}`})
 	defer srv.Close()
 	rpc := NewNimiqRPC(srv.Client(), srv.URL)
@@ -44,9 +33,8 @@ func TestAdminMarketplaceHandler_RequiresSession(t *testing.T) {
 }
 
 func TestAdminMarketplaceHandler_ReportsCountsStuckAndBalances(t *testing.T) {
-	store, _ := newTestMarketplaceHandlerDeps(t)
+	store, ledger := newTestMarketplaceAndLedger(t)
 	sessions, token := adminToken(t)
-	ledger := newTestEscrowLedger(t)
 	if _, err := ledger.Append(LedgerEntry{TradeID: "t1", Type: LedgerPayout, AmountLuna: -900, TxHash: "p1"}); err != nil {
 		t.Fatal(err)
 	}
@@ -148,9 +136,8 @@ func TestAdminMarketplaceHandler_ReportsCountsStuckAndBalances(t *testing.T) {
 }
 
 func TestAdminMarketplaceHandler_ReportsChainBalanceErrorWithoutFailingTheRequest(t *testing.T) {
-	store, _ := newTestMarketplaceHandlerDeps(t)
+	store, ledger := newTestMarketplaceAndLedger(t)
 	sessions, token := adminToken(t)
-	ledger := newTestEscrowLedger(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "upstream unavailable", http.StatusBadGateway)
 	}))

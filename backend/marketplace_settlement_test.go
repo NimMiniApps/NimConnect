@@ -1,17 +1,12 @@
 package main
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func settlementFixture(t *testing.T) (*MarketplaceStore, *EscrowLedger, *fakeSigner, *SettlementWorker, MarketplaceTrade) {
 	t.Helper()
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
-	ledger, err := OpenEscrowLedger(filepath.Join(t.TempDir(), "ledger.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, ledger := newTestMarketplaceAndLedger(t)
 	signer := newFakeSigner()
 	worker := NewSettlementWorker(store, ledger, signer, "NQ99 ESCROW")
 	t.Cleanup(func() { ledger.Close() })
@@ -104,11 +99,7 @@ func TestSettle_MarksAttemptedBeforeCallingSigner(t *testing.T) {
 
 func refundFixture(t *testing.T) (*MarketplaceStore, *EscrowLedger, *fakeSigner, *SettlementWorker, MarketplaceTrade) {
 	t.Helper()
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
-	ledger, err := OpenEscrowLedger(filepath.Join(t.TempDir(), "ledger.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	store, ledger := newTestMarketplaceAndLedger(t)
 	signer := newFakeSigner()
 	worker := NewSettlementWorker(store, ledger, signer, "NQ99 ESCROW")
 	t.Cleanup(func() { ledger.Close() })

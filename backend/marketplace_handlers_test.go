@@ -15,7 +15,7 @@ import (
 
 func newTestMarketplaceHandlerDeps(t *testing.T) (*MarketplaceStore, *HandleRegistry) {
 	t.Helper()
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store := newTestMarketplaceStore(t)
 	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
 	return store, registry
 }
@@ -74,9 +74,9 @@ func TestMarketplaceListingCreateHandler_AcceptsCurrentOwner(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	listing, ok := store.listings["chuck"]
-	if !ok || listing.Status != "active" {
-		t.Fatalf("expected an active listing to be created: %+v ok=%v", listing, ok)
+	active := store.ActiveListings()
+	if len(active) != 1 || active[0].Handle != "chuck" || active[0].Status != "active" {
+		t.Fatalf("expected an active listing to be created: %+v", active)
 	}
 }
 

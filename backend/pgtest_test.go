@@ -35,3 +35,29 @@ func withTestDB(t *testing.T) *sql.DB {
 	}
 	return db
 }
+
+func newTestMarketplaceStore(t *testing.T) *MarketplaceStore {
+	t.Helper()
+	return NewMarketplaceStore(withTestDB(t))
+}
+
+func newTestEscrowLedger(t *testing.T) *EscrowLedger {
+	t.Helper()
+	db := withTestDB(t)
+	ledger, err := OpenEscrowLedger(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ledger
+}
+
+func newTestMarketplaceAndLedger(t *testing.T) (*MarketplaceStore, *EscrowLedger) {
+	t.Helper()
+	db := withTestDB(t)
+	store := NewMarketplaceStore(db)
+	ledger, err := OpenEscrowLedger(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return store, ledger
+}

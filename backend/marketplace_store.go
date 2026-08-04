@@ -1,138 +1,209 @@
 package main
 
 import (
-	"encoding/json"
+	"database/sql"
+	"errors"
 	"fmt"
-	"os"
-	"sync"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// MarketplaceStore is a mutex-guarded in-memory listings/trades table
-// persisted to one JSON file.
+// MarketplaceStore persists listings, trades, and consumed nonces in Postgres.
 type MarketplaceStore struct {
-	path string
-	mu   sync.Mutex
-
-	listings map[string]MarketplaceListing
-	trades   map[string]MarketplaceTrade
-	byRef    map[string]string
-	nonces   map[string]bool
+	db *sql.DB
 }
 
-type marketplaceSnapshot struct {
-	Listings map[string]MarketplaceListing `json:"listings"`
-	Trades   map[string]MarketplaceTrade   `json:"trades"`
-	Nonces   map[string]bool               `json:"nonces"`
+func NewMarketplaceStore(db *sql.DB) *MarketplaceStore {
+	return &MarketplaceStore{db: db}
 }
 
-func NewMarketplaceStore(path string) *MarketplaceStore {
-	s := &MarketplaceStore{
-		path:     path,
-		listings: map[string]MarketplaceListing{},
-		trades:   map[string]MarketplaceTrade{},
-		byRef:    map[string]string{},
-		nonces:   map[string]bool{},
-	}
-	if data, err := readFileIfExists(path); err == nil && data != nil {
-		var snapshot marketplaceSnapshot
-		if json.Unmarshal(data, &snapshot) == nil {
-			if snapshot.Listings != nil {
-				s.listings = snapshot.Listings
-			}
-			if snapshot.Trades != nil {
-				s.trades = snapshot.Trades
-				for id, trade := range snapshot.Trades {
-					s.byRef[trade.Reference] = id
-				}
-			}
-			if snapshot.Nonces != nil {
-				s.nonces = snapshot.Nonces
-			}
-		}
-	}
-	return s
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
 
-func (s *MarketplaceStore) persistLocked() error {
-	data, err := json.Marshal(marketplaceSnapshot{Listings: s.listings, Trades: s.trades, Nonces: s.nonces})
+const tradeSelectCols = `id, reference, handle, buyer, seller, price_luna, fee_luna,
+	escrow_address, state, version, deposit_tx_hash, deposit_block_height,
+	release_tx_hash, claim_tx_hash, payout_attempted_at, payout_tx_hash,
+	refund_attempted_at, refund_tx_hash, deposit_deadline, created_at, updated_at`
+
+func scanTrade(row interface{ Scan(...any) error }) (MarketplaceTrade, error) {
+	var t MarketplaceTrade
+	var state string
+	err := row.Scan(
+		&t.ID, &t.Reference, &t.Handle, &t.Buyer, &t.Seller,
+		&t.PriceLuna, &t.FeeLuna, &t.EscrowAddress, &state, &t.Version,
+		&t.DepositTxHash, &t.DepositBlockHeight, &t.ReleaseTxHash, &t.ClaimTxHash,
+		&t.PayoutAttemptedAt, &t.PayoutTxHash, &t.RefundAttemptedAt, &t.RefundTxHash,
+		&t.DepositDeadline, &t.CreatedAt, &t.UpdatedAt,
+	)
 	if err != nil {
-		return err
+		return MarketplaceTrade{}, err
 	}
-	tmp := s.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o600); err != nil {
-		return err
+	t.State = TradeState(state)
+	return t, nil
+}
+
+func scanListing(row interface{ Scan(...any) error }) (MarketplaceListing, error) {
+	var l MarketplaceListing
+	err := row.Scan(
+		&l.Handle, &l.Seller, &l.PriceLuna, &l.FeeLuna, &l.Status,
+		&l.OwnershipEpochTxHash, &l.CreatedAt,
+	)
+	return l, err
+}
+
+func (s *MarketplaceStore) getTradeTx(tx *sql.Tx, tradeID string, forUpdate bool) (MarketplaceTrade, error) {
+	q := `SELECT ` + tradeSelectCols + ` FROM marketplace_trades WHERE id = $1`
+	if forUpdate {
+		q += ` FOR UPDATE`
 	}
-	return os.Rename(tmp, s.path)
+	return scanTrade(tx.QueryRow(q, tradeID))
+}
+
+func (s *MarketplaceStore) writeTradeTx(tx *sql.Tx, trade MarketplaceTrade) error {
+	_, err := tx.Exec(`
+		UPDATE marketplace_trades SET
+			reference = $2, handle = $3, buyer = $4, seller = $5,
+			price_luna = $6, fee_luna = $7, escrow_address = $8, state = $9,
+			version = $10, deposit_tx_hash = $11, deposit_block_height = $12,
+			release_tx_hash = $13, claim_tx_hash = $14, payout_attempted_at = $15,
+			payout_tx_hash = $16, refund_attempted_at = $17, refund_tx_hash = $18,
+			deposit_deadline = $19, updated_at = $20
+		WHERE id = $1`,
+		trade.ID, trade.Reference, trade.Handle, trade.Buyer, trade.Seller,
+		trade.PriceLuna, trade.FeeLuna, trade.EscrowAddress, string(trade.State),
+		trade.Version, trade.DepositTxHash, trade.DepositBlockHeight,
+		trade.ReleaseTxHash, trade.ClaimTxHash, trade.PayoutAttemptedAt,
+		trade.PayoutTxHash, trade.RefundAttemptedAt, trade.RefundTxHash,
+		trade.DepositDeadline, trade.UpdatedAt,
+	)
+	return err
 }
 
 // ConsumeNonce records a nonce as used, failing if it was already consumed.
-// Listing and purchase intents each carry one — this is what makes a
-// captured, replayed signed intent inert after its first use.
 func (s *MarketplaceStore) ConsumeNonce(nonce string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.nonces[nonce] {
-		return fmt.Errorf("nonce %q already used", nonce)
-	}
-	s.nonces[nonce] = true
-	if err := s.persistLocked(); err != nil {
-		delete(s.nonces, nonce)
+	_, err := s.db.Exec(`INSERT INTO marketplace_nonces (nonce) VALUES ($1)`, nonce)
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("nonce %q already used", nonce)
+		}
 		return err
 	}
 	return nil
 }
 
 func (s *MarketplaceStore) CreateListing(handle, seller string, priceLuna, feeLuna uint64, ownershipEpochTxHash string) (MarketplaceListing, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return MarketplaceListing{}, err
+	}
+	defer tx.Rollback()
 
-	if existing, ok := s.listings[handle]; ok && existing.Status == "active" {
+	var status sql.NullString
+	err = tx.QueryRow(`SELECT status FROM marketplace_listings WHERE handle = $1 FOR UPDATE`, handle).Scan(&status)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		createdAt := time.Now().Unix()
+		listing := MarketplaceListing{
+			Handle: handle, Seller: seller, PriceLuna: priceLuna, FeeLuna: feeLuna,
+			Status: "active", OwnershipEpochTxHash: ownershipEpochTxHash, CreatedAt: createdAt,
+		}
+		_, err = tx.Exec(`
+			INSERT INTO marketplace_listings (handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at)
+			VALUES ($1, $2, $3, $4, 'active', $5, $6)`,
+			handle, seller, priceLuna, feeLuna, ownershipEpochTxHash, createdAt,
+		)
+		if err != nil {
+			if isUniqueViolation(err) {
+				return MarketplaceListing{}, fmt.Errorf("an active listing for %q already exists", handle)
+			}
+			return MarketplaceListing{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return MarketplaceListing{}, err
+		}
+		return listing, nil
+	case err != nil:
+		return MarketplaceListing{}, err
+	case status.String == "active":
 		return MarketplaceListing{}, fmt.Errorf("an active listing for %q already exists", handle)
 	}
-	previous, hadPrevious := s.listings[handle]
+
+	createdAt := time.Now().Unix()
 	listing := MarketplaceListing{
 		Handle: handle, Seller: seller, PriceLuna: priceLuna, FeeLuna: feeLuna,
-		Status: "active", OwnershipEpochTxHash: ownershipEpochTxHash, CreatedAt: time.Now().Unix(),
+		Status: "active", OwnershipEpochTxHash: ownershipEpochTxHash, CreatedAt: createdAt,
 	}
-	s.listings[handle] = listing
-	if err := s.persistLocked(); err != nil {
-		if hadPrevious {
-			s.listings[handle] = previous
-		} else {
-			delete(s.listings, handle)
-		}
+	_, err = tx.Exec(`
+		UPDATE marketplace_listings SET seller = $2, price_luna = $3, fee_luna = $4,
+			status = 'active', ownership_epoch_tx_hash = $5, created_at = $6
+		WHERE handle = $1`,
+		handle, seller, priceLuna, feeLuna, ownershipEpochTxHash, createdAt,
+	)
+	if err != nil {
+		return MarketplaceListing{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return MarketplaceListing{}, err
 	}
 	return listing, nil
 }
 
-func (s *MarketplaceStore) unpaidReservationCountLocked(buyer string) int {
+func (s *MarketplaceStore) unpaidReservationCountTx(tx *sql.Tx, buyer string) (int, error) {
 	compact := compactAddress(buyer)
-	n := 0
-	for _, trade := range s.trades {
-		if compactAddress(trade.Buyer) == compact && trade.isUnpaidReservation() {
-			n++
-		}
-	}
-	return n
+	var n int
+	err := tx.QueryRow(`
+		SELECT COUNT(*) FROM marketplace_trades
+		WHERE UPPER(REPLACE(buyer, ' ', '')) = $1
+		  AND state IN ('RESERVED', 'AWAITING_DEPOSIT')
+		  AND deposit_tx_hash = ''`,
+		compact,
+	).Scan(&n)
+	return n, err
 }
 
 func (s *MarketplaceStore) ReserveListing(handle, tradeID, reference, buyer string) (MarketplaceTrade, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	defer tx.Rollback()
 
-	listing, ok := s.listings[handle]
-	if !ok || listing.Status != "active" {
+	listing, err := scanListing(tx.QueryRow(`
+		SELECT handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at
+		FROM marketplace_listings WHERE handle = $1 FOR UPDATE`, handle,
+	))
+	if errors.Is(err, sql.ErrNoRows) {
 		return MarketplaceTrade{}, fmt.Errorf("no active listing for %q", handle)
 	}
-	if _, taken := s.trades[tradeID]; taken {
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if listing.Status != "active" {
+		return MarketplaceTrade{}, fmt.Errorf("no active listing for %q", handle)
+	}
+
+	var exists bool
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM marketplace_trades WHERE id = $1)`, tradeID).Scan(&exists); err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if exists {
 		return MarketplaceTrade{}, fmt.Errorf("trade ID %q already in use", tradeID)
 	}
-	if _, taken := s.byRef[reference]; taken {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM marketplace_trades WHERE reference = $1)`, reference).Scan(&exists); err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if exists {
 		return MarketplaceTrade{}, fmt.Errorf("reference %q already in use", reference)
 	}
-	if s.unpaidReservationCountLocked(buyer) >= maxUnpaidReservations {
+
+	unpaid, err := s.unpaidReservationCountTx(tx, buyer)
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if unpaid >= maxUnpaidReservations {
 		return MarketplaceTrade{}, fmt.Errorf("buyer has too many unpaid reservations")
 	}
 
@@ -143,26 +214,36 @@ func (s *MarketplaceStore) ReserveListing(handle, tradeID, reference, buyer stri
 		DepositDeadline: now + depositDeadlineDuration,
 		CreatedAt:       now, UpdatedAt: now,
 	}
-	listing.Status = "reserved"
-	previousListing := s.listings[handle]
-	s.listings[handle] = listing
-	s.trades[tradeID] = trade
-	s.byRef[reference] = tradeID
-	if err := s.persistLocked(); err != nil {
-		s.listings[handle] = previousListing
-		delete(s.trades, tradeID)
-		delete(s.byRef, reference)
+
+	_, err = tx.Exec(`UPDATE marketplace_listings SET status = 'reserved' WHERE handle = $1`, handle)
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	_, err = tx.Exec(`
+		INSERT INTO marketplace_trades (
+			id, reference, handle, buyer, seller, price_luna, fee_luna, state, version,
+			deposit_deadline, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 1, $9, $10, $10)`,
+		trade.ID, trade.Reference, trade.Handle, trade.Buyer, trade.Seller,
+		trade.PriceLuna, trade.FeeLuna, string(trade.State),
+		trade.DepositDeadline, now,
+	)
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return MarketplaceTrade{}, err
 	}
 	return trade, nil
 }
 
-// releaseUnpaidReservationLocked ends an unpaid reservation and restores the
-// listing to active. Caller holds s.mu.
-func (s *MarketplaceStore) releaseUnpaidReservationLocked(tradeID string, to TradeState) error {
-	trade, ok := s.trades[tradeID]
-	if !ok {
-		return fmt.Errorf("no trade %q", tradeID)
+func (s *MarketplaceStore) releaseUnpaidReservationTx(tx *sql.Tx, tradeID string, to TradeState) error {
+	trade, err := s.getTradeTx(tx, tradeID, true)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no trade %q", tradeID)
+		}
+		return err
 	}
 	if !trade.isUnpaidReservation() {
 		return fmt.Errorf("trade %q is not an unpaid reservation", tradeID)
@@ -170,52 +251,76 @@ func (s *MarketplaceStore) releaseUnpaidReservationLocked(tradeID string, to Tra
 	if !trade.State.canTransitionTo(to) {
 		return fmt.Errorf("transition %s -> %s is not allowed", trade.State, to)
 	}
-	listing, ok := s.listings[trade.Handle]
-	if !ok {
+
+	var listingStatus sql.NullString
+	err = tx.QueryRow(`SELECT status FROM marketplace_listings WHERE handle = $1 FOR UPDATE`, trade.Handle).Scan(&listingStatus)
+	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no listing for handle %q", trade.Handle)
 	}
-	previousTrade := trade
-	previousListing := listing
-	trade.State = to
-	trade.Version++
-	trade.UpdatedAt = time.Now().Unix()
-	listing.Status = "active"
-	s.trades[tradeID] = trade
-	s.listings[trade.Handle] = listing
-	if err := s.persistLocked(); err != nil {
-		s.trades[tradeID] = previousTrade
-		s.listings[trade.Handle] = previousListing
+	if err != nil {
 		return err
 	}
-	return nil
+
+	now := time.Now().Unix()
+	trade.State = to
+	trade.Version++
+	trade.UpdatedAt = now
+	if err := s.writeTradeTx(tx, trade); err != nil {
+		return err
+	}
+	_, err = tx.Exec(`UPDATE marketplace_listings SET status = 'active' WHERE handle = $1`, trade.Handle)
+	return err
 }
 
-// CancelUnpaidReservation lets buyer or seller free a listing before deposit (SEC-005).
 func (s *MarketplaceStore) CancelUnpaidReservation(tradeID string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.releaseUnpaidReservationLocked(tradeID, StateCanceled)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := s.releaseUnpaidReservationTx(tx, tradeID, StateCanceled); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
-// ExpireStaleReservations moves unpaid reservations past their deposit
-// deadline to EXPIRED and restores listings to active (SEC-005).
 func (s *MarketplaceStore) ExpireStaleReservations(now int64) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	stale := make([]string, 0)
-	for id, trade := range s.trades {
-		if !trade.isUnpaidReservation() {
-			continue
-		}
-		if trade.DepositDeadline == 0 || now < trade.DepositDeadline {
-			continue
+	rows, err := s.db.Query(`
+		SELECT id FROM marketplace_trades
+		WHERE state IN ('RESERVED', 'AWAITING_DEPOSIT')
+		  AND deposit_tx_hash = ''
+		  AND deposit_deadline > 0
+		  AND deposit_deadline <= $1`, now)
+	if err != nil {
+		return 0, err
+	}
+	var stale []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
 		}
 		stale = append(stale, id)
 	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
 	expired := 0
 	for _, id := range stale {
-		if err := s.releaseUnpaidReservationLocked(id, StateExpired); err != nil {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return expired, err
+		}
+		if err := s.releaseUnpaidReservationTx(tx, id, StateExpired); err != nil {
+			tx.Rollback()
+			return expired, err
+		}
+		if err := tx.Commit(); err != nil {
 			return expired, err
 		}
 		expired++
@@ -224,12 +329,18 @@ func (s *MarketplaceStore) ExpireStaleReservations(now int64) (int, error) {
 }
 
 func (s *MarketplaceStore) Transition(tradeID string, from, to TradeState, mutate func(*MarketplaceTrade)) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
 
-	trade, ok := s.trades[tradeID]
-	if !ok {
-		return fmt.Errorf("no trade %q", tradeID)
+	trade, err := s.getTradeTx(tx, tradeID, true)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no trade %q", tradeID)
+		}
+		return err
 	}
 	if trade.State != from {
 		return fmt.Errorf("trade %q is in state %s, expected %s", tradeID, trade.State, from)
@@ -243,104 +354,111 @@ func (s *MarketplaceStore) Transition(tradeID string, from, to TradeState, mutat
 	trade.State = to
 	trade.Version++
 	trade.UpdatedAt = time.Now().Unix()
-	previous := s.trades[tradeID]
-	s.trades[tradeID] = trade
-	if err := s.persistLocked(); err != nil {
-		s.trades[tradeID] = previous
+	if err := s.writeTradeTx(tx, trade); err != nil {
 		return err
 	}
-	return nil
+	return tx.Commit()
 }
 
 func (s *MarketplaceStore) Resolve(tradeID string) (MarketplaceTrade, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	trade, ok := s.trades[tradeID]
-	return trade, ok
+	trade, err := scanTrade(s.db.QueryRow(`SELECT `+tradeSelectCols+` FROM marketplace_trades WHERE id = $1`, tradeID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return MarketplaceTrade{}, false
+	}
+	if err != nil {
+		return MarketplaceTrade{}, false
+	}
+	return trade, true
 }
 
 func (s *MarketplaceStore) FindTradeByReference(reference string) (MarketplaceTrade, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	tradeID, ok := s.byRef[reference]
-	if !ok {
+	trade, err := scanTrade(s.db.QueryRow(`SELECT `+tradeSelectCols+` FROM marketplace_trades WHERE reference = $1`, reference))
+	if errors.Is(err, sql.ErrNoRows) {
 		return MarketplaceTrade{}, false
 	}
-	trade, ok := s.trades[tradeID]
-	return trade, ok
+	if err != nil {
+		return MarketplaceTrade{}, false
+	}
+	return trade, true
 }
 
-// ActiveListings returns every currently active listing. No pagination —
-// fine at expected marketplace volume; add it if that stops being true.
 func (s *MarketplaceStore) ActiveListings() []MarketplaceListing {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	rows, err := s.db.Query(`
+		SELECT handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at
+		FROM marketplace_listings WHERE status = 'active'`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+
 	active := make([]MarketplaceListing, 0)
-	for _, listing := range s.listings {
-		if listing.Status == "active" {
-			active = append(active, listing)
+	for rows.Next() {
+		listing, err := scanListing(rows)
+		if err != nil {
+			return active
 		}
+		active = append(active, listing)
 	}
 	return active
 }
 
-// TradesInState returns copies of trades in state for workers that process a
-// persisted lifecycle stage independently from incoming transactions.
 func (s *MarketplaceStore) TradesInState(state TradeState) []MarketplaceTrade {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	trades := make([]MarketplaceTrade, 0)
-	for _, trade := range s.trades {
-		if trade.State == state {
-			trades = append(trades, trade)
-		}
+	rows, err := s.db.Query(`SELECT `+tradeSelectCols+` FROM marketplace_trades WHERE state = $1`, string(state))
+	if err != nil {
+		return nil
 	}
-	return trades
+	defer rows.Close()
+	return scanTrades(rows)
 }
 
-// AllTrades returns copies of every trade regardless of state — for admin
-// visibility, not for workers (which should use TradesInState so they only
-// ever see the stage they're built to process).
 func (s *MarketplaceStore) AllTrades() []MarketplaceTrade {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	rows, err := s.db.Query(`SELECT ` + tradeSelectCols + ` FROM marketplace_trades`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanTrades(rows)
+}
 
-	trades := make([]MarketplaceTrade, 0, len(s.trades))
-	for _, trade := range s.trades {
+func (s *MarketplaceStore) TradesForWallet(address string) []MarketplaceTrade {
+	compact := compactAddress(address)
+	rows, err := s.db.Query(`
+		SELECT `+tradeSelectCols+` FROM marketplace_trades
+		WHERE UPPER(REPLACE(buyer, ' ', '')) = $1 OR UPPER(REPLACE(seller, ' ', '')) = $1`,
+		compact,
+	)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanTrades(rows)
+}
+
+func scanTrades(rows *sql.Rows) []MarketplaceTrade {
+	trades := make([]MarketplaceTrade, 0)
+	for rows.Next() {
+		trade, err := scanTrade(rows)
+		if err != nil {
+			return trades
+		}
 		trades = append(trades, trade)
 	}
 	return trades
 }
 
-// TradesForWallet returns every trade where the given address is either the
-// buyer or the seller — a wallet can't be both on the same trade, since
-// CreateListing/ReserveListing never let a listing's seller reserve their
-// own listing... actually nothing enforces that today, so this simply
-// matches on either field without assuming exclusivity.
-func (s *MarketplaceStore) TradesForWallet(address string) []MarketplaceTrade {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	compact := compactAddress(address)
-	trades := make([]MarketplaceTrade, 0)
-	for _, trade := range s.trades {
-		if compactAddress(trade.Seller) == compact || compactAddress(trade.Buyer) == compact {
-			trades = append(trades, trade)
-		}
-	}
-	return trades
-}
-
-// MarkPayoutAttempt atomically records an outbound payout attempt before a
-// signer can be called. An existing marker represents an ambiguous send and
-// must never be automatically retried.
 func (s *MarketplaceStore) MarkPayoutAttempt(tradeID string, attemptedAt int64) (MarketplaceTrade, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	defer tx.Rollback()
 
-	trade, ok := s.trades[tradeID]
-	if !ok {
-		return MarketplaceTrade{}, fmt.Errorf("no trade %q", tradeID)
+	trade, err := s.getTradeTx(tx, tradeID, true)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return MarketplaceTrade{}, fmt.Errorf("no trade %q", tradeID)
+		}
+		return MarketplaceTrade{}, err
 	}
 	if trade.State != StateSettlementPending {
 		return MarketplaceTrade{}, fmt.Errorf("trade %q is in state %s, expected %s", tradeID, trade.State, StateSettlementPending)
@@ -348,27 +466,31 @@ func (s *MarketplaceStore) MarkPayoutAttempt(tradeID string, attemptedAt int64) 
 	if trade.PayoutAttemptedAt != 0 {
 		return MarketplaceTrade{}, fmt.Errorf("trade %q already has a payout attempt", tradeID)
 	}
-	previous := trade
 	trade.PayoutAttemptedAt = attemptedAt
 	trade.Version++
 	trade.UpdatedAt = time.Now().Unix()
-	s.trades[tradeID] = trade
-	if err := s.persistLocked(); err != nil {
-		s.trades[tradeID] = previous
+	if err := s.writeTradeTx(tx, trade); err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return MarketplaceTrade{}, err
 	}
 	return trade, nil
 }
 
-// MarkRefundAttempt atomically records an outbound refund attempt before a
-// signer can be called. A retry is unsafe until an operator reconciles it.
 func (s *MarketplaceStore) MarkRefundAttempt(tradeID string, attemptedAt int64) (MarketplaceTrade, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	tx, err := s.db.Begin()
+	if err != nil {
+		return MarketplaceTrade{}, err
+	}
+	defer tx.Rollback()
 
-	trade, ok := s.trades[tradeID]
-	if !ok {
-		return MarketplaceTrade{}, fmt.Errorf("no trade %q", tradeID)
+	trade, err := s.getTradeTx(tx, tradeID, true)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return MarketplaceTrade{}, fmt.Errorf("no trade %q", tradeID)
+		}
+		return MarketplaceTrade{}, err
 	}
 	if trade.State != StateRefundPending {
 		return MarketplaceTrade{}, fmt.Errorf("trade %q is in state %s, expected %s", tradeID, trade.State, StateRefundPending)
@@ -376,13 +498,13 @@ func (s *MarketplaceStore) MarkRefundAttempt(tradeID string, attemptedAt int64) 
 	if trade.RefundAttemptedAt != 0 {
 		return MarketplaceTrade{}, fmt.Errorf("trade %q already has a refund attempt", tradeID)
 	}
-	previous := trade
 	trade.RefundAttemptedAt = attemptedAt
 	trade.Version++
 	trade.UpdatedAt = time.Now().Unix()
-	s.trades[tradeID] = trade
-	if err := s.persistLocked(); err != nil {
-		s.trades[tradeID] = previous
+	if err := s.writeTradeTx(tx, trade); err != nil {
+		return MarketplaceTrade{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return MarketplaceTrade{}, err
 	}
 	return trade, nil

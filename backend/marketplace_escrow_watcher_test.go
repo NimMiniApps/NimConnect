@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
@@ -43,7 +42,7 @@ func depositTx(hash, sender string, valueLuna uint64, reference string, blockHei
 
 func awaitingDepositTrade(t *testing.T) (*MarketplaceStore, MarketplaceTrade) {
 	t.Helper()
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store := newTestMarketplaceStore(t)
 	if _, err := store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1"); err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +57,7 @@ func awaitingDepositTrade(t *testing.T) (*MarketplaceStore, MarketplaceTrade) {
 }
 
 func TestEscrowWatcher_FundedTradeImmediatelyBecomesAwaitingRelease(t *testing.T) {
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store := newTestMarketplaceStore(t)
 	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := store.ReserveListing("chuck", "t1", "the-ref", "NQ22 BUYER")
 	store.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
@@ -84,7 +83,7 @@ func TestEscrowWatcher_SweepAdvancesATradeAlreadyStuckAtFunded(t *testing.T) {
 	// Simulates a trade left at FUNDED by a prior deploy (or a failed/raced
 	// transition) — constructed directly via the store rather than via a
 	// deposit sweep. Sweep() must self-heal it to AWAITING_RELEASE.
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store := newTestMarketplaceStore(t)
 	store.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := store.ReserveListing("chuck", "t1", "the-ref", "NQ22 BUYER")
 	for _, transition := range [][2]TradeState{
@@ -183,7 +182,7 @@ func TestEscrowWatcher_IgnoresWrongAmountAndWrongPayer(t *testing.T) {
 }
 
 func TestEscrowWatcher_IgnoresUnattributableReference(t *testing.T) {
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store := newTestMarketplaceStore(t)
 	macroHeight := uint64(100)
 	srv := escrowSweepServer(t, &macroHeight, []rpcTx{
 		depositTx("d1", "NQ22 BUYER", 1000, "no-such-trade", 10),

@@ -73,6 +73,22 @@ func main() {
 	allowedOrigin := getEnv("ALLOWED_ORIGIN", "*")
 	backupDir := getEnv("BACKUP_DIR", "/data/backups")
 
+	databaseURL := secretEnv("DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = getEnv("DATABASE_URL", "")
+	}
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+	db, err := OpenDB(databaseURL)
+	if err != nil {
+		log.Fatalf("database: %v", err)
+	}
+	defer db.Close()
+	if err := Migrate(db); err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 
 	ratesCache := NewRatesCache(60*time.Second, func() (RatesResponse, error) {
@@ -130,10 +146,10 @@ func main() {
 		publicOrigin := getEnv("PUBLIC_APP_ORIGIN", "https://nimconnect.nimiqminiapps.com")
 		mux.HandleFunc("GET /p/{handle}", publicPageHandler(registry, profiles, publicOrigin))
 
-		escrowAddress := getEnv("ESCROW_ADDRESS", "")
+	escrowAddress := getEnv("ESCROW_ADDRESS", "")
 		if escrowAddress != "" {
-			marketplaceStore := NewMarketplaceStore(getEnv("MARKETPLACE_FILE", "/data/marketplace.json"))
-			ledger, err := OpenEscrowLedger(getEnv("MARKETPLACE_LEDGER_FILE", "/data/marketplace_ledger.jsonl"))
+			marketplaceStore := NewMarketplaceStore(db)
+			ledger, err := OpenEscrowLedger(db)
 			if err != nil {
 				log.Fatalf("failed to open escrow ledger: %v", err)
 			}

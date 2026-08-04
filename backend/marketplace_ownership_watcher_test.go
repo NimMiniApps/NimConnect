@@ -7,12 +7,8 @@ import (
 
 func ownershipFixture(t *testing.T, macroHeight uint64) (*MarketplaceStore, *HandleRegistry, *fakeSigner, *OwnershipWatcher, MarketplaceTrade) {
 	t.Helper()
-	store := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	store, ledger := newTestMarketplaceAndLedger(t)
 	registry := NewHandleRegistry(filepath.Join(t.TempDir(), "handles.json"), map[string]bool{}, 0)
-	ledger, err := OpenEscrowLedger(filepath.Join(t.TempDir(), "ledger.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	t.Cleanup(func() { ledger.Close() })
 	signer := newFakeSigner()
 	settlement := NewSettlementWorker(store, ledger, signer, "NQ99 ESCROW")

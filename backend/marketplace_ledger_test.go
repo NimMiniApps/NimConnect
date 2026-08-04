@@ -1,16 +1,11 @@
 package main
 
 import (
-	"path/filepath"
 	"testing"
 )
 
 func TestEscrowLedger_AppendAndBalance(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ledger.jsonl")
-	l, err := OpenEscrowLedger(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l := newTestEscrowLedger(t)
 	defer l.Close()
 
 	l.Append(LedgerEntry{TradeID: "t1", Type: LedgerDeposit, AmountLuna: 1000})
@@ -23,11 +18,7 @@ func TestEscrowLedger_AppendAndBalance(t *testing.T) {
 }
 
 func TestEscrowLedger_SequenceNumbersAreMonotonic(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ledger.jsonl")
-	l, err := OpenEscrowLedger(path)
-	if err != nil {
-		t.Fatal(err)
-	}
+	l := newTestEscrowLedger(t)
 	defer l.Close()
 
 	e1, err := l.Append(LedgerEntry{TradeID: "t1", Type: LedgerDeposit, AmountLuna: 100})
@@ -44,8 +35,8 @@ func TestEscrowLedger_SequenceNumbersAreMonotonic(t *testing.T) {
 }
 
 func TestEscrowLedger_PersistsAndReplaysAcrossRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "ledger.jsonl")
-	l, err := OpenEscrowLedger(path)
+	db := withTestDB(t)
+	l, err := OpenEscrowLedger(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +50,7 @@ func TestEscrowLedger_PersistsAndReplaysAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reopened, err := OpenEscrowLedger(path)
+	reopened, err := OpenEscrowLedger(db)
 	if err != nil {
 		t.Fatal(err)
 	}

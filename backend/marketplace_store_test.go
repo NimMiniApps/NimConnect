@@ -2,14 +2,13 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 )
 
 func TestCreateListing_RejectsSecondActiveListingForSameHandle(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	if _, err := s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1"); err != nil {
 		t.Fatal(err)
 	}
@@ -19,7 +18,7 @@ func TestCreateListing_RejectsSecondActiveListingForSameHandle(t *testing.T) {
 }
 
 func TestReserveListing_OnlyOneTradeWinsAConcurrentRace(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 
 	const attempts = 20
@@ -51,7 +50,7 @@ func tradeIDFor(i int) string   { return "trade-" + string(rune('a'+i)) }
 func referenceFor(i int) string { return "ref-" + string(rune('a'+i)) }
 
 func TestReserveListing_RejectsUnknownOrNonActiveListing(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	if _, err := s.ReserveListing("nosuchhandle", "t1", "r1", "NQ22 BUYER"); err == nil {
 		t.Fatal("expected an error reserving a listing that doesn't exist")
 	}
@@ -65,7 +64,7 @@ func TestReserveListing_RejectsUnknownOrNonActiveListing(t *testing.T) {
 }
 
 func TestTransition_HappyPathAndConflict(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
 	if trade.State != StateReserved {
@@ -86,7 +85,7 @@ func TestTransition_HappyPathAndConflict(t *testing.T) {
 }
 
 func TestTransition_MutateCallbackSetsFields(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
 	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
@@ -104,7 +103,7 @@ func TestTransition_MutateCallbackSetsFields(t *testing.T) {
 }
 
 func TestFindTradeByReference(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "the-reference", "NQ22 BUYER")
 
@@ -118,12 +117,12 @@ func TestFindTradeByReference(t *testing.T) {
 }
 
 func TestMarketplaceStore_PersistsAcrossRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "marketplace.json")
-	s := NewMarketplaceStore(path)
+	db := withTestDB(t)
+	s := NewMarketplaceStore(db)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
 
-	reloaded := NewMarketplaceStore(path)
+	reloaded := NewMarketplaceStore(db)
 	got, ok := reloaded.Resolve(trade.ID)
 	if !ok || got.State != StateReserved {
 		t.Fatalf("expected persisted trade to reload, got %+v ok=%v", got, ok)
@@ -131,7 +130,7 @@ func TestMarketplaceStore_PersistsAcrossRestart(t *testing.T) {
 }
 
 func TestConsumeNonce_RejectsReuse(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	if err := s.ConsumeNonce("abc"); err != nil {
 		t.Fatal(err)
 	}
@@ -144,20 +143,20 @@ func TestConsumeNonce_RejectsReuse(t *testing.T) {
 }
 
 func TestConsumeNonce_PersistsAcrossRestart(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "marketplace.json")
-	s := NewMarketplaceStore(path)
+	db := withTestDB(t)
+	s := NewMarketplaceStore(db)
 	if err := s.ConsumeNonce("abc"); err != nil {
 		t.Fatal(err)
 	}
 
-	reloaded := NewMarketplaceStore(path)
+	reloaded := NewMarketplaceStore(db)
 	if err := reloaded.ConsumeNonce("abc"); err == nil {
 		t.Fatal("expected the reloaded store to still reject a previously used nonce")
 	}
 }
 
 func TestActiveListings_ReturnsOnlyActiveStatus(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
 	s.CreateListing("alice", "NQ22 SELLER", 2000, 100, "t2")
 	s.ReserveListing("alice", "trade-1", "ref-1", "NQ33 BUYER") // moves alice's listing to "reserved"
@@ -169,7 +168,7 @@ func TestActiveListings_ReturnsOnlyActiveStatus(t *testing.T) {
 }
 
 func TestAllTrades_ReturnsEveryTradeAcrossStates(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
 	s.CreateListing("alice", "NQ33 OTHER", 2000, 100, "t2")
 	tradeA, _ := s.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
@@ -195,7 +194,7 @@ func TestAllTrades_ReturnsEveryTradeAcrossStates(t *testing.T) {
 }
 
 func TestTradesForWallet_MatchesEitherRole(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
 	s.CreateListing("alice", "NQ33 OTHER", 2000, 100, "t2")
 	tradeA, _ := s.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
@@ -213,7 +212,7 @@ func TestTradesForWallet_MatchesEitherRole(t *testing.T) {
 }
 
 func TestTradesForWallet_SpacingAndCaseInsensitive(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "t1")
 	s.ReserveListing("chuck", "trade-a", "ref-a", "NQ22 BUYER")
 
@@ -224,7 +223,7 @@ func TestTradesForWallet_SpacingAndCaseInsensitive(t *testing.T) {
 }
 
 func TestTradesForWallet_EmptyForUnknownAddress(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	got := s.TradesForWallet("NQ99 NOBODY")
 	if got == nil || len(got) != 0 {
 		t.Fatalf("expected an empty (non-nil) slice, got %+v", got)
@@ -232,7 +231,7 @@ func TestTradesForWallet_EmptyForUnknownAddress(t *testing.T) {
 }
 
 func TestReserveListing_SetsDepositDeadline(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	before := time.Now().Unix()
 	trade, err := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
@@ -245,7 +244,7 @@ func TestReserveListing_SetsDepositDeadline(t *testing.T) {
 }
 
 func TestExpireStaleReservations_RestoresListing(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
 	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
@@ -268,7 +267,7 @@ func TestExpireStaleReservations_RestoresListing(t *testing.T) {
 }
 
 func TestExpireStaleReservations_SkipsAfterDepositSeen(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
 	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
@@ -285,7 +284,7 @@ func TestExpireStaleReservations_SkipsAfterDepositSeen(t *testing.T) {
 }
 
 func TestReserveListing_CapsConcurrentUnpaid(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	buyer := "NQ22 BUYER"
 	for i := 0; i < maxUnpaidReservations; i++ {
 		handle := fmt.Sprintf("hand%d", i)
@@ -303,7 +302,7 @@ func TestReserveListing_CapsConcurrentUnpaid(t *testing.T) {
 }
 
 func TestCancelUnpaidReservation_RestoresListing(t *testing.T) {
-	s := NewMarketplaceStore(filepath.Join(t.TempDir(), "marketplace.json"))
+	s := newTestMarketplaceStore(t)
 	s.CreateListing("chuck", "NQ11 SELLER", 1000, 50, "tx1")
 	trade, _ := s.ReserveListing("chuck", "t1", "r1", "NQ22 BUYER")
 	s.Transition(trade.ID, StateReserved, StateAwaitingDeposit, nil)
