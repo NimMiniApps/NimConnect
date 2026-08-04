@@ -21,6 +21,32 @@
 #   VITE_API_BASE_URL=https://api-nimconnect.nimiqminiapps.com
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=nimconnect
+      - POSTGRES_DB=nimconnect
+      # Password from Swarm secret (see `secrets:` below). For local bring-up only,
+      # comment out POSTGRES_PASSWORD_FILE and set POSTGRES_PASSWORD inline instead.
+      - POSTGRES_PASSWORD_FILE=/run/secrets/nimconnect_postgres_password
+    secrets:
+      - nimconnect_postgres_password
+    volumes:
+      - nimconnect_postgres_data:/var/lib/postgresql/data
+    networks:
+      - db-internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nimconnect -d nimconnect"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    deploy:
+      restart_policy:
+        condition: any
+      placement:
+        constraints:
+          - node.role == worker
+
   backend:
     image: ghcr.io/<github-username>/nimconnect-backend:latest
     environment:
@@ -28,9 +54,18 @@ services:
       - COINGECKO_API_BASE=https://api.coingecko.com/api/v3
       - ALLOWED_ORIGIN=https://nimconnect.nimiqminiapps.com,https://nimminiapps.github.io,https://maestroi.github.io,https://nimbomber.nimiqminiapps.com,https://nimbomber.maestroi.cc,http://localhost:5173
       - BACKUP_DIR=/data/backups
-      - INBOX_DIR=/data/inbox
-      # stats.json lives on the backups volume so it survives redeploys
-      - STATS_FILE=/data/backups/stats.json
+      # DATABASE_URL is required. Prefer the Swarm secret below (full connection
+      # string). Plain env works for local bring-up — password must match
+      # nimconnect_postgres_password:
+      # - DATABASE_URL=postgres://nimconnect:<password>@postgres:5432/nimconnect?sslmode=disable
+      # One-shot legacy import only (first deploy with existing JSON on the
+      # backups volume). Omit after import succeeds; runtime state is in Postgres.
+      # - STATS_FILE=/data/backups/stats.json
+      # - MARKETPLACE_FILE=/data/backups/marketplace.json
+      # - MARKETPLACE_LEDGER_FILE=/data/backups/marketplace_ledger.jsonl
+      # - HANDLES_FILE=/data/backups/handles.json
+      # - PROFILES_DIR=/data/backups/profiles
+      # - INBOX_DIR=/data/backups/inbox
       - ADMIN_ADDRESSES=<your Nimiq wallet address>  # enables /api/admin/login + GET /api/stats
       # On-chain @handle registry (defaults to NimFeed catalog; set off to disable)
       # - REGISTRY_ADDRESS=off
@@ -54,11 +89,13 @@ services:
     secrets:
       - source: nimconnect_nimiq_wallet_key
         target: NIMIQ_WALLET_KEY
+      - source: nimconnect_database_url
+        target: DATABASE_URL
     volumes:
       - nimconnect_backups:/data/backups
-      - nimconnect_inbox:/data/inbox
     networks:
       - web
+      - db-internal
       - escrow-internal
     deploy:
       placement:
@@ -120,6 +157,10 @@ services:
 networks:
   web:
     external: true
+  # Private overlay for backend ↔ Postgres. Internal only — no published ports.
+  db-internal:
+    driver: overlay
+    attachable: false
   # Private overlay for backend ↔ escrow signer. Not on shared `web`, not
   # attachable by other stacks. Not marked internal:true so the node can still
   # reach Nimiq peers for sync. Do not publish the signer port on the host.
@@ -128,19 +169,26 @@ networks:
     attachable: false
 
 volumes:
+  nimconnect_postgres_data:
   nimconnect_backups:
-  nimconnect_inbox:
   nimconnect_nimiq_node_data:
 
 # Create before first deploy (see comments on the fields above for what each
 # holds). Config content: start from the repo's nimiq/client.toml (already
 # mainnet + the methods allowlist) and add [rpc-server] username/password if
 # using ESCROW_SIGNER_RPC_USER/PASSWORD above.
+#   echo -n '<strong-postgres-password>' | docker secret create nimconnect_postgres_password -
+#   echo -n 'postgres://nimconnect:<same-password>@postgres:5432/nimconnect?sslmode=disable' \
+#     | docker secret create nimconnect_database_url -
 #   echo -n '<hex private key>' | docker secret create nimconnect_nimiq_wallet_key -
 #   docker config create nimconnect_nimiq_client_toml - < /secure/path/client-mainnet.toml
 # To rotate either, remove it only after no service references it (redeploy
 # without the old service first), then create again with the same name.
 secrets:
+  nimconnect_postgres_password:
+    external: true
+  nimconnect_database_url:
+    external: true
   nimconnect_nimiq_wallet_key:
     external: true
 
