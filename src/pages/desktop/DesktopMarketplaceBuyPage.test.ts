@@ -19,13 +19,16 @@ vi.mock('../../services/marketplace', () => ({
   generateNonce: vi.fn(() => 'the-nonce'),
 }))
 
-import { hubSignMessage } from '../../services/hub'
+import { chooseHubAddress, hubSignMessage } from '../../services/hub'
+import { getDesktopHubAddress } from '../../services/desktop-session'
 import { fetchListings, reserveTrade } from '../../services/marketplace'
 
 async function mountWithQuery(handle: string) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
+      { path: '/marketplace', component: { template: '<div />' } },
+      { path: '/me', component: { template: '<div />' } },
       { path: '/marketplace/buy', component: DesktopMarketplaceBuyPage },
       { path: '/marketplace/trades/:id', component: { template: '<div />' } },
     ],
@@ -40,6 +43,8 @@ describe('DesktopMarketplaceBuyPage', () => {
     vi.mocked(fetchListings).mockReset()
     vi.mocked(reserveTrade).mockReset()
     vi.mocked(hubSignMessage).mockReset()
+    vi.mocked(chooseHubAddress).mockReset()
+    vi.mocked(getDesktopHubAddress).mockReset().mockReturnValue('NQ22 BUYER')
   })
 
   it('shows the listing price for the handle in the query string', async () => {
@@ -49,6 +54,58 @@ describe('DesktopMarketplaceBuyPage', () => {
     const wrapper = await mountWithQuery('chuck')
     await flushPromises()
     expect(wrapper.text()).toContain('1 NIM')
+  })
+
+  it('explains the escrow handoff and seller payout before reservation', async () => {
+    vi.mocked(fetchListings).mockResolvedValue([
+      { handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 100000, fee_luna: 5000, status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1 },
+    ])
+    const wrapper = await mountWithQuery('chuck')
+    await flushPromises()
+
+    expect(wrapper.get('[data-buy-card]').text()).toContain('@chuck')
+    expect(wrapper.get('[data-buy-card]').text()).toContain('NQ22 BUYER')
+    expect(wrapper.get('[data-buy-card]').text()).toContain('Fund escrow')
+    expect(wrapper.get('[data-buy-card]').text()).toContain('Seller releases')
+    expect(wrapper.get('[data-buy-card]').text()).toContain('You claim')
+    expect(wrapper.get('[data-seller-payout]').text()).toContain('0.95 NIM')
+    expect(wrapper.get('[data-confirm-buy]').text()).toBe('Reserve @chuck')
+    expect(wrapper.get('[data-back-marketplace]').attributes('href')).toBe('/marketplace')
+  })
+
+  it('renders deliberate loading and unavailable states', async () => {
+    let resolveListings: (value: never[]) => void = () => {}
+    vi.mocked(fetchListings).mockReturnValue(new Promise((resolve) => { resolveListings = resolve }))
+    const wrapper = await mountWithQuery('gone')
+
+    expect(wrapper.find('[data-buy-loading]').exists()).toBe(true)
+    resolveListings([])
+    await flushPromises()
+
+    expect(wrapper.find('[data-buy-unavailable]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('This listing is no longer available')
+    expect(wrapper.get('[data-back-marketplace]').attributes('href')).toBe('/marketplace')
+  })
+
+  it('offers wallet connection without hiding the purchase context', async () => {
+    vi.mocked(getDesktopHubAddress).mockReturnValue(null)
+    vi.mocked(fetchListings).mockResolvedValue([
+      { handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 100000, fee_luna: 5000, status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1 },
+    ])
+    const wrapper = await mountWithQuery('chuck')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('@chuck')
+    expect(wrapper.get('[data-connect-wallet]').text()).toBe('Connect wallet to continue')
+  })
+
+  it('surfaces a listing load failure inside the confirmation shell', async () => {
+    vi.mocked(fetchListings).mockRejectedValue(new Error('marketplace unavailable'))
+    const wrapper = await mountWithQuery('chuck')
+    await flushPromises()
+
+    expect(wrapper.get('[data-buy-load-error][role="alert"]').text()).toContain('marketplace unavailable')
+    expect(wrapper.get('[data-back-marketplace]').attributes('href')).toBe('/marketplace')
   })
 
   it('signs the purchase intent, reserves the trade, and routes to its status page', async () => {
