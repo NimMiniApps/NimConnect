@@ -143,10 +143,44 @@ which is exactly the behavior you'd need to replicate yourself if you call
 this often. If that's more than you want to own, use the NimConnect-API
 path above instead — it's already doing this caching for you.
 
+## Friends (authenticated)
+
+Mutual friends require a short-lived server session. Wallet signing stays in
+your app; this client never holds keys.
+
+```ts
+const client = createProfileClient()
+
+await client.createSession({
+  address: myAddress,
+  signMessage: async (message) => {
+    // Nimiq Pay / Hub signMessage — return hex publicKey + signature
+    const { publicKey, signature } = await wallet.signMessage(message)
+    return { publicKey, signature }
+  },
+})
+
+const friends = await client.listFriends()
+const pending = await client.listFriendRequests()
+await client.sendFriendRequest('bob') // handle or address
+await client.acceptFriendRequest(pending[0].friendshipId)
+await client.removeFriend(friends[0].address)
+
+client.clearSession()
+```
+
+Session token is held on the client instance after `createSession` (or pass
+`sessionToken` in options). Friends calls send `X-NimConnect-Session`.
+Persist the token in your app (`sessionStorage`, etc.) if you want it to
+survive reloads — inject it via `createProfileClient({ sessionToken })`.
+
+See [`docs/api/friends.md`](../../docs/api/friends.md).
+
 ## Docs
 
 - [`docs/api/public-profile-read.md`](../../docs/api/public-profile-read.md) — read endpoints
 - [`docs/api/handle-claim-protocol.md`](../../docs/api/handle-claim-protocol.md) — on-chain claim format
+- [`docs/api/friends.md`](../../docs/api/friends.md) — session + friends API
 
 Writing/editing the off-chain profile fields (bio, links, display name)
 requires NimConnect's own signed edit flow — link users to

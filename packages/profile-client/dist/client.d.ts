@@ -1,4 +1,4 @@
-import type { DisplayIdentity, HandleClaim, ProfileClientOptions, StoredPublicProfile } from './types.js';
+import type { DisplayIdentity, FriendEntry, HandleClaim, ProfileClientOptions, SignMessageFn, StoredPublicProfile } from './types.js';
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export declare function compactAddress(address: string): string;
 /** Production API origin (SPA is on nimconnect.nimiqminiapps.com; API is separate). */
@@ -9,5 +9,20 @@ export interface ProfileClient {
     resolveHandleForPayment(handle: string): Promise<HandleClaim | null>;
     getHandleByAddress(address: string): Promise<HandleClaim | null>;
     getDisplayIdentity(address: string): Promise<DisplayIdentity>;
+    createSession(args: {
+        address: string;
+        signMessage: SignMessageFn;
+    }): Promise<{
+        token: string;
+        expiresAt: number;
+    }>;
+    clearSession(): void;
+    getSessionToken(): string | null;
+    listFriends(): Promise<FriendEntry[]>;
+    listFriendRequests(): Promise<FriendEntry[]>;
+    sendFriendRequest(to: string): Promise<FriendEntry>;
+    acceptFriendRequest(id: string): Promise<void>;
+    declineFriendRequest(id: string): Promise<void>;
+    removeFriend(address: string): Promise<void>;
 }
 export declare function createProfileClient(options?: ProfileClientOptions): ProfileClient;

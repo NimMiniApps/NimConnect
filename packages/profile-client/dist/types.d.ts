@@ -33,9 +33,22 @@ export interface DisplayIdentity {
         x?: string;
     };
 }
+export type SignMessageFn = (message: string) => Promise<{
+    publicKey: string;
+    signature: string;
+}>;
+export interface FriendEntry {
+    address: string;
+    handle?: string;
+    displayName?: string;
+    status: 'accepted' | 'pending_out' | 'pending_in';
+    friendshipId: string;
+}
 export interface ProfileClientOptions {
     /** Defaults to the production NimConnect origin when omitted. */
     baseUrl?: string;
+    /** Optional pre-existing `X-NimConnect-Session` token. */
+    sessionToken?: string | null;
 }
 /** Recipient + tx data for claiming a @handle — sign and send with your own wallet integration. */
 export interface HandleClaimPayload {
