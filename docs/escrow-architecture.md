@@ -13,6 +13,11 @@ per-trade, why release-then-claim rather than atomic swap), see
 doc is the "how it runs today" companion to those "why we built it this way"
 plans.
 
+**Persistence:** As of the Postgres app-state cutover, `MarketplaceStore` and
+`EscrowLedger` write to Postgres tables (`marketplace_*`, `escrow_ledger`).
+The ledger remains append-only — existing rows are never updated — and trade
+semantics are unchanged; only the storage substrate moved.
+
 ## Components
 
 ```mermaid
@@ -27,8 +32,8 @@ flowchart TB
         EscrowW["EscrowWatcher<br/>(deposit sweep, every 5s cooldown)"]
         OwnershipW["OwnershipWatcher<br/>(release/claim sweep, every 5s cooldown)"]
         Settlement["SettlementWorker<br/>(Settle / Refund)"]
-        Store["MarketplaceStore<br/>(one JSON file, mutex-guarded)"]
-        Ledger["EscrowLedger<br/>(append-only JSONL)"]
+        Store["MarketplaceStore<br/>(Postgres tables)"]
+        Ledger["EscrowLedger<br/>(Postgres append-only table)"]
     end
 
     subgraph escrow [Escrow signer — our own node]
@@ -279,13 +284,12 @@ Being direct about what "robust" doesn't yet cover:
 - **`MANUAL_REVIEW` is unreachable, and there's no action tooling yet.**
   It's allowed as a target from every state, but nothing transitions into
   it — the admin endpoint above can *show* a stuck trade, not resolve one.
-- **Single point of failure for state.** `MarketplaceStore` is one JSON file
-  on local disk guarded by an in-process mutex (`marketplace_store.go`);
-  `EscrowLedger` is one append-only JSONL file. Both are fine for one backend
-  replica; running two instances against the same files would race, and
-  losing the volume loses trade/ledger state (the chain itself is still the
-  ultimate source of truth for ownership, but attempt markers, references,
-  and the fee/payout ledger are not recoverable from chain alone).
+- **Single point of failure for state.** `MarketplaceStore` and `EscrowLedger`
+  persist to Postgres (`marketplace_*` / `escrow_ledger` tables). Behavior is
+  unchanged — still one logical store with DB constraints replacing the old
+  mutex — but losing the database loses trade/ledger state (the chain itself
+  is still the ultimate source of truth for ownership, but attempt markers,
+  references, and the fee/payout ledger are not recoverable from chain alone).
 - **Single hot key, not multisig/HTLC.** Documented above under
   [Escrow wallet security model](#escrow-wallet-security-model) — this is a
   deliberate, current-constraints tradeoff, not an oversight, but it means a
@@ -303,9 +307,9 @@ Being direct about what "robust" doesn't yet cover:
 | Deposit detection & FUNDED self-heal | `backend/marketplace_escrow_watcher.go` |
 | Release/claim/settlement source of truth | `backend/marketplace_ownership_watcher.go` |
 | Payout & refund execution | `backend/marketplace_settlement.go` |
-| Trade/listing persistence | `backend/marketplace_store.go` |
+| Trade/listing persistence (Postgres) | `backend/marketplace_store.go` |
 | Read-only admin visibility (`GET /api/admin/marketplace`) | `backend/marketplace_admin.go` |
-| Money-movement audit log | `backend/marketplace_ledger.go` |
+| Money-movement audit log (Postgres append-only) | `backend/marketplace_ledger.go` |
 | Hub/Nimiq-Pay tx submission choreography | `backend/marketplace_choreography.go` |
 | Escrow node RPC client (incl. wallet methods) | `backend/nimiq_rpc.go` |
 | Escrow key import/unlock lifecycle | `backend/escrow_wallet.go` |

@@ -94,9 +94,9 @@ friendship {
 - Re-request after `declined` is allowed; not while `pending` or `accepted`.
 - Cannot friend yourself.
 
-Persistence: JSON file store under `/data/friends.json` (same style as handles /
-marketplace stores) unless a clearer existing store pattern wins during
-implementation. Keep the store interface swappable.
+Persistence: Postgres `friendships` table (schema in
+`backend/migrations/001_init.sql` — unique pair index for active
+`pending`/`accepted` edges). Keep the store interface swappable for tests.
 
 ## API
 

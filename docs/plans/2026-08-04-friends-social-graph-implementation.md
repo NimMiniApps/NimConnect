@@ -4,7 +4,7 @@
 
 **Goal:** Ship opt-in mutual friends with user-only session auth in NimConnect, expose it via `@nimconnect/profile-client`, and wire NimBomber as the first consumer.
 
-**Architecture:** Wallet signs once → `POST /api/session` issues `X-NimConnect-Session` → friends CRUD against a server-side graph store. Local contacts stay private. Public profile/handle reads unchanged. Design: `docs/plans/2026-08-04-friends-social-graph-design.md`.
+**Architecture:** Wallet signs once → `POST /api/session` issues `X-NimConnect-Session` → friends CRUD against Postgres `friendships` (see `backend/migrations/001_init.sql`). Local contacts stay private. Public profile/handle reads unchanged. Design: `docs/plans/2026-08-04-friends-social-graph-design.md`.
 
 **Tech Stack:** Go backend, Vue 3 NimConnect Mini App, `@nimconnect/profile-client` (TS/Vitest), NimBomber Vue frontend
 
@@ -230,7 +230,7 @@ git commit -m "feat(backend): add POST/DELETE /api/session for user wallets"
 - `Decline(id, actor)` only recipient
 - `Remove(actor, other)` either side deletes accepted edge
 - `ListFriends(actor)` / `ListRequests(actor)` return only that user's edges
-- Persistence round-trip to temp JSON file
+- Persistence round-trip against Postgres (test DB via `pgtest` helper)
 
 **Step 2: Run — FAIL**
 
@@ -255,7 +255,9 @@ type Friendship struct {
 }
 ```
 
-File-backed JSON at `FRIENDS_FILE` default `/data/friends.json`. Mutex + atomic write (temp + rename) like other stores.
+SQL against `friendships` via `*sql.DB` — same table/constraints as
+`001_init.sql`. Use transactions for state transitions; tests use the shared
+Postgres test helper (`pgtest_test.go`).
 
 **Step 4: Tests PASS**
 

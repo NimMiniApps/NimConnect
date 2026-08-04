@@ -89,10 +89,12 @@ one active trade per listing, unique nonces, append-only ledger.
 
 ## Cutover
 
+See the step-by-step checklist in [`backend/README.md`](../../backend/README.md#postgres-cutover).
+
 1. Add Postgres to Compose / Swarm; wire `DATABASE_URL` + secrets.
 2. Deploy backend that migrates on boot.
 3. Short maintenance window: snapshot existing volumes, deploy, verify import
-   logs, smoke resolve / profile / marketplace / inbox / admin stats.
+   logs (`*.imported-*` renames), smoke health/ready/resolve/profile/listings/stats/inbox.
 4. Quarantined legacy files retained until ops confirms; then remove.
 
 ## Errors

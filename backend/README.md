@@ -106,6 +106,27 @@ Frontend dev proxy (see root `vite.config.ts`) forwards `/api` to `localhost:878
 5. `docker stack deploy -c docker-compose.homelab.yml nimconnect`
 6. After deploys, rollout services to pick up new images (Swarm caches `:latest`)
 
+## Postgres cutover
+
+One-shot migration from legacy JSON/JSONL on `/data` to Postgres. The backend
+runs `Migrate` on boot, then `ImportLegacyIfEmpty` when core tables are empty.
+
+1. **Snapshot legacy data** — copy or snapshot the `/data` volume (`marketplace.json`, `marketplace_ledger.jsonl`, `stats.json`, `handles.json`, `profiles/`, `inbox/`) before deploy.
+2. **Deploy Postgres + backend** — set `DATABASE_URL`; start Postgres before or with the backend so migrations and import can run.
+3. **Confirm import logs** — on first boot with legacy files present, successfully imported sources are renamed to `*.imported-<unix>` beside the original path. Import failures exit the process and leave sources untouched for retry.
+4. **Smoke test** — `/api/health`, `/api/ready`, `/api/resolve/{handle}`, `/api/profile/{address}`, `/api/marketplace/listings`, `/api/stats` (admin session), inbox send/receive.
+5. **Clean up** — keep `*.imported-*` quarantine files until ops confirms Postgres data; then delete the originals and quarantine copies.
+
+Legacy env vars (`MARKETPLACE_FILE`, `STATS_FILE`, etc.) are import-only; runtime
+state lives in Postgres.
+
+## Backups
+
+| Data | Method |
+|------|--------|
+| App state (marketplace, ledger, profiles, stats, inbox, handle cache) | `pg_dump` of the Postgres database, or volume snapshots of the Postgres data directory |
+| Encrypted wallet backups | Unchanged — `BACKUP_DIR` volume |
+
 ## Tests
 
 ```bash
