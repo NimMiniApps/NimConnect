@@ -8,6 +8,44 @@ import (
 	"time"
 )
 
+func TestReadyHandler_ReturnsOKWhenDBAvailable(t *testing.T) {
+	db := withTestDB(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/ready", nil)
+	rec := httptest.NewRecorder()
+	readyHandler(db)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "ok" {
+		t.Fatalf("expected status ok, got %q", body["status"])
+	}
+}
+
+func TestReadyHandler_Returns503WhenDBUnavailable(t *testing.T) {
+	db := withTestDB(t)
+	db.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ready", nil)
+	rec := httptest.NewRecorder()
+	readyHandler(db)(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "unavailable" {
+		t.Fatalf("expected status unavailable, got %q", body["status"])
+	}
+}
+
 func TestChainHeightHandler_ReturnsHeightFromRPC(t *testing.T) {
 	srv := fakeRPC(t, map[string]string{
 		"getBlockNumber": `999`,

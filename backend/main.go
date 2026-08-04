@@ -120,6 +120,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", rootHandler)
 	mux.HandleFunc("GET /api/health", healthHandler)
+	mux.HandleFunc("GET /api/ready", readyHandler(db))
 	mux.HandleFunc("GET /api/version", versionHandler)
 	mux.HandleFunc("GET /api/rates", func(w http.ResponseWriter, r *http.Request) {
 		stats.RecordOpen()

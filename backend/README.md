@@ -11,7 +11,8 @@ gaps before touching anything in `marketplace_*.go` or `escrow_wallet.go`.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/health` | Liveness check |
+| `GET` | `/api/health` | Liveness check (process up; no DB) |
+| `GET` | `/api/ready` | Readiness check (`Ping` Postgres; 503 if DB unreachable) |
 | `GET` | `/api/rates` | NIM/fiat rates (60s cache) |
 | `GET` | `/api/backup/{address}` | Download encrypted backup ciphertext |
 | `PUT` | `/api/backup/{address}` | Upload backup (requires wallet signature) |
@@ -35,6 +36,11 @@ gaps before touching anything in `marketplace_*.go` or `escrow_wallet.go`.
 | `GET` | `/api/marketplace/trades/by-wallet/{address}` | Trades for a wallet (signed lookup) |
 | `POST` | `/api/marketplace/trades/{tradeID}/release` | Submit the seller's release transaction |
 | `POST` | `/api/marketplace/trades/{tradeID}/claim` | Submit the buyer's claim transaction |
+
+### Health vs readiness
+
+- **`/api/health`** — liveness. Returns 200 as long as the HTTP server is running. Use for "is the process alive?" probes that should not fail when Postgres is briefly unavailable.
+- **`/api/ready`** — readiness. Returns 200 only when Postgres responds to `Ping`. Use for orchestrator startup/readiness gates (Docker, Swarm, k8s) before routing traffic.
 
 Backup uploads must sign: `nimconnect-backup:v1:{address}:{exported_at}`
 
