@@ -88,6 +88,16 @@ func main() {
 	if err := Migrate(db); err != nil {
 		log.Fatalf("migrate: %v", err)
 	}
+	if _, err := ImportLegacyIfEmpty(db, LegacyPaths{
+		Marketplace: getEnv("MARKETPLACE_FILE", "/data/marketplace.json"),
+		Ledger:      getEnv("MARKETPLACE_LEDGER_FILE", "/data/marketplace_ledger.jsonl"),
+		Stats:       getEnv("STATS_FILE", "/data/stats.json"),
+		Handles:     getEnv("HANDLES_FILE", "/data/handles.json"),
+		ProfilesDir: getEnv("PROFILES_DIR", "/data/profiles"),
+		InboxDir:    getEnv("INBOX_DIR", "/data/inbox"),
+	}); err != nil {
+		log.Fatalf("legacy import: %v", err)
+	}
 
 	httpClient := &http.Client{Timeout: 10 * time.Second}
 
