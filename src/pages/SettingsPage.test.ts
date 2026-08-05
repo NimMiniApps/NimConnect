@@ -32,6 +32,7 @@ describe('SettingsPage polish', () => {
   })
 
   it('erasing local data also resets the onboarding wizard so it restarts fresh', () => {
+	expect(source).toMatch(/await revokeAuthorization\(\)/)
     expect(source).toMatch(/clearOnboardingWizardShown/)
     expect(source).toMatch(/clearIdentitySetupState/)
   })

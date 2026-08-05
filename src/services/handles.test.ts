@@ -20,6 +20,11 @@ import {
 } from './handles'
 import type { Profile } from '../types/profile'
 
+const authorizedFetch = vi.hoisted(() => vi.fn(
+  (path: string, _scopes: string[], init?: RequestInit) => fetch(path, init),
+))
+vi.mock('./authorization', () => ({ authorizedFetch }))
+
 const hubSignClaimTransaction = vi.fn()
 vi.mock('./hub', () => ({
   hubSignClaimTransaction: (...args: unknown[]) => hubSignClaimTransaction(...args),
@@ -141,39 +146,37 @@ describe('handles', () => {
   })
 })
 
-describe('publishProfile / unpublishProfile with injected signer', () => {
+describe('publishProfile / unpublishProfile with scoped authorization', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
   })
 
-  it('publishes using the injected signer instead of Pay signChallenge', async () => {
+  it('publishes without a per-action wallet signature', async () => {
     const sign = vi.fn().mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
     const fetchMock = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetchMock)
 
     await publishProfile(profile, { ...defaultShareSelection(), name: true }, sign)
 
-    expect(sign).toHaveBeenCalledWith(expect.stringContaining('nimconnect:profile:v1'))
+    expect(sign).not.toHaveBeenCalled()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     const [url, init] = fetchMock.mock.calls[0]!
     expect(String(url)).toContain('/api/profile/')
     const body = JSON.parse((init as RequestInit).body as string)
-    expect(body).toMatchObject({ public_key: 'pub', signature: 'sig' })
+    expect(body).not.toHaveProperty('public_key')
+    expect(authorizedFetch).toHaveBeenCalledWith(expect.any(String), ['profile:write'], expect.any(Object))
   })
 
-  it('unpublishes using the injected signer instead of Pay signChallenge', async () => {
+  it('unpublishes without a per-action wallet signature', async () => {
     const sign = vi.fn().mockResolvedValue({ publicKey: 'pub2', signature: 'sig2' })
     const fetchMock = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetchMock)
 
     await unpublishProfile(profile.address, sign)
 
-    expect(sign).toHaveBeenCalledWith(expect.stringContaining('nimconnect:profile-delete:v1'))
+    expect(sign).not.toHaveBeenCalled()
     const [, init] = fetchMock.mock.calls[0]!
-    expect((init as RequestInit).headers).toMatchObject({
-      'X-Profile-Public-Key': 'pub2',
-      'X-Profile-Signature': 'sig2',
-    })
+    expect((init as RequestInit).headers).toMatchObject({ 'X-Profile-Updated-At': expect.any(String) })
   })
 })
 

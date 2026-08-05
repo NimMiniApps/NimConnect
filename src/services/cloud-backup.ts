@@ -1,10 +1,10 @@
 import { sha256 } from '@noble/hashes/sha2'
 import { bytesToHex } from '@noble/hashes/utils'
-import { apiUrl, hasApiBase } from './api'
+import { hasApiBase } from './api'
 import { createEncryptedBackup } from './backup'
 import { cloudBackupEnabled, markCloudSync } from './backup-prefs'
-import { signChallenge } from './nimiq'
 import type { EncryptedBackup } from '../types/profile'
+import { authorizedFetch } from './authorization'
 
 export interface BackupSession {
   passphrase: string
@@ -82,19 +82,13 @@ export function cloudBackupAvailable(): boolean {
 export async function uploadCloudBackup(passphrase: string, address: string): Promise<void> {
   if (!hasApiBase()) throw new Error('cloud-backup-unavailable')
   const file = await createEncryptedBackup(passphrase, address)
-  const ciphertextHash = ciphertextSHA256Hex(file.ciphertext)
-  const { publicKey, signature } = await signChallenge(
-    backupChallengeV2(address, file.exportedAt, file.salt, ciphertextHash),
-  )
-  const res = await fetch(apiUrl(backupPath(address)), {
+  const res = await authorizedFetch(backupPath(address), ['backup:write'], {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       exported_at: file.exportedAt,
       salt: file.salt,
       ciphertext: file.ciphertext,
-      public_key: publicKey,
-      signature,
       format_version: file.version,
       kdf: file.kdf,
     }),
@@ -105,7 +99,7 @@ export async function uploadCloudBackup(passphrase: string, address: string): Pr
 
 export async function downloadCloudBackup(address: string): Promise<EncryptedBackup | null> {
   if (!hasApiBase()) return null
-  const res = await fetch(apiUrl(backupPath(address)))
+  const res = await authorizedFetch(backupPath(address), ['backup:read'])
   if (res.status === 404) return null
   if (!res.ok) throw new Error(await backupErrorMessage(res))
   const body = await res.json() as {
@@ -132,7 +126,7 @@ export async function downloadCloudBackup(address: string): Promise<EncryptedBac
 /** True when a cloud backup already exists for this wallet address. */
 export async function cloudBackupExists(address: string): Promise<boolean> {
   if (!hasApiBase()) return false
-  const res = await fetch(apiUrl(backupPath(address)), { method: 'HEAD' })
+  const res = await authorizedFetch(backupPath(address), ['backup:read'], { method: 'HEAD' })
   if (res.status === 404) return false
   if (!res.ok) throw new Error(await backupErrorMessage(res))
   return true

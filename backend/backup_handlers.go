@@ -7,9 +7,20 @@ import (
 	"net/http"
 )
 
-func backupGetHandler(store *BackupStore) http.HandlerFunc {
+func backupGetHandler(store *BackupStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
+		if auth != nil {
+			actor, ok := resolveScopedActor(auth, r, ScopeBackupRead)
+			if !ok || compactAddress(actor.Address) != compactAddress(address) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+		}
 		rec, err := store.Get(address)
 		w.Header().Set("Content-Type", "application/json")
 		if errors.Is(err, errNotFound) {
@@ -27,9 +38,20 @@ func backupGetHandler(store *BackupStore) http.HandlerFunc {
 	}
 }
 
-func backupHeadHandler(store *BackupStore) http.HandlerFunc {
+func backupHeadHandler(store *BackupStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
+		if auth != nil {
+			actor, ok := resolveScopedActor(auth, r, ScopeBackupRead)
+			if !ok || compactAddress(actor.Address) != compactAddress(address) {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+		}
 		_, err := store.Get(address)
 		if errors.Is(err, errNotFound) {
 			w.WriteHeader(http.StatusNotFound)
@@ -45,7 +67,11 @@ func backupHeadHandler(store *BackupStore) http.HandlerFunc {
 
 const backupPutMaxBodyBytes = 256 * 1024
 
-func backupPutHandler(store *BackupStore) http.HandlerFunc {
+func backupPutHandler(store *BackupStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
 		r.Body = http.MaxBytesReader(w, r.Body, backupPutMaxBodyBytes)
@@ -57,7 +83,17 @@ func backupPutHandler(store *BackupStore) http.HandlerFunc {
 			return
 		}
 
-		err := store.Put(address, req)
+		var err error
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeBackupWrite)
+			if !ok || compactAddress(actor.Address) != compactAddress(address) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			err = store.PutAuthorized(actor.Address, req, AuthGrant{ID: actor.SessionID, Address: actor.Address, Audience: actor.Audience})
+		} else {
+			err = store.Put(address, req)
+		}
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case errors.Is(err, errBadRequest):

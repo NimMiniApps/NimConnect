@@ -9,6 +9,9 @@ export function createProfileClient(options = {}) {
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     const audience = options.audience;
     let sessionToken = options.sessionToken ?? null;
+    let authorization = options.authorization ?? null;
+    if (authorization)
+        sessionToken = authorization.token;
     async function getProfileByAddress(address) {
         const res = await fetch(`${baseUrl}/api/profile/${compactAddress(address)}`, {
             headers: { Accept: 'application/json' },
@@ -108,8 +111,47 @@ export function createProfileClient(options = {}) {
         sessionToken = body.token;
         return { token: body.token, expiresAt: body.expires_at };
     }
+    async function createAuthorization(args) {
+        if (!audience)
+            throw new Error('audience required for scoped authorization');
+        const scopes = [...new Set(args.scopes)].sort();
+        const challengeRes = await fetch(`${baseUrl}/api/auth/challenges`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ address: args.address, audience, scopes }),
+        });
+        if (!challengeRes.ok)
+            throw new Error(`authorization challenge failed: ${challengeRes.status}`);
+        const challenge = await challengeRes.json();
+        const { publicKey, signature } = await args.signMessage(challenge.message);
+        const sessionRes = await fetch(`${baseUrl}/api/auth/sessions`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+            body: JSON.stringify({ challenge_id: challenge.challenge_id, public_key: publicKey, signature }),
+        });
+        if (!sessionRes.ok)
+            throw new Error(`authorization create failed: ${sessionRes.status}`);
+        const body = await sessionRes.json();
+        authorization = {
+            token: body.token, address: body.address, audience: body.audience,
+            scopes: body.scopes, expiresAt: body.expires_at,
+        };
+        sessionToken = authorization.token;
+        return authorization;
+    }
+    function getAuthorization() { return authorization; }
+    async function revokeAuthorization(all = false) {
+        if (!authorization)
+            return;
+        const res = await fetch(`${baseUrl}${all ? '/api/auth/sessions' : '/api/auth/session'}`, {
+            method: 'DELETE', headers: { Authorization: `Bearer ${authorization.token}` },
+        });
+        if (!res.ok && res.status !== 401)
+            throw new Error(`authorization revoke failed: ${res.status}`);
+        authorization = null;
+        sessionToken = null;
+    }
     function clearSession() {
         sessionToken = null;
+        authorization = null;
     }
     function getSessionToken() {
         return sessionToken;
@@ -117,6 +159,8 @@ export function createProfileClient(options = {}) {
     function requireSessionHeaders() {
         if (!sessionToken)
             throw new Error('session required — call createSession first');
+        if (authorization)
+            return { Accept: 'application/json', Authorization: `Bearer ${authorization.token}` };
         return {
             Accept: 'application/json',
             'X-NimConnect-Session': sessionToken,
@@ -189,6 +233,9 @@ export function createProfileClient(options = {}) {
         getHandleByAddress,
         getDisplayIdentity,
         createSession,
+        createAuthorization,
+        getAuthorization,
+        revokeAuthorization,
         clearSession,
         getSessionToken,
         listFriends,

@@ -58,7 +58,7 @@ describe('DesktopMarketplaceSellPage', () => {
     expect(wrapper.text()).toContain('0.5 NIM') // 5% of 10 NIM
   })
 
-  it('signs and submits the exact listing message', async () => {
+  it('submits the listing without another wallet signature', async () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
     vi.mocked(findMyHandle).mockResolvedValue({ handle: 'chuck', address: 'NQ11 SELLER', tx_hash: 't1', block_height: 5, tx_index: 0 })
     vi.mocked(hubSignMessage).mockResolvedValue({ publicKey: 'pub', signature: 'sig' })
@@ -72,27 +72,30 @@ describe('DesktopMarketplaceSellPage', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(hubSignMessage).toHaveBeenCalledWith('the-message', 'NQ11 SELLER')
+    expect(hubSignMessage).not.toHaveBeenCalled()
     expect(createListing).toHaveBeenCalledWith(
       expect.objectContaining({
         handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 1000000, fee_luna: 50000,
-        ownership_epoch_tx_hash: 't1', nonce: 'the-nonce', public_key: 'pub', signature: 'sig',
+        ownership_epoch_tx_hash: 't1', nonce: 'the-nonce',
       }),
     )
     expect(wrapper.text()).toContain('/marketplace/buy?handle=chuck')
   })
 
-  it('maps a Hub rejection to a quiet message', async () => {
+  it('does not ask the Hub to sign an individual listing', async () => {
     vi.mocked(getDesktopHubAddress).mockReturnValue('NQ11 SELLER')
     vi.mocked(findMyHandle).mockResolvedValue({ handle: 'chuck', address: 'NQ11 SELLER', tx_hash: 't1', block_height: 5, tx_index: 0 })
-    vi.mocked(hubSignMessage).mockRejectedValue(new Error('canceled'))
+    vi.mocked(createListing).mockResolvedValue({
+      handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 1000000, fee_luna: 50000,
+      status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1,
+    })
     const wrapper = mount(DesktopMarketplaceSellPage, { global: { stubs } })
     await flushPromises()
     await wrapper.find('input[type="number"]').setValue('10')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.text()).toContain('HUB:canceled')
-    expect(createListing).not.toHaveBeenCalled()
+    expect(hubSignMessage).not.toHaveBeenCalled()
+    expect(createListing).toHaveBeenCalledOnce()
   })
 
   it('shows the backend error verbatim instead of routing it through hubErrorMessage', async () => {

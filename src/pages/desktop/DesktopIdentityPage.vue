@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { chooseHubAddress, hubSignMessage, hubErrorMessage } from '../../services/hub'
+import { chooseHubAddress, hubErrorMessage } from '../../services/hub'
 import {
   getDesktopHubAddress,
   setDesktopHubAddress,
@@ -24,16 +24,12 @@ import {
 import { MARKETPLACE_ENABLED } from '../../config/features'
 import { makePublicHandleLink, shortAddress } from '../../services/links'
 import { copyText } from '../../services/share'
+import { revokeAuthorization } from '../../services/authorization'
 import Identicon from '../../components/Identicon.vue'
 import QrCode from '../../components/QrCode.vue'
 import TagChips from '../../components/TagChips.vue'
 import type { Profile } from '../../types/profile'
-import {
-  fetchTradesForWallet,
-  marketplaceTradesLookupMessage,
-  generateNonce,
-  type MarketplaceTrade,
-} from '../../services/marketplace'
+import { fetchTradesForWallet, type MarketplaceTrade } from '../../services/marketplace'
 
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 
@@ -109,27 +105,14 @@ function roleFor(trade: MarketplaceTrade): string {
   return compactAddress(trade.seller) === compactAddress(hubAddress.value || '') ? 'Selling' : 'Buying'
 }
 
-// A stored address alone doesn't carry a valid signature — every load signs
-// a fresh short-lived proof of ownership before fetching, since the backend
-// requires one on every request.
+// The scoped app grant proves wallet ownership for marketplace reads.
 async function loadTrades() {
   if (!hubAddress.value) return
   const addr = hubAddress.value
   tradesLoading.value = true
   tradesError.value = null
-  const nonce = generateNonce()
-  const expiresAt = Math.floor(Date.now() / 1000) + 600
-  let publicKey: string, signature: string
   try {
-    const message = marketplaceTradesLookupMessage(addr, nonce, expiresAt)
-    ;({ publicKey, signature } = await hubSignMessage(message, addr))
-  } catch (e) {
-    tradesError.value = hubErrorMessage(e)
-    tradesLoading.value = false
-    return
-  }
-  try {
-    trades.value = await fetchTradesForWallet(addr, nonce, expiresAt, publicKey, signature)
+    trades.value = await fetchTradesForWallet(addr)
     tradesLoaded.value = true
   } catch (e) {
     tradesError.value = (e as Error).message
@@ -271,6 +254,7 @@ async function authorize() {
 }
 
 function disconnect() {
+	void revokeAuthorization()
   clearDesktopHubAddress()
   hubAddress.value = null
   claim.value = null
@@ -359,12 +343,7 @@ async function publish() {
   saveError.value = null
   const addr = hubAddress.value
   try {
-    const result = await syncPublicProfile(
-      buildProfileForSync(),
-      share.value,
-      [addr],
-      (msg) => hubSignMessage(msg, addr),
-    )
+    const result = await syncPublicProfile(buildProfileForSync(), share.value, [addr])
     if (result === 'published') {
       publishNote.value = 'Public profile published ✓'
       lastPublishedAt.value = Date.now()

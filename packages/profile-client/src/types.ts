@@ -42,6 +42,30 @@ export type SignMessageFn = (message: string) => Promise<{
   signature: string
 }>
 
+export type AuthScope =
+  | 'friends:read' | 'friends:write'
+  | 'inbox:read' | 'inbox:send' | 'inbox:delete'
+  | 'profile:write'
+  | 'backup:read' | 'backup:write'
+  | 'marketplace:read' | 'marketplace:trade'
+
+export interface AuthorizationChallenge {
+  challengeId: string
+  message: string
+  address: string
+  audience: string
+  scopes: AuthScope[]
+  expiresAt: number
+}
+
+export interface AuthSession {
+  token: string
+  address: string
+  audience: string
+  scopes: AuthScope[]
+  expiresAt: number
+}
+
 export interface FriendEntry {
   address: string
   handle?: string
@@ -55,6 +79,8 @@ export interface ProfileClientOptions {
   baseUrl?: string
   /** Optional pre-existing `X-NimConnect-Session` token. */
   sessionToken?: string | null
+  /** Optional persisted v3 scoped authorization grant. */
+  authorization?: AuthSession | null
   /**
    * App slug bound into the session challenge (e.g. `nimworld`).
    * When set, `createSession` signs the v2 message and posts `audience`.

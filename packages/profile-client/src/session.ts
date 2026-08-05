@@ -1,4 +1,31 @@
 /** Matches NimConnect backend `userSessionChallenge` / `compactAddress`. */
+import type { AuthScope } from './types.js'
+
+const AUTH_SCOPES = new Set<AuthScope>([
+  'friends:read', 'friends:write', 'inbox:read', 'inbox:send', 'inbox:delete',
+  'profile:write', 'backup:read', 'backup:write', 'marketplace:read', 'marketplace:trade',
+])
+
+export function authorizationMessage(input: {
+  address: string
+  audience: string
+  scopes: AuthScope[]
+  expiresAt: string
+  nonce: string
+}): string {
+  if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(input.audience)) throw new Error('invalid audience')
+  if (!input.scopes.length) throw new Error('scopes required')
+  const seen = new Set<AuthScope>()
+  for (const scope of input.scopes) {
+    if (!AUTH_SCOPES.has(scope)) throw new Error(`unknown scope: ${scope}`)
+    if (seen.has(scope)) throw new Error(`duplicate scope: ${scope}`)
+    seen.add(scope)
+  }
+  const scopes = [...input.scopes].sort()
+  const compact = input.address.replace(/\s+/g, '').toUpperCase()
+  return `NimConnect authorization v3\nApp: ${input.audience}\nAddress: ${compact}\nAccess: ${scopes.join(', ')}\nExpires: ${input.expiresAt}\nNonce: ${input.nonce}`
+}
+
 export function userSessionChallenge(
   address: string,
   timestamp: number,

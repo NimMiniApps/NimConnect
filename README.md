@@ -150,3 +150,9 @@ rebuild instructions.
 ## License
 
 MIT
+# Scoped app authorization
+
+NimConnect can reuse one audience-and-capability scoped wallet authorization
+for seven days across off-chain friends, inbox, profile, encrypted backup, and
+marketplace-intent APIs. On-chain actions always retain explicit wallet
+confirmation. See [the API contract](docs/api/scoped-authorization.md).

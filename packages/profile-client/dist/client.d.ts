@@ -1,4 +1,4 @@
-import type { DisplayIdentity, FriendEntry, HandleClaim, ProfileClientOptions, SignMessageFn, StoredPublicProfile } from './types.js';
+import type { DisplayIdentity, AuthScope, AuthSession, FriendEntry, HandleClaim, ProfileClientOptions, SignMessageFn, StoredPublicProfile } from './types.js';
 /** Strip spaces and uppercase, matching NimConnect backend's `compactAddress`. */
 export declare function compactAddress(address: string): string;
 /** Production API origin (SPA is on nimconnect.nimiqminiapps.com; API is separate). */
@@ -18,6 +18,13 @@ export interface ProfileClient {
     }>;
     clearSession(): void;
     getSessionToken(): string | null;
+    createAuthorization(args: {
+        address: string;
+        scopes: AuthScope[];
+        signMessage: SignMessageFn;
+    }): Promise<AuthSession>;
+    getAuthorization(): AuthSession | null;
+    revokeAuthorization(all?: boolean): Promise<void>;
     listFriends(): Promise<FriendEntry[]>;
     listFriendRequests(): Promise<FriendEntry[]>;
     sendFriendRequest(to: string): Promise<FriendEntry>;

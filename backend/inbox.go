@@ -26,18 +26,21 @@ var errTooMany = errors.New("too many")
 
 // InboxMessage is the stored envelope; see the design spec for field semantics.
 type InboxMessage struct {
-	Version    int    `json:"version"`
-	Type       string `json:"type"`
-	ID         string `json:"id"`
-	ObjectID   string `json:"object_id"`
-	Nonce      string `json:"nonce"`
-	Sender     string `json:"sender"`
-	Recipient  string `json:"recipient"`
-	Payload    string `json:"payload"`
-	SentAt     int64  `json:"sent_at"`
-	ReceivedAt int64  `json:"received_at"`
-	PublicKey  string `json:"public_key"`
-	Signature  string `json:"signature"`
+	Version       int    `json:"version"`
+	Type          string `json:"type"`
+	ID            string `json:"id"`
+	ObjectID      string `json:"object_id"`
+	Nonce         string `json:"nonce"`
+	Sender        string `json:"sender"`
+	Recipient     string `json:"recipient"`
+	Payload       string `json:"payload"`
+	SentAt        int64  `json:"sent_at"`
+	ReceivedAt    int64  `json:"received_at"`
+	PublicKey     string `json:"public_key"`
+	Signature     string `json:"signature"`
+	AuthMode      string `json:"auth_mode,omitempty"`
+	AuthSessionID string `json:"-"`
+	AuthAudience  string `json:"auth_audience,omitempty"`
 }
 
 // InboxSendRequest is the POST body: the envelope minus server-assigned fields.

@@ -20,6 +20,14 @@ func requireUserSession(sessions *UserSessions, r *http.Request) (string, bool) 
 	return sessions.AddressFor(r.Header.Get(userSessionHeader))
 }
 
+func requireUserSessionScope(sessions *UserSessions, r *http.Request, scope string) (string, bool) {
+	if bearerToken(r) != "" {
+		actor, ok := resolveScopedActor(sessions.scoped, r, scope)
+		return actor.Address, ok
+	}
+	return requireUserSession(sessions, r)
+}
+
 func userSessionLoginHandler(sessions *UserSessions) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req userSessionLoginRequest

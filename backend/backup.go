@@ -28,6 +28,9 @@ type BackupRecord struct {
 	Signature     string          `json:"signature"`
 	FormatVersion int             `json:"format_version,omitempty"`
 	Kdf           json.RawMessage `json:"kdf,omitempty"`
+	AuthMode      string          `json:"auth_mode,omitempty"`
+	AuthSessionID string          `json:"-"`
+	AuthAudience  string          `json:"auth_audience,omitempty"`
 }
 
 type BackupPutRequest struct {
@@ -93,12 +96,20 @@ func ciphertextSHA256Hex(ciphertextB64 string) (string, error) {
 }
 
 func (s *BackupStore) Put(address string, req BackupPutRequest) error {
+	return s.put(address, req, true, AuthGrant{})
+}
+
+func (s *BackupStore) PutAuthorized(address string, req BackupPutRequest, grant AuthGrant) error {
+	return s.put(address, req, false, grant)
+}
+
+func (s *BackupStore) put(address string, req BackupPutRequest, verifySignature bool, grant AuthGrant) error {
 	req.Salt = strings.TrimSpace(req.Salt)
 	req.Ciphertext = strings.TrimSpace(req.Ciphertext)
 	req.PublicKey = strings.TrimSpace(req.PublicKey)
 	req.Signature = strings.TrimSpace(req.Signature)
 
-	if req.ExportedAt <= 0 || req.Salt == "" || req.Ciphertext == "" || req.PublicKey == "" || req.Signature == "" {
+	if req.ExportedAt <= 0 || req.Salt == "" || req.Ciphertext == "" || (verifySignature && (req.PublicKey == "" || req.Signature == "")) {
 		return errBadRequest
 	}
 	if len(req.Salt) > backupMaxSaltB64 || len(req.Ciphertext) > backupMaxCiphertextB64 {
@@ -114,8 +125,10 @@ func (s *BackupStore) Put(address string, req BackupPutRequest) error {
 
 	// Only v2 envelopes may write. A harvested v1 signature must not authorize
 	// salt/ciphertext replacement (SEC-001).
-	if err := verifyBackupAuthV2(address, req.PublicKey, req.Signature, req.ExportedAt, req.Salt, ciphertextHash); err != nil {
-		return errUnauthorized
+	if verifySignature {
+		if err := verifyBackupAuthV2(address, req.PublicKey, req.Signature, req.ExportedAt, req.Salt, ciphertextHash); err != nil {
+			return errUnauthorized
+		}
 	}
 
 	existing, err := s.Get(address)
@@ -147,6 +160,8 @@ func (s *BackupStore) Put(address string, req BackupPutRequest) error {
 		Signature:     req.Signature,
 		FormatVersion: req.FormatVersion,
 		Kdf:           req.Kdf,
+		AuthMode:      map[bool]string{true: "wallet_signature", false: "scoped_session"}[verifySignature],
+		AuthSessionID: grant.ID, AuthAudience: grant.Audience,
 	}
 	if err := os.MkdirAll(s.dir, 0o755); err != nil {
 		return err

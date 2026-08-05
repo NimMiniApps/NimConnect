@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   syncPublicProfile: vi.fn(),
   saveMyHandle: vi.fn(),
   fetchTradesForWallet: vi.fn(),
+  revokeAuthorization: vi.fn(),
 }))
 
 vi.mock('../../services/hub', async importOriginal => {
@@ -54,6 +55,8 @@ vi.mock('../../services/marketplace', async importOriginal => {
     generateNonce: vi.fn(() => 'the-nonce'),
   }
 })
+
+vi.mock('../../services/authorization', () => ({ revokeAuthorization: mocks.revokeAuthorization }))
 
 const stubs = {
   QrCode: { template: '<div data-qr-code />' },
@@ -159,8 +162,8 @@ describe('DesktopIdentityPage', () => {
     await wrapper.find('[data-load-trades]').trigger('click')
     await flushPromises()
 
-    expect(mocks.hubSignMessage).toHaveBeenCalledWith('the-message', address)
-    expect(mocks.fetchTradesForWallet).toHaveBeenCalledWith(address, 'the-nonce', expect.any(Number), 'pub', 'sig')
+    expect(mocks.hubSignMessage).not.toHaveBeenCalled()
+    expect(mocks.fetchTradesForWallet).toHaveBeenCalledWith(address)
     expect(wrapper.text()).toContain('chuck')
     expect(wrapper.text()).toContain('Selling')
     expect(wrapper.text()).toContain('alice')
@@ -226,7 +229,7 @@ describe('DesktopIdentityPage', () => {
     expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(true)
   })
 
-  it('publishes via syncPublicProfile using a Hub-backed signer', async () => {
+  it('publishes via the shared scoped authorization', async () => {
     mocks.getDesktopHubAddress.mockReturnValue(address)
     mocks.findMyHandle.mockResolvedValue(claim)
     mocks.fetchPublicProfile.mockResolvedValue({
@@ -243,14 +246,14 @@ describe('DesktopIdentityPage', () => {
     await flushPromises()
 
     expect(mocks.syncPublicProfile).toHaveBeenCalledTimes(1)
-    const [profileArg, shareArg, walletsArg, signArg] = mocks.syncPublicProfile.mock.calls[0]
+    const [profileArg, shareArg, walletsArg] = mocks.syncPublicProfile.mock.calls[0]
     expect(profileArg.address).toBe(address)
     expect(profileArg.name).toBe('Ada Lovelace II')
     expect(shareArg.name).toBe(true)
     expect(walletsArg).toEqual([address])
 
-    await signArg('a message')
-    expect(mocks.hubSignMessage).toHaveBeenCalledWith('a message', address)
+    expect(mocks.syncPublicProfile.mock.calls[0]).toHaveLength(3)
+    expect(mocks.hubSignMessage).not.toHaveBeenCalled()
 
     expect(wrapper.text()).toContain('Public profile published')
     expect(wrapper.find('[data-desktop-identity-unsaved]').exists()).toBe(false)

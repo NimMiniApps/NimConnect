@@ -87,7 +87,11 @@ func profileGetHandler(store *ProfileStore) http.HandlerFunc {
 	}
 }
 
-func profilePutHandler(store *ProfileStore) http.HandlerFunc {
+func profilePutHandler(store *ProfileStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req ProfilePutRequest
 		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
@@ -99,7 +103,17 @@ func profilePutHandler(store *ProfileStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "address mismatch")
 			return
 		}
-		err := store.Put(req)
+		var err error
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeProfileWrite)
+			if !ok || compactAddress(actor.Address) != compactAddress(r.PathValue("address")) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			err = store.PutAuthorized(actor.Address, req, AuthGrant{ID: actor.SessionID, Address: actor.Address, Audience: actor.Audience})
+		} else {
+			err = store.Put(req)
+		}
 		switch {
 		case errors.Is(err, errBadRequest):
 			writeJSONError(w, http.StatusBadRequest, "invalid profile")
@@ -116,19 +130,27 @@ func profilePutHandler(store *ProfileStore) http.HandlerFunc {
 	}
 }
 
-func profileDeleteHandler(store *ProfileStore) http.HandlerFunc {
+func profileDeleteHandler(store *ProfileStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		updatedAt, err := strconv.ParseInt(r.Header.Get("X-Profile-Updated-At"), 10, 64)
 		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid updated_at")
 			return
 		}
-		err = store.Delete(
-			r.PathValue("address"),
-			updatedAt,
-			r.Header.Get("X-Profile-Public-Key"),
-			r.Header.Get("X-Profile-Signature"),
-		)
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeProfileWrite)
+			if !ok || compactAddress(actor.Address) != compactAddress(r.PathValue("address")) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			err = store.DeleteAuthorized(actor.Address, updatedAt)
+		} else {
+			err = store.Delete(r.PathValue("address"), updatedAt, r.Header.Get("X-Profile-Public-Key"), r.Header.Get("X-Profile-Signature"))
+		}
 		switch {
 		case errors.Is(err, errBadRequest):
 			writeJSONError(w, http.StatusBadRequest, "invalid request")

@@ -16,6 +16,55 @@ import (
 	"time"
 )
 
+func TestProductionCutoverFrom001ToScopedAuthorizationPreservesRows(t *testing.T) {
+	databaseURL := isolatedSchemaDatabaseURL(t, "scoped_auth_cutover")
+	cutoverDB, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cutoverDB.Close() })
+	applyMigration001Only(t, cutoverDB)
+
+	address := compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
+	if _, err := cutoverDB.Exec(`
+		INSERT INTO profiles (address, payload, updated_at, public_key, signature)
+		VALUES ($1, '{"display_name":"Cutover Alice"}', 1700000000, 'pk-cutover', 'sig-cutover')`, address); err != nil {
+		t.Fatalf("seed 001 profile: %v", err)
+	}
+	if _, err := cutoverDB.Exec(`
+		INSERT INTO marketplace_listings
+			(handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at)
+		VALUES ('cutover-alice', $1, 1234567, 12345, 'active', 'epoch-cutover', 1700000001)`, address); err != nil {
+		t.Fatalf("seed 001 listing: %v", err)
+	}
+	if _, err := cutoverDB.Exec(`
+		INSERT INTO friendships
+			(id, requester_address, recipient_address, status, created_at, updated_at)
+		VALUES ('friend-cutover', $1, 'NQ22BUYERBBBBBBBBBBBBBBBBBBBBBBBBBBBB', 'accepted', 1700000002, 1700000003)`, address); err != nil {
+		t.Fatalf("seed 001 friendship: %v", err)
+	}
+
+	if err := Migrate(cutoverDB); err != nil {
+		t.Fatalf("apply 002 through Migrate: %v", err)
+	}
+
+	var payload, publicKey, signature string
+	var updatedAt int64
+	if err := cutoverDB.QueryRow(`SELECT payload, updated_at, public_key, signature FROM profiles WHERE address = $1`, address).
+		Scan(&payload, &updatedAt, &publicKey, &signature); err != nil {
+		t.Fatal(err)
+	}
+	if payload != `{"display_name":"Cutover Alice"}` || updatedAt != 1700000000 || publicKey != "pk-cutover" || signature != "sig-cutover" {
+		t.Fatalf("profile changed during cutover: payload=%q updated=%d key=%q sig=%q", payload, updatedAt, publicKey, signature)
+	}
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM marketplace_listings WHERE handle = 'cutover-alice' AND price_luna = 1234567`, 1)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM friendships WHERE id = 'friend-cutover' AND status = 'accepted'`, 1)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM schema_migrations WHERE version = '002_scoped_authorization'`, 1)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_apps WHERE audience IN ('nimconnect', 'nimworld') AND enabled`, 2)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimconnect'`, 10)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimworld'`, 2)
+}
+
 // TestProductionCutoverRehearsal simulates a production-like JSON → Postgres cutover:
 // rich fixtures, import, field fidelity, ledger sequence continuity, warm restart,
 // post-import marketplace ops, concurrency, import no-op, purge, and HTTP smoke.
@@ -119,6 +168,41 @@ func TestProductionCutoverRehearsal(t *testing.T) {
 		}
 		if profilePayload != `{"display_name":"Alice","bio":"prod rehearsal"}` {
 			t.Fatalf("profile payload mismatch: %q", profilePayload)
+		}
+	})
+
+	t.Run("scoped_authorization_migration_rerun_preserves_existing_rows", func(t *testing.T) {
+		before := map[string]int{}
+		for _, table := range []string{"marketplace_listings", "marketplace_trades", "profiles", "inbox_messages", "handle_claims"} {
+			var count int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			before[table] = count
+		}
+
+		tokenHash := []byte("production-rehearsal-token-hash")
+		_, err := db.Exec(`
+			INSERT INTO auth_sessions
+				(token_hash, address, audience, scopes, created_at, expires_at, last_used_at)
+			VALUES ($1, $2, 'nimconnect', ARRAY['friends:read'], now(), now() + interval '7 days', now())`,
+			tokenHash, compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := Migrate(db); err != nil {
+			t.Fatalf("rerun migrate: %v", err)
+		}
+		for table, want := range before {
+			assertCount(t, db, `SELECT COUNT(*) FROM `+table, want)
+		}
+		var audience string
+		if err := db.QueryRow(`SELECT audience FROM auth_sessions WHERE token_hash = $1`, tokenHash).Scan(&audience); err != nil {
+			t.Fatal(err)
+		}
+		if audience != "nimconnect" {
+			t.Fatalf("auth session audience = %q, want nimconnect", audience)
 		}
 	})
 
@@ -525,7 +609,7 @@ func seedProductionLikeLegacy(t *testing.T, dir string) (LegacyPaths, legacyExpe
 			id := newMessageID()
 			writeJSONFile(t, filepath.Join(mailbox, id+".json"), InboxMessage{
 				Version: 1, Type: "payment-request", ID: id, ObjectID: fmt.Sprintf("obj-%s-%d", compactAddress(recipient), i),
-				Nonce: fmt.Sprintf("inbox-nonce-%s-%d", compactAddress(recipient), i),
+				Nonce:  fmt.Sprintf("inbox-nonce-%s-%d", compactAddress(recipient), i),
 				Sender: seller, Recipient: recipient, Payload: `{"amount":"1"}`,
 				SentAt: 1_700_000_000 + int64(i), ReceivedAt: 1_700_000_001 + int64(i),
 				PublicKey: "pk", Signature: "sig",
@@ -566,7 +650,7 @@ func resetMigrationDB(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`
 		TRUNCATE marketplace_listings, marketplace_trades, marketplace_nonces,
 		escrow_ledger, profiles, stats_day_wallets, stats_days,
-		inbox_messages, handle_claims, friendships
+		inbox_messages, handle_claims, friendships, auth_challenges, auth_sessions
 		RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatal(err)

@@ -5,6 +5,11 @@ import {
   cloudBackupExists,
 } from './cloud-backup'
 
+const authorizedFetch = vi.hoisted(() => vi.fn(
+  (path: string, _scopes: string[], init?: RequestInit) => fetch(path, init),
+))
+vi.mock('./authorization', () => ({ authorizedFetch }))
+
 describe('cloudBackupExists', () => {
   it('returns true when HEAD succeeds', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ status: 200, ok: true }))
