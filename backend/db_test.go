@@ -16,7 +16,9 @@ func TestOpenAndMigrateCreatesSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'marketplace_listings'`).Scan(&n); err != nil {
+	if err := db.QueryRow(`
+		SELECT COUNT(*) FROM information_schema.tables
+		WHERE table_schema = 'public' AND table_name = 'marketplace_listings'`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {

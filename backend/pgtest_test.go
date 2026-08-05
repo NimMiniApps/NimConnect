@@ -3,14 +3,53 @@ package main
 import (
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 )
 
+const dedicatedTestDatabaseURL = "postgres://nimconnect:nimconnect@127.0.0.1:5432/nimconnect_scoped_auth_test?sslmode=disable"
+
+func resolveTestDatabaseURL(configured string) (string, error) {
+	if configured == "" {
+		configured = dedicatedTestDatabaseURL
+	}
+	if err := assertTestDatabaseURL(configured); err != nil {
+		return "", err
+	}
+	return configured, nil
+}
+
+func resolveTestDatabaseURLFromEnv() (string, error) {
+	return resolveTestDatabaseURL(os.Getenv("TEST_DATABASE_URL"))
+}
+
+func TestResolveTestDatabaseURLRejectsUnsafeDatabase(t *testing.T) {
+	for _, unsafe := range []string{
+		"postgres://nimconnect:nimconnect@127.0.0.1:5432/nimconnect?sslmode=disable",
+		"postgres://nimconnect:nimconnect@127.0.0.1:5432/production?sslmode=disable",
+		"not-a-database-url",
+	} {
+		if _, err := resolveTestDatabaseURL(unsafe); err == nil {
+			t.Errorf("resolveTestDatabaseURL(%q) succeeded; want refusal", unsafe)
+		}
+	}
+}
+
+func TestResolveTestDatabaseURLUsesSafeDedicatedFallback(t *testing.T) {
+	got, err := resolveTestDatabaseURL("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "/nimconnect_scoped_auth_test?") {
+		t.Fatalf("fallback URL = %q, want dedicated test database", got)
+	}
+}
+
 func testDatabaseURL(t *testing.T) string {
 	t.Helper()
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		url = "postgres://nimconnect:nimconnect@127.0.0.1:5432/nimconnect?sslmode=disable"
+	url, err := resolveTestDatabaseURLFromEnv()
+	if err != nil {
+		t.Fatal(err)
 	}
 	return url
 }

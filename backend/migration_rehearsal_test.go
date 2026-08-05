@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,7 +15,94 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"nimconnect-backend/migrations"
 )
+
+func TestProductionCutoverFrom001ToScopedAuthorizationPreservesRows(t *testing.T) {
+	databaseURL, err := resolveTestDatabaseURLFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminDB, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Skipf("postgres unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = adminDB.Close() })
+
+	schema := fmt.Sprintf("scoped_auth_cutover_%d", time.Now().UnixNano())
+	if _, err := adminDB.Exec(`CREATE SCHEMA ` + schema); err != nil {
+		t.Fatal(err)
+	}
+
+	parsedURL, err := neturl.Parse(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsedURL.Query()
+	query.Set("search_path", schema)
+	parsedURL.RawQuery = query.Encode()
+	cutoverDB, err := OpenDB(parsedURL.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cutoverDB.Close()
+		if _, err := adminDB.Exec(`DROP SCHEMA ` + schema + ` CASCADE`); err != nil {
+			t.Errorf("drop cutover schema: %v", err)
+		}
+	})
+
+	migration001, err := migrations.Files.ReadFile("001_init.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cutoverDB.Exec(string(migration001)); err != nil {
+		t.Fatalf("apply 001: %v", err)
+	}
+	if _, err := cutoverDB.Exec(`INSERT INTO schema_migrations (version) VALUES ('001_init')`); err != nil {
+		t.Fatal(err)
+	}
+
+	address := compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
+	if _, err := cutoverDB.Exec(`
+		INSERT INTO profiles (address, payload, updated_at, public_key, signature)
+		VALUES ($1, '{"display_name":"Cutover Alice"}', 1700000000, 'pk-cutover', 'sig-cutover')`, address); err != nil {
+		t.Fatalf("seed 001 profile: %v", err)
+	}
+	if _, err := cutoverDB.Exec(`
+		INSERT INTO marketplace_listings
+			(handle, seller, price_luna, fee_luna, status, ownership_epoch_tx_hash, created_at)
+		VALUES ('cutover-alice', $1, 1234567, 12345, 'active', 'epoch-cutover', 1700000001)`, address); err != nil {
+		t.Fatalf("seed 001 listing: %v", err)
+	}
+	if _, err := cutoverDB.Exec(`
+		INSERT INTO friendships
+			(id, requester_address, recipient_address, status, created_at, updated_at)
+		VALUES ('friend-cutover', $1, 'NQ22BUYERBBBBBBBBBBBBBBBBBBBBBBBBBBBB', 'accepted', 1700000002, 1700000003)`, address); err != nil {
+		t.Fatalf("seed 001 friendship: %v", err)
+	}
+
+	if err := Migrate(cutoverDB); err != nil {
+		t.Fatalf("apply 002 through Migrate: %v", err)
+	}
+
+	var payload, publicKey, signature string
+	var updatedAt int64
+	if err := cutoverDB.QueryRow(`SELECT payload, updated_at, public_key, signature FROM profiles WHERE address = $1`, address).
+		Scan(&payload, &updatedAt, &publicKey, &signature); err != nil {
+		t.Fatal(err)
+	}
+	if payload != `{"display_name":"Cutover Alice"}` || updatedAt != 1700000000 || publicKey != "pk-cutover" || signature != "sig-cutover" {
+		t.Fatalf("profile changed during cutover: payload=%q updated=%d key=%q sig=%q", payload, updatedAt, publicKey, signature)
+	}
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM marketplace_listings WHERE handle = 'cutover-alice' AND price_luna = 1234567`, 1)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM friendships WHERE id = 'friend-cutover' AND status = 'accepted'`, 1)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM schema_migrations WHERE version = '002_scoped_authorization'`, 1)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_apps WHERE audience IN ('nimconnect', 'nimworld') AND enabled`, 2)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimconnect'`, 10)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimworld'`, 2)
+}
 
 // TestProductionCutoverRehearsal simulates a production-like JSON → Postgres cutover:
 // rich fixtures, import, field fidelity, ledger sequence continuity, warm restart,
