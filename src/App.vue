@@ -10,6 +10,7 @@ import { makeNimiqPayAddLink, parsePaymentRequest, type ParsedPaymentRequest } f
 import {
   enableBrowserMode,
   hasBrowserModeOptIn,
+  isCreateProfileIntent,
   NIMPAY_CREATE_PROFILE_URL,
   NIMPAY_OPEN_URL,
 } from './config/host-app'
@@ -61,7 +62,7 @@ const publicAddAddress = computed(() => {
 })
 const handoffOpenUrl = computed(() => {
   if (publicAddAddress.value) return makeNimiqPayAddLink(publicAddAddress.value)
-  if (router.currentRoute.value.query.sheet === 'claim') return NIMPAY_CREATE_PROFILE_URL
+  if (isCreateProfileIntent(routePath.value, router.currentRoute.value.query)) return NIMPAY_CREATE_PROFILE_URL
   return NIMPAY_OPEN_URL
 })
 // Public profile pages render for everyone — no install wall.
@@ -190,6 +191,7 @@ watch(routePath, path => {
     && !isDesktopPortalPath(path)
     && path !== '/pay'
     && path !== '/add'
+    && !isCreateProfileIntent(path, router.currentRoute.value.query)
   ) {
     void router.replace('/')
   }

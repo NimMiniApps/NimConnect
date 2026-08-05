@@ -62,8 +62,9 @@ describe('App desktop portal gate', () => {
 describe('App create-profile handoff', () => {
   it('preserves claim intent when a browser hands the route to Nimiq Pay', () => {
     expect(source).toMatch(/NIMPAY_CREATE_PROFILE_URL/)
-    expect(source).toMatch(/query\.sheet === 'claim'/)
+    expect(source).toMatch(/isCreateProfileIntent/)
     expect(source).toMatch(/handoffOpenUrl/)
+    expect(source).toMatch(/&& !isCreateProfileIntent\(path, router\.currentRoute\.value\.query\)/)
   })
 })
 

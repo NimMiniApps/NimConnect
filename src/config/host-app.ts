@@ -5,6 +5,10 @@ export const NIMPAY_OPEN_URL = `https://nimpay.app/miniapps/open/${MINIAPP_DOMAI
 export const CREATE_PROFILE_URL = `https://${MINIAPP_DOMAIN}/#/create-profile`
 export const NIMPAY_CREATE_PROFILE_URL = `${NIMPAY_OPEN_URL}#/create-profile`
 
+export function isCreateProfileIntent(path: string, query: Record<string, unknown>): boolean {
+  return path === '/create-profile' || (path === '/me' && query.sheet === 'claim')
+}
+
 export const NIMPAY_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.nimiq.pay'
 
