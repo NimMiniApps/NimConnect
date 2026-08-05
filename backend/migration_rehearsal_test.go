@@ -122,6 +122,41 @@ func TestProductionCutoverRehearsal(t *testing.T) {
 		}
 	})
 
+	t.Run("scoped_authorization_migration_rerun_preserves_existing_rows", func(t *testing.T) {
+		before := map[string]int{}
+		for _, table := range []string{"marketplace_listings", "marketplace_trades", "profiles", "inbox_messages", "handle_claims"} {
+			var count int
+			if err := db.QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil {
+				t.Fatal(err)
+			}
+			before[table] = count
+		}
+
+		tokenHash := []byte("production-rehearsal-token-hash")
+		_, err := db.Exec(`
+			INSERT INTO auth_sessions
+				(token_hash, address, audience, scopes, created_at, expires_at, last_used_at)
+			VALUES ($1, $2, 'nimconnect', ARRAY['friends:read'], now(), now() + interval '7 days', now())`,
+			tokenHash, compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := Migrate(db); err != nil {
+			t.Fatalf("rerun migrate: %v", err)
+		}
+		for table, want := range before {
+			assertCount(t, db, `SELECT COUNT(*) FROM `+table, want)
+		}
+		var audience string
+		if err := db.QueryRow(`SELECT audience FROM auth_sessions WHERE token_hash = $1`, tokenHash).Scan(&audience); err != nil {
+			t.Fatal(err)
+		}
+		if audience != "nimconnect" {
+			t.Fatalf("auth session audience = %q, want nimconnect", audience)
+		}
+	})
+
 	t.Run("ledger_sequence_continues", func(t *testing.T) {
 		ledger, err := OpenEscrowLedger(db)
 		if err != nil {
@@ -525,7 +560,7 @@ func seedProductionLikeLegacy(t *testing.T, dir string) (LegacyPaths, legacyExpe
 			id := newMessageID()
 			writeJSONFile(t, filepath.Join(mailbox, id+".json"), InboxMessage{
 				Version: 1, Type: "payment-request", ID: id, ObjectID: fmt.Sprintf("obj-%s-%d", compactAddress(recipient), i),
-				Nonce: fmt.Sprintf("inbox-nonce-%s-%d", compactAddress(recipient), i),
+				Nonce:  fmt.Sprintf("inbox-nonce-%s-%d", compactAddress(recipient), i),
 				Sender: seller, Recipient: recipient, Payload: `{"amount":"1"}`,
 				SentAt: 1_700_000_000 + int64(i), ReceivedAt: 1_700_000_001 + int64(i),
 				PublicKey: "pk", Signature: "sig",
@@ -566,7 +601,7 @@ func resetMigrationDB(t *testing.T, db *sql.DB) {
 	_, err := db.Exec(`
 		TRUNCATE marketplace_listings, marketplace_trades, marketplace_nonces,
 		escrow_ledger, profiles, stats_day_wallets, stats_days,
-		inbox_messages, handle_claims, friendships
+		inbox_messages, handle_claims, friendships, auth_challenges, auth_sessions
 		RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatal(err)
