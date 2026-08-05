@@ -18,14 +18,16 @@ CREATE TABLE IF NOT EXISTS auth_app_scopes (
 
 CREATE TABLE IF NOT EXISTS auth_challenges (
   id TEXT PRIMARY KEY,
-  nonce_hash BYTEA NOT NULL UNIQUE,
+  nonce_hash BYTEA NOT NULL UNIQUE CHECK (octet_length(nonce_hash) = 32),
   address TEXT NOT NULL,
   audience TEXT NOT NULL REFERENCES auth_apps(audience),
   scopes TEXT[] NOT NULL CHECK (cardinality(scopes) > 0),
   message TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
-  consumed_at TIMESTAMPTZ
+  consumed_at TIMESTAMPTZ,
+  CHECK (expires_at > created_at AND expires_at <= created_at + interval '5 minutes'),
+  CHECK (consumed_at IS NULL OR consumed_at >= created_at)
 );
 CREATE INDEX IF NOT EXISTS auth_challenges_address_created
   ON auth_challenges (address, created_at DESC);
@@ -33,14 +35,16 @@ CREATE INDEX IF NOT EXISTS auth_challenges_expires_at
   ON auth_challenges (expires_at);
 
 CREATE TABLE IF NOT EXISTS auth_sessions (
-  token_hash BYTEA PRIMARY KEY,
+  token_hash BYTEA PRIMARY KEY CHECK (octet_length(token_hash) = 32),
   address TEXT NOT NULL,
   audience TEXT NOT NULL REFERENCES auth_apps(audience),
   scopes TEXT[] NOT NULL CHECK (cardinality(scopes) > 0),
   created_at TIMESTAMPTZ NOT NULL,
   expires_at TIMESTAMPTZ NOT NULL,
   last_used_at TIMESTAMPTZ NOT NULL,
-  revoked_at TIMESTAMPTZ
+  revoked_at TIMESTAMPTZ,
+  CHECK (expires_at > created_at AND expires_at <= created_at + interval '7 days'),
+  CHECK (revoked_at IS NULL OR revoked_at >= created_at)
 );
 CREATE INDEX IF NOT EXISTS auth_sessions_address
   ON auth_sessions (address);

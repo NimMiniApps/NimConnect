@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,54 +14,16 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"nimconnect-backend/migrations"
 )
 
 func TestProductionCutoverFrom001ToScopedAuthorizationPreservesRows(t *testing.T) {
-	databaseURL, err := resolveTestDatabaseURLFromEnv()
+	databaseURL := isolatedSchemaDatabaseURL(t, "scoped_auth_cutover")
+	cutoverDB, err := OpenDB(databaseURL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	adminDB, err := OpenDB(databaseURL)
-	if err != nil {
-		t.Skipf("postgres unavailable: %v", err)
-	}
-	t.Cleanup(func() { _ = adminDB.Close() })
-
-	schema := fmt.Sprintf("scoped_auth_cutover_%d", time.Now().UnixNano())
-	if _, err := adminDB.Exec(`CREATE SCHEMA ` + schema); err != nil {
-		t.Fatal(err)
-	}
-
-	parsedURL, err := neturl.Parse(databaseURL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	query := parsedURL.Query()
-	query.Set("search_path", schema)
-	parsedURL.RawQuery = query.Encode()
-	cutoverDB, err := OpenDB(parsedURL.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		_ = cutoverDB.Close()
-		if _, err := adminDB.Exec(`DROP SCHEMA ` + schema + ` CASCADE`); err != nil {
-			t.Errorf("drop cutover schema: %v", err)
-		}
-	})
-
-	migration001, err := migrations.Files.ReadFile("001_init.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := cutoverDB.Exec(string(migration001)); err != nil {
-		t.Fatalf("apply 001: %v", err)
-	}
-	if _, err := cutoverDB.Exec(`INSERT INTO schema_migrations (version) VALUES ('001_init')`); err != nil {
-		t.Fatal(err)
-	}
+	t.Cleanup(func() { _ = cutoverDB.Close() })
+	applyMigration001Only(t, cutoverDB)
 
 	address := compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD")
 	if _, err := cutoverDB.Exec(`

@@ -1,10 +1,223 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
+	"fmt"
+	neturl "net/url"
 	"reflect"
+	"sync"
 	"testing"
+	"time"
+
+	"nimconnect-backend/migrations"
 )
+
+func isolatedSchemaDatabaseURL(t *testing.T, prefix string) string {
+	t.Helper()
+	databaseURL, err := resolveTestDatabaseURLFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminDB, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Skipf("postgres unavailable: %v", err)
+	}
+	t.Cleanup(func() { _ = adminDB.Close() })
+
+	schema := fmt.Sprintf("%s_%d", prefix, time.Now().UnixNano())
+	if _, err := adminDB.Exec(`CREATE SCHEMA ` + schema); err != nil {
+		t.Fatal(err)
+	}
+	// Register this immediately after creation so even a later OpenDB failure
+	// cannot strand an isolated test schema.
+	t.Cleanup(func() {
+		if _, err := adminDB.Exec(`DROP SCHEMA ` + schema + ` CASCADE`); err != nil {
+			t.Errorf("drop isolated schema: %v", err)
+		}
+	})
+
+	parsedURL, err := neturl.Parse(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := parsedURL.Query()
+	query.Set("search_path", schema)
+	parsedURL.RawQuery = query.Encode()
+	return parsedURL.String()
+}
+
+func applyMigration001Only(t *testing.T, db *sql.DB) {
+	t.Helper()
+	body, err := migrations.Files.ReadFile("001_init.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(string(body)); err != nil {
+		t.Fatalf("apply 001: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO schema_migrations (version) VALUES ('001_init')`); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMigrateSerializesConcurrentReplicas(t *testing.T) {
+	databaseURL := isolatedSchemaDatabaseURL(t, "migration_race")
+	db1, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db1.Close() })
+	db2, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db2.Close() })
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, db := range []*sql.DB{db1, db2} {
+		wg.Add(1)
+		go func(db *sql.DB) {
+			defer wg.Done()
+			<-start
+			results <- Migrate(db)
+		}(db)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	for err := range results {
+		if err != nil {
+			t.Errorf("concurrent Migrate: %v", err)
+		}
+	}
+	assertCount(t, db1, `SELECT COUNT(*) FROM schema_migrations WHERE version = '001_init'`, 1)
+	assertCount(t, db1, `SELECT COUNT(*) FROM schema_migrations WHERE version = '002_scoped_authorization'`, 1)
+}
+
+func TestMigrateFailureRollsBackAndReleasesAdvisoryLock(t *testing.T) {
+	databaseURL := isolatedSchemaDatabaseURL(t, "migration_failure")
+	db, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	applyMigration001Only(t, db)
+	if _, err := db.Exec(`CREATE TABLE auth_sessions (bogus INT)`); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Migrate(db); err == nil {
+		t.Fatal("Migrate succeeded with incompatible auth_sessions table")
+	}
+	var authAppsExists bool
+	if err := db.QueryRow(`SELECT to_regclass('auth_apps') IS NOT NULL`).Scan(&authAppsExists); err != nil {
+		t.Fatal(err)
+	}
+	if authAppsExists {
+		t.Error("failed migration left auth_apps behind; migration body was not rolled back")
+	}
+	assertCount(t, db, `SELECT COUNT(*) FROM schema_migrations WHERE version = '002_scoped_authorization'`, 0)
+
+	probeDB, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = probeDB.Close() })
+	conn, err := probeDB.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	var acquired bool
+	if err := conn.QueryRowContext(context.Background(), `SELECT pg_try_advisory_lock($1)`, migrationAdvisoryLockKey).Scan(&acquired); err != nil {
+		t.Fatal(err)
+	}
+	if !acquired {
+		t.Fatal("migration advisory lock remained held after failure")
+	}
+	if _, err := conn.ExecContext(context.Background(), `SELECT pg_advisory_unlock($1)`, migrationAdvisoryLockKey); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestScopedAuthorizationSchemaRejectsInvalidRows(t *testing.T) {
+	databaseURL := isolatedSchemaDatabaseURL(t, "auth_constraints")
+	db, err := OpenDB(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+
+	createdAt := time.Now().UTC().Truncate(time.Second)
+	tests := []struct {
+		name string
+		stmt string
+		args []any
+	}{
+		{
+			name: "short challenge hash",
+			stmt: `INSERT INTO auth_challenges (id, nonce_hash, address, audience, scopes, message, created_at, expires_at)
+			       VALUES ('bad-challenge-hash', $1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], 'message', $2, $3)`,
+			args: []any{bytes.Repeat([]byte{1}, 31), createdAt, createdAt.Add(time.Minute)},
+		},
+		{
+			name: "challenge expires at creation",
+			stmt: `INSERT INTO auth_challenges (id, nonce_hash, address, audience, scopes, message, created_at, expires_at)
+			       VALUES ('bad-challenge-order', $1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], 'message', $2, $2)`,
+			args: []any{bytes.Repeat([]byte{2}, 32), createdAt},
+		},
+		{
+			name: "challenge exceeds five minutes",
+			stmt: `INSERT INTO auth_challenges (id, nonce_hash, address, audience, scopes, message, created_at, expires_at)
+			       VALUES ('bad-challenge-ttl', $1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], 'message', $2, $3)`,
+			args: []any{bytes.Repeat([]byte{3}, 32), createdAt, createdAt.Add(5*time.Minute + time.Second)},
+		},
+		{
+			name: "challenge consumed before creation",
+			stmt: `INSERT INTO auth_challenges (id, nonce_hash, address, audience, scopes, message, created_at, expires_at, consumed_at)
+			       VALUES ('bad-challenge-consumed', $1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], 'message', $2, $3, $4)`,
+			args: []any{bytes.Repeat([]byte{4}, 32), createdAt, createdAt.Add(time.Minute), createdAt.Add(-time.Second)},
+		},
+		{
+			name: "short session hash",
+			stmt: `INSERT INTO auth_sessions (token_hash, address, audience, scopes, created_at, expires_at, last_used_at)
+			       VALUES ($1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], $2, $3, $2)`,
+			args: []any{bytes.Repeat([]byte{5}, 31), createdAt, createdAt.Add(time.Hour)},
+		},
+		{
+			name: "session expires at creation",
+			stmt: `INSERT INTO auth_sessions (token_hash, address, audience, scopes, created_at, expires_at, last_used_at)
+			       VALUES ($1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], $2, $2, $2)`,
+			args: []any{bytes.Repeat([]byte{6}, 32), createdAt},
+		},
+		{
+			name: "session exceeds seven days",
+			stmt: `INSERT INTO auth_sessions (token_hash, address, audience, scopes, created_at, expires_at, last_used_at)
+			       VALUES ($1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], $2, $3, $2)`,
+			args: []any{bytes.Repeat([]byte{7}, 32), createdAt, createdAt.Add(7*24*time.Hour + time.Second)},
+		},
+		{
+			name: "session revoked before creation",
+			stmt: `INSERT INTO auth_sessions (token_hash, address, audience, scopes, created_at, expires_at, last_used_at, revoked_at)
+			       VALUES ($1, 'NQTEST', 'nimconnect', ARRAY['friends:read'], $2, $3, $2, $4)`,
+			args: []any{bytes.Repeat([]byte{8}, 32), createdAt, createdAt.Add(time.Hour), createdAt.Add(-time.Second)},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := db.Exec(tc.stmt, tc.args...); err == nil {
+				t.Fatal("invalid authorization row was accepted")
+			}
+		})
+	}
+}
 
 func TestOpenAndMigrateCreatesSchema(t *testing.T) {
 	db, err := OpenDB(testDatabaseURL(t))
