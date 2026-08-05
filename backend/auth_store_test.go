@@ -318,14 +318,12 @@ func TestAuthStoreRejectsExpiredRevokedAndDisabledAppSessions(t *testing.T) {
 }
 
 func TestAuthStoreRejectsExpiredChallenge(t *testing.T) {
-	store, db := newTestAuthStore(t)
+	store, _ := newTestAuthStore(t)
 	store.randRead = deterministicRand()
+	store.now = func() time.Time { return time.Now().UTC().Add(-10 * time.Minute) }
 	challenge, err := store.CreateChallenge(authTestAddress, "nimconnect", []string{"friends:read"},
 		func(nonce string, _ time.Time) string { return nonce })
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`UPDATE auth_challenges SET expires_at = now() - interval '1 second' WHERE id = $1`, challenge.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.ConsumeChallenge(challenge.ID); !errors.Is(err, errAuthChallengeUnavailable) {

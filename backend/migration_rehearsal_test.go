@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -181,12 +182,12 @@ func TestProductionCutoverRehearsal(t *testing.T) {
 			before[table] = count
 		}
 
-		tokenHash := []byte("production-rehearsal-token-hash")
+		tokenHash := sha256.Sum256([]byte("production-rehearsal-token"))
 		_, err := db.Exec(`
 			INSERT INTO auth_sessions
 				(token_hash, address, audience, scopes, created_at, expires_at, last_used_at)
 			VALUES ($1, $2, 'nimconnect', ARRAY['friends:read'], now(), now() + interval '7 days', now())`,
-			tokenHash, compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"))
+			tokenHash[:], compactAddress("NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -198,7 +199,7 @@ func TestProductionCutoverRehearsal(t *testing.T) {
 			assertCount(t, db, `SELECT COUNT(*) FROM `+table, want)
 		}
 		var audience string
-		if err := db.QueryRow(`SELECT audience FROM auth_sessions WHERE token_hash = $1`, tokenHash).Scan(&audience); err != nil {
+		if err := db.QueryRow(`SELECT audience FROM auth_sessions WHERE token_hash = $1`, tokenHash[:]).Scan(&audience); err != nil {
 			t.Fatal(err)
 		}
 		if audience != "nimconnect" {
