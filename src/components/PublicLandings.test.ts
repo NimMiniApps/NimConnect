@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import OpenInNimiqPayLanding from './OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './PublicPayLanding.vue'
 import PublicProfileLanding from './PublicProfileLanding.vue'
-import { NIMPAY_APP_STORE_URL, NIMPAY_OPEN_URL, NIMPAY_PLAY_STORE_URL } from '../config/host-app'
+import {
+  NIMPAY_APP_STORE_URL,
+  NIMPAY_CREATE_PROFILE_URL,
+  NIMPAY_OPEN_URL,
+  NIMPAY_PLAY_STORE_URL,
+} from '../config/host-app'
 import { makeNimiqPayDeepLink, makeWalletRequestLink } from '../services/links'
 import { makeNimiqPayProfileLink } from '../services/profile-share'
 
@@ -204,6 +209,8 @@ describe('public landings', () => {
     expect(wrapper.text()).toContain('Ada Lovelace')
     expect(wrapper.text()).toContain('Add Ada Lovelace to your contacts')
     expect(wrapper.text()).toContain('Claim your own @handle')
+    const claimLink = wrapper.findAll('a').find(link => link.text() === 'Claim your own @handle')
+    expect(claimLink?.attributes('href')).toBe(NIMPAY_CREATE_PROFILE_URL)
     expect(wrapper.text()).not.toMatch(/chain verification|on-chain verified/i)
     expect(wrapper.get('[data-public-tertiary]').text()).toContain('Google Play')
     expect(wrapper.get('[data-public-secondary]').text()).not.toContain('Google Play')

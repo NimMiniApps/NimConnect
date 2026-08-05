@@ -7,7 +7,12 @@ import { useProfilesStore } from './stores/profiles'
 import { useInboxStore } from './stores/inbox'
 import { useVisiblePolling } from './composables/useVisiblePolling'
 import { makeNimiqPayAddLink, parsePaymentRequest, type ParsedPaymentRequest } from './services/links'
-import { enableBrowserMode, hasBrowserModeOptIn, NIMPAY_OPEN_URL } from './config/host-app'
+import {
+  enableBrowserMode,
+  hasBrowserModeOptIn,
+  NIMPAY_CREATE_PROFILE_URL,
+  NIMPAY_OPEN_URL,
+} from './config/host-app'
 import OpenInNimiqPayLanding from './components/OpenInNimiqPayLanding.vue'
 import PublicPayLanding from './components/PublicPayLanding.vue'
 import PublicProfileLanding from './components/PublicProfileLanding.vue'
@@ -54,9 +59,11 @@ const publicAddAddress = computed(() => {
   const raw = router.currentRoute.value.query.address
   return typeof raw === 'string' ? parsePaymentRequest(decodeURIComponent(raw))?.recipient ?? null : null
 })
-const handoffOpenUrl = computed(() =>
-  publicAddAddress.value ? makeNimiqPayAddLink(publicAddAddress.value) : NIMPAY_OPEN_URL,
-)
+const handoffOpenUrl = computed(() => {
+  if (publicAddAddress.value) return makeNimiqPayAddLink(publicAddAddress.value)
+  if (router.currentRoute.value.query.sheet === 'claim') return NIMPAY_CREATE_PROFILE_URL
+  return NIMPAY_OPEN_URL
+})
 // Public profile pages render for everyone — no install wall.
 const publicProfileRoute = computed(() => router.currentRoute.value.path.startsWith('/u/'))
 const routePath = computed(() => router.currentRoute.value.path)

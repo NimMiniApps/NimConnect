@@ -25,6 +25,7 @@ export const router = createRouter({
     { path: '/profile/:id', component: () => import('./pages/ProfileDetailsPage.vue') },
     { path: '/add', component: () => import('./pages/ProfileFormPage.vue') },
     { path: '/edit/:id', component: () => import('./pages/ProfileFormPage.vue') },
+    { path: '/create-profile', redirect: { path: '/me', query: { sheet: 'claim' } } },
     { path: '/me', component: () => import('./pages/PortalMePage.vue') },
     { path: '/settings', component: () => import('./pages/SettingsPage.vue') },
     { path: '/pay', component: () => import('./pages/PayPage.vue') },

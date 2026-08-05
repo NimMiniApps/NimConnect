@@ -11,7 +11,7 @@ import {
   makeWalletRequestLink,
 } from '../services/links'
 import { makeNimiqPayProfileLink, type SharedProfile } from '../services/profile-share'
-import { NIMPAY_OPEN_URL } from '../config/host-app'
+import { NIMPAY_CREATE_PROFILE_URL } from '../config/host-app'
 
 const props = withDefaults(defineProps<{ profile: SharedProfile; allowBrowserContinue?: boolean }>(), {
   allowBrowserContinue: true,
@@ -23,7 +23,7 @@ const payDeepLink = computed(() => makeNimiqPayDeepLink(props.profile.address))
 const walletLink = computed(() => makeWalletRequestLink(props.profile.address))
 const addInPayLink = computed(() => makeNimiqPayProfileLink(props.profile))
 // Straight into the claim sheet: the visitor just saw a working @handle, this is the moment to offer their own.
-const claimHandleLink = `${NIMPAY_OPEN_URL}#/me?sheet=claim`
+const claimHandleLink = NIMPAY_CREATE_PROFILE_URL
 const showBrowserContinue = computed(() => props.allowBrowserContinue !== false)
 </script>
 

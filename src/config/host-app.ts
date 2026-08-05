@@ -2,6 +2,8 @@
 const MINIAPP_DOMAIN = import.meta.env.VITE_NIMPAY_MINIAPP_DOMAIN ?? 'nimconnect.nimiqminiapps.com'
 
 export const NIMPAY_OPEN_URL = `https://nimpay.app/miniapps/open/${MINIAPP_DOMAIN}`
+export const CREATE_PROFILE_URL = `https://${MINIAPP_DOMAIN}/#/create-profile`
+export const NIMPAY_CREATE_PROFILE_URL = `${NIMPAY_OPEN_URL}#/create-profile`
 
 export const NIMPAY_PLAY_STORE_URL =
   'https://play.google.com/store/apps/details?id=com.nimiq.pay'
