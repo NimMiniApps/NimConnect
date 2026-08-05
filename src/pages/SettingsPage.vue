@@ -25,6 +25,7 @@ import { copyText } from '../services/share'
 import PassphraseSheet from '../components/PassphraseSheet.vue'
 import QrCode from '../components/QrCode.vue'
 import type { EncryptedBackup } from '../types/profile'
+import { revokeAuthorization } from '../services/authorization'
 
 const router = useRouter()
 const store = useProfilesStore()
@@ -260,6 +261,7 @@ async function resetApp() {
   resetting.value = true
   confirmReset.value = false
   try {
+	await revokeAuthorization()
     await store.resetAll()
     clearHistoryCache()
     resetBootstrap()

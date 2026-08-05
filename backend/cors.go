@@ -36,7 +36,7 @@ func isPublicReadRequest(r *http.Request) bool {
 // list, per the standard multi-origin CORS pattern (Access-Control-Allow-Origin
 // cannot itself contain multiple values). Public read endpoints (see
 // publicReadPaths) always get "*", independent of allowedOrigins.
-func withCORS(allowedOrigins string, next http.Handler) http.Handler {
+func withCORS(allowedOrigins string, next http.Handler, authStores ...*AuthStore) http.Handler {
 	origins := strings.Split(allowedOrigins, ",")
 	for i := range origins {
 		origins[i] = strings.TrimSpace(origins[i])
@@ -45,15 +45,27 @@ func withCORS(allowedOrigins string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublicReadRequest(r) {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if reqOrigin := r.Header.Get("Origin"); reqOrigin != "" {
+			registered := false
+			if len(authStores) > 0 && authStores[0] != nil {
+				registered, _ = authStores[0].OriginRegistered(reqOrigin)
+			}
+			if len(origins) == 1 && origins[0] == "*" {
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			} else if slices.Contains(origins, reqOrigin) || registered {
+				w.Header().Set("Access-Control-Allow-Origin", reqOrigin)
+				w.Header().Set("Vary", "Origin")
+			} else if len(origins) == 1 {
+				// Preserve the historical single-origin response. Browsers reject it
+				// when it does not equal the request Origin.
+				w.Header().Set("Access-Control-Allow-Origin", origins[0])
+			}
 		} else if len(origins) == 1 {
 			w.Header().Set("Access-Control-Allow-Origin", origins[0])
-		} else if reqOrigin := r.Header.Get("Origin"); slices.Contains(origins, reqOrigin) {
-			w.Header().Set("Access-Control-Allow-Origin", reqOrigin)
-			w.Header().Set("Vary", "Origin")
 		}
 
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, HEAD, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, X-Inbox-Public-Key, X-Inbox-Signature, X-Inbox-Issued-At, X-Admin-Session, X-NimConnect-Session")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Inbox-Public-Key, X-Inbox-Signature, X-Inbox-Issued-At, X-Admin-Session, X-NimConnect-Session")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { chooseHubAddress, hubSignMessage, hubErrorMessage } from '../../services/hub'
+import { chooseHubAddress, hubErrorMessage } from '../../services/hub'
 import { getDesktopHubAddress, setDesktopHubAddress } from '../../services/desktop-session'
-import { fetchListings, reserveTrade, marketplacePurchaseMessage, generateNonce, type MarketplaceListing } from '../../services/marketplace'
+import { fetchListings, reserveTrade, generateNonce, type MarketplaceListing } from '../../services/marketplace'
 
 const route = useRoute()
 const router = useRouter()
@@ -50,19 +50,10 @@ async function confirmBuy() {
   error.value = null
   const nonce = generateNonce()
   const expiresAt = Math.floor(Date.now() / 1000) + 600
-  const message = marketplacePurchaseMessage(handle.value, hubAddress.value, hubAddress.value, nonce, expiresAt)
-  let publicKey: string, signature: string
-  try {
-    ;({ publicKey, signature } = await hubSignMessage(message, hubAddress.value))
-  } catch (e) {
-    error.value = hubErrorMessage(e)
-    buying.value = false
-    return
-  }
   try {
     const trade = await reserveTrade({
       handle: handle.value, buyer: hubAddress.value, refund_address: hubAddress.value,
-      nonce, expires_at: expiresAt, public_key: publicKey, signature,
+      nonce, expires_at: expiresAt,
     })
     router.push(`/marketplace/trades/${trade.trade_id}`)
   } catch (e) {

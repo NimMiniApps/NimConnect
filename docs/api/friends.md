@@ -9,6 +9,12 @@ Local contacts are **not** part of this API. The graph is stored in Postgres
 
 ## Auth
 
+New clients should request `friends:read` and/or `friends:write` through the
+[scoped authorization API](./scoped-authorization.md) and send
+`Authorization: Bearer <token>`. The actor always comes from the grant.
+
+The v1/v2 flow below remains for one compatibility release:
+
 1. `POST /api/session` with a wallet-signed challenge
 2. Send `X-NimConnect-Session: <token>` on every friends call
 3. `DELETE /api/session` to revoke

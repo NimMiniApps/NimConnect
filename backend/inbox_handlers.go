@@ -15,7 +15,11 @@ func writeJSONError(w http.ResponseWriter, status int, msg string) {
 	json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-func inboxPostHandler(store *InboxStore) http.HandlerFunc {
+func inboxPostHandler(store *InboxStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req InboxSendRequest
 		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
@@ -23,7 +27,19 @@ func inboxPostHandler(store *InboxStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid request")
 			return
 		}
-		id, replay, err := store.Put(req)
+		var id string
+		var replay bool
+		var err error
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeInboxSend)
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			id, replay, err = store.PutAuthorized(actor.Address, req, AuthGrant{ID: actor.SessionID, Address: actor.Address, Audience: actor.Audience})
+		} else {
+			id, replay, err = store.Put(req)
+		}
 		switch {
 		case errors.Is(err, errBadRequest):
 			writeJSONError(w, http.StatusBadRequest, "invalid request")
@@ -70,14 +86,24 @@ func inboxReadAuth(r *http.Request, address string, now time.Time) error {
 	return nil
 }
 
-func inboxListHandler(store *InboxStore) http.HandlerFunc {
+func inboxListHandler(store *InboxStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
 		if !isValidNimiqAddress(address) {
 			writeJSONError(w, http.StatusBadRequest, "invalid address")
 			return
 		}
-		if err := inboxReadAuth(r, address, store.now()); err != nil {
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeInboxRead)
+			if !ok || compactAddress(actor.Address) != compactAddress(address) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+		} else if err := inboxReadAuth(r, address, store.now()); err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
@@ -92,14 +118,24 @@ func inboxListHandler(store *InboxStore) http.HandlerFunc {
 	}
 }
 
-func inboxDeleteHandler(store *InboxStore) http.HandlerFunc {
+func inboxDeleteHandler(store *InboxStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
 		if !isValidNimiqAddress(address) {
 			writeJSONError(w, http.StatusBadRequest, "invalid address")
 			return
 		}
-		if err := inboxReadAuth(r, address, store.now()); err != nil {
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeInboxDelete)
+			if !ok || compactAddress(actor.Address) != compactAddress(address) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+		} else if err := inboxReadAuth(r, address, store.now()); err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}

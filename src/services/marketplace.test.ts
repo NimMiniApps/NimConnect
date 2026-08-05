@@ -14,6 +14,11 @@ import {
   fetchTradesForWallet,
 } from './marketplace'
 
+const authorizedFetch = vi.hoisted(() => vi.fn(
+  (path: string, _scopes: string[], init?: RequestInit) => fetch(path, init),
+))
+vi.mock('./authorization', () => ({ authorizedFetch }))
+
 describe('marketplaceListingMessage', () => {
   it('matches the exact backend format', () => {
     const message = marketplaceListingMessage('chuck', 'NQ11 SELLER', 1000, 50, 't1', 'nonce1', 1234)
@@ -56,6 +61,7 @@ describe('generateNonce', () => {
 describe('marketplace API calls', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
+    authorizedFetch.mockClear()
   })
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -140,16 +146,13 @@ describe('marketplace API calls', () => {
     )
   })
 
-  it('fetchTradesForWallet returns the parsed array and sends the signed query params', async () => {
+  it('fetchTradesForWallet uses marketplace read authorization without query signatures', async () => {
     ;(fetch as any).mockResolvedValue({ ok: true, json: async () => [{ id: 't1', state: 'FUNDED' }] })
     await expect(fetchTradesForWallet('NQ11 SELLER', 'nonce1', 1234, 'pub', 'sig')).resolves.toEqual([
       { id: 't1', state: 'FUNDED' },
     ])
-    expect(fetch).toHaveBeenCalledWith(
-      expect.stringMatching(
-        /\/api\/marketplace\/trades\/by-wallet\/NQ11%20SELLER\?nonce=nonce1&expires_at=1234&public_key=pub&signature=sig/,
-      ),
-      undefined,
+    expect(authorizedFetch).toHaveBeenCalledWith(
+      '/api/marketplace/trades/by-wallet/NQ11%20SELLER', ['marketplace:read'], undefined,
     )
   })
 })

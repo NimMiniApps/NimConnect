@@ -108,7 +108,7 @@ describe('DesktopMarketplaceBuyPage', () => {
     expect(wrapper.get('[data-back-marketplace]').attributes('href')).toBe('/marketplace')
   })
 
-  it('signs the purchase intent, reserves the trade, and routes to its status page', async () => {
+  it('reserves without another wallet signature and routes to its status page', async () => {
     vi.mocked(fetchListings).mockResolvedValue([
       { handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 100000, fee_luna: 5000, status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1 },
     ])
@@ -122,8 +122,9 @@ describe('DesktopMarketplaceBuyPage', () => {
     await flushPromises()
 
     expect(reserveTrade).toHaveBeenCalledWith(
-      expect.objectContaining({ handle: 'chuck', buyer: 'NQ22 BUYER', nonce: 'the-nonce', public_key: 'pub', signature: 'sig' }),
+      expect.objectContaining({ handle: 'chuck', buyer: 'NQ22 BUYER', nonce: 'the-nonce' }),
     )
+    expect(hubSignMessage).not.toHaveBeenCalled()
     expect(wrapper.vm.$router.currentRoute.value.path).toBe('/marketplace/trades/trade-1')
   })
 
@@ -131,29 +132,29 @@ describe('DesktopMarketplaceBuyPage', () => {
     vi.mocked(fetchListings).mockResolvedValue([
       { handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 100000, fee_luna: 5000, status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1 },
     ])
-    let resolveSign: (v: { publicKey: string; signature: string }) => void = () => {}
-    vi.mocked(hubSignMessage).mockReturnValue(new Promise((resolve) => { resolveSign = resolve }))
+    let resolveReserve: (v: { trade_id: string; escrow_address: string; reference: string; price_luna: number; fee_luna: number }) => void = () => {}
+    vi.mocked(reserveTrade).mockReturnValue(new Promise((resolve) => { resolveReserve = resolve }))
     const wrapper = await mountWithQuery('chuck')
     await flushPromises()
     const button = wrapper.find('[data-confirm-buy]')
     await button.trigger('click')
     await button.trigger('click')
-    resolveSign({ publicKey: 'pub', signature: 'sig' })
+    resolveReserve({ trade_id: 't1', escrow_address: 'NQ99', reference: 'r', price_luna: 1, fee_luna: 0 })
     await flushPromises()
-    expect(hubSignMessage).toHaveBeenCalledTimes(1)
+    expect(reserveTrade).toHaveBeenCalledTimes(1)
   })
 
-  it('maps a Hub rejection to the quiet Hub message', async () => {
+  it('does not ask the Hub to sign an individual reservation', async () => {
     vi.mocked(fetchListings).mockResolvedValue([
       { handle: 'chuck', seller: 'NQ11 SELLER', price_luna: 100000, fee_luna: 5000, status: 'active', ownership_epoch_tx_hash: 't1', created_at: 1 },
     ])
-    vi.mocked(hubSignMessage).mockRejectedValue(new Error('canceled'))
+    vi.mocked(reserveTrade).mockResolvedValue({ trade_id: 'trade-1', escrow_address: 'NQ99', reference: 'r', price_luna: 1, fee_luna: 0 })
     const wrapper = await mountWithQuery('chuck')
     await flushPromises()
     await wrapper.find('[data-confirm-buy]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('HUB:canceled')
-    expect(reserveTrade).not.toHaveBeenCalled()
+    expect(hubSignMessage).not.toHaveBeenCalled()
+    expect(reserveTrade).toHaveBeenCalledOnce()
   })
 
   it('shows the backend error verbatim instead of routing it through hubErrorMessage', async () => {

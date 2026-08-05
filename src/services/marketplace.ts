@@ -1,4 +1,5 @@
 import { apiUrl } from './api'
+import { authorizedFetch } from './authorization'
 
 /** Mirrors backend's compactAddress: uppercase, spaces stripped. */
 function compact(address: string): string {
@@ -91,6 +92,13 @@ async function marketplaceFetch<T>(path: string, init?: RequestInit): Promise<T>
   return body as T
 }
 
+async function scopedMarketplaceFetch<T>(path: string, scope: 'marketplace:read' | 'marketplace:trade', init?: RequestInit): Promise<T> {
+  const res = await authorizedFetch(path, [scope], init)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body as { error?: string }).error || `request failed (${res.status})`)
+  return body as T
+}
+
 export function fetchListings(): Promise<MarketplaceListing[]> {
   return marketplaceFetch('/api/marketplace/listings')
 }
@@ -103,12 +111,12 @@ export interface CreateListingRequest {
   ownership_epoch_tx_hash: string
   nonce: string
   expires_at: number
-  public_key: string
-  signature: string
+  public_key?: string
+  signature?: string
 }
 
 export function createListing(req: CreateListingRequest): Promise<MarketplaceListing> {
-  return marketplaceFetch('/api/marketplace/listings', {
+  return scopedMarketplaceFetch('/api/marketplace/listings', 'marketplace:trade', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -121,8 +129,8 @@ export interface ReserveTradeRequest {
   refund_address: string
   nonce: string
   expires_at: number
-  public_key: string
-  signature: string
+  public_key?: string
+  signature?: string
 }
 
 export interface ReserveTradeResponse {
@@ -134,7 +142,7 @@ export interface ReserveTradeResponse {
 }
 
 export function reserveTrade(req: ReserveTradeRequest): Promise<ReserveTradeResponse> {
-  return marketplaceFetch('/api/marketplace/trades', {
+  return scopedMarketplaceFetch('/api/marketplace/trades', 'marketplace:trade', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
@@ -157,13 +165,12 @@ export function marketplaceTradesLookupMessage(address: string, nonce: string, e
 
 export function fetchTradesForWallet(
   address: string,
-  nonce: string,
-  expiresAt: number,
-  publicKey: string,
-  signature: string,
+  _nonce?: string,
+  _expiresAt?: number,
+  _publicKey?: string,
+  _signature?: string,
 ): Promise<MarketplaceTrade[]> {
-  const params = new URLSearchParams({ nonce, expires_at: String(expiresAt), public_key: publicKey, signature })
-  return marketplaceFetch(`/api/marketplace/trades/by-wallet/${encodeURIComponent(address)}?${params.toString()}`)
+  return scopedMarketplaceFetch(`/api/marketplace/trades/by-wallet/${encodeURIComponent(address)}`, 'marketplace:read')
 }
 
 export type SubmitTransactionRequest =

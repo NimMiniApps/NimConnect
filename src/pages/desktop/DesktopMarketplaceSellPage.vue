@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { hubSignMessage, hubErrorMessage } from '../../services/hub'
 import { getDesktopHubAddress } from '../../services/desktop-session'
 import { findMyHandle, type HandleClaim } from '../../services/handles'
-import { createListing, marketplaceListingMessage, generateNonce } from '../../services/marketplace'
+import { createListing, generateNonce } from '../../services/marketplace'
 
 const brandIconUrl = `${import.meta.env.BASE_URL}brand/nimconnect-icon-192x192.png`
 
@@ -41,24 +40,12 @@ async function submitListing() {
   error.value = null
   const nonce = generateNonce()
   const expiresAt = Math.floor(Date.now() / 1000) + 600
-  const message = marketplaceListingMessage(
-    claim.value.handle, hubAddress.value, priceLuna.value, feeLuna.value,
-    claim.value.tx_hash, nonce, expiresAt,
-  )
-  let publicKey: string, signature: string
-  try {
-    ;({ publicKey, signature } = await hubSignMessage(message, hubAddress.value))
-  } catch (e) {
-    error.value = hubErrorMessage(e)
-    listing.value = false
-    return
-  }
   try {
     await createListing({
       handle: claim.value.handle, seller: hubAddress.value,
       price_luna: priceLuna.value, fee_luna: feeLuna.value,
       ownership_epoch_tx_hash: claim.value.tx_hash,
-      nonce, expires_at: expiresAt, public_key: publicKey, signature,
+      nonce, expires_at: expiresAt,
     })
     listedLink.value = `/marketplace/buy?handle=${claim.value.handle}`
   } catch (e) {

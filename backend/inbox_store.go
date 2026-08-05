@@ -30,7 +30,8 @@ func (s *InboxStore) lock(compact string) *sync.Mutex {
 }
 
 const inboxSelectCols = `id, version, type, object_id, nonce, sender, recipient,
-	payload, sent_at, received_at, public_key, signature`
+	payload, sent_at, received_at, COALESCE(public_key, ''), COALESCE(signature, ''),
+	auth_mode, COALESCE(auth_session_id, ''), COALESCE(auth_audience, '')`
 
 func scanInboxMessage(row interface{ Scan(...any) error }) (InboxMessage, error) {
 	var m InboxMessage
@@ -38,7 +39,7 @@ func scanInboxMessage(row interface{ Scan(...any) error }) (InboxMessage, error)
 	err := row.Scan(
 		&m.ID, &m.Version, &m.Type, &m.ObjectID, &m.Nonce,
 		&sender, &recipient, &m.Payload, &m.SentAt, &m.ReceivedAt,
-		&m.PublicKey, &m.Signature,
+		&m.PublicKey, &m.Signature, &m.AuthMode, &m.AuthSessionID, &m.AuthAudience,
 	)
 	if err != nil {
 		return InboxMessage{}, err
@@ -60,6 +61,15 @@ func (s *InboxStore) findBySenderNonce(sender, nonce string) (string, error) {
 }
 
 func (s *InboxStore) Put(req InboxSendRequest) (string, bool, error) {
+	return s.put(req, "wallet_signature", "", "", true)
+}
+
+func (s *InboxStore) PutAuthorized(actor string, req InboxSendRequest, grant AuthGrant) (string, bool, error) {
+	req.Sender = actor
+	return s.put(req, "scoped_session", grant.ID, grant.Audience, false)
+}
+
+func (s *InboxStore) put(req InboxSendRequest, authMode, authSessionID, authAudience string, verifySignature bool) (string, bool, error) {
 	if req.Version != 1 || req.Type != "payment-request" {
 		return "", false, errBadRequest
 	}
@@ -75,13 +85,15 @@ func (s *InboxStore) Put(req InboxSendRequest) (string, bool, error) {
 	if !isValidNimiqAddress(req.Sender) || !isValidNimiqAddress(req.Recipient) {
 		return "", false, errBadRequest
 	}
-	if req.PublicKey == "" || req.Signature == "" || req.SentAt <= 0 {
+	if req.SentAt <= 0 || (verifySignature && (req.PublicKey == "" || req.Signature == "")) {
 		return "", false, errBadRequest
 	}
 
-	msg := inboxSendMessage(req.Sender, req.Recipient, req.SentAt, req.Nonce, req.ObjectID, sha256Hex(req.Payload))
-	if err := verifySignedMessage(req.Sender, req.PublicKey, req.Signature, msg); err != nil {
-		return "", false, errUnauthorized
+	if verifySignature {
+		msg := inboxSendMessage(req.Sender, req.Recipient, req.SentAt, req.Nonce, req.ObjectID, sha256Hex(req.Payload))
+		if err := verifySignedMessage(req.Sender, req.PublicKey, req.Signature, msg); err != nil {
+			return "", false, errUnauthorized
+		}
 	}
 
 	now := s.now()
@@ -130,15 +142,16 @@ func (s *InboxStore) Put(req InboxSendRequest) (string, bool, error) {
 		ReceivedAt: now.UnixMilli(),
 		PublicKey:  req.PublicKey,
 		Signature:  req.Signature,
+		AuthMode:   authMode, AuthSessionID: authSessionID, AuthAudience: authAudience,
 	}
 	_, err := s.db.Exec(`
 		INSERT INTO inbox_messages (
 			id, version, type, object_id, nonce, sender, recipient,
-			payload, sent_at, received_at, public_key, signature
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+			payload, sent_at, received_at, public_key, signature, auth_mode, auth_session_id, auth_audience
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		stored.ID, stored.Version, stored.Type, stored.ObjectID, stored.Nonce,
 		sender, recipient, stored.Payload, stored.SentAt, stored.ReceivedAt,
-		stored.PublicKey, stored.Signature,
+		stored.PublicKey, stored.Signature, stored.AuthMode, stored.AuthSessionID, stored.AuthAudience,
 	)
 	if isUniqueViolation(err) {
 		id, lookupErr := s.findBySenderNonce(sender, req.Nonce)

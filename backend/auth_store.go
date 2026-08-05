@@ -114,6 +114,43 @@ func (s *AuthStore) ValidateScopes(audience string, requested []string) ([]strin
 	return canonical, nil
 }
 
+func (s *AuthStore) OriginAllowed(audience, origin string) (bool, error) {
+	if origin == "" {
+		return true, nil
+	}
+	var allowed bool
+	err := s.db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM auth_app_origins
+			JOIN auth_apps USING (audience)
+			WHERE audience = $1 AND origin = $2 AND auth_apps.enabled = true
+		)`, audience, origin).Scan(&allowed)
+	if err != nil {
+		return false, fmt.Errorf("check authorization origin: %w", err)
+	}
+	return allowed, nil
+}
+
+// OriginRegistered reports whether any enabled app owns the origin. CORS uses
+// this to admit registered first-party apps without duplicating their origins
+// in deployment configuration.
+func (s *AuthStore) OriginRegistered(origin string) (bool, error) {
+	if origin == "" {
+		return false, nil
+	}
+	var allowed bool
+	err := s.db.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM auth_app_origins
+			JOIN auth_apps USING (audience)
+			WHERE origin = $1 AND auth_apps.enabled = true
+		)`, origin).Scan(&allowed)
+	if err != nil {
+		return false, fmt.Errorf("check registered authorization origin: %w", err)
+	}
+	return allowed, nil
+}
+
 func (s *AuthStore) CreateChallenge(
 	address string,
 	audience string,
@@ -180,6 +217,27 @@ func (s *AuthStore) ConsumeChallenge(id string) (AuthChallenge, error) {
 			return AuthChallenge{}, errAuthChallengeUnavailable
 		}
 		return AuthChallenge{}, fmt.Errorf("consume authorization challenge: %w", err)
+	}
+	if err := json.Unmarshal([]byte(scopesJSON), &challenge.Scopes); err != nil {
+		return AuthChallenge{}, fmt.Errorf("decode authorization challenge scopes: %w", err)
+	}
+	challenge.CreatedAt = challenge.CreatedAt.UTC()
+	challenge.ExpiresAt = challenge.ExpiresAt.UTC()
+	return challenge, nil
+}
+
+func (s *AuthStore) GetChallenge(id string) (AuthChallenge, error) {
+	row := s.db.QueryRow(`
+		SELECT address, audience, array_to_json(scopes)::text, message, created_at, expires_at
+		FROM auth_challenges
+		WHERE id = $1 AND consumed_at IS NULL AND expires_at > $2`, id, s.now().UTC())
+	challenge := AuthChallenge{AuthGrant: AuthGrant{ID: id}}
+	var scopesJSON string
+	if err := row.Scan(&challenge.Address, &challenge.Audience, &scopesJSON, &challenge.Message, &challenge.CreatedAt, &challenge.ExpiresAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AuthChallenge{}, errAuthChallengeUnavailable
+		}
+		return AuthChallenge{}, fmt.Errorf("get authorization challenge: %w", err)
 	}
 	if err := json.Unmarshal([]byte(scopesJSON), &challenge.Scopes); err != nil {
 		return AuthChallenge{}, fmt.Errorf("decode authorization challenge scopes: %w", err)

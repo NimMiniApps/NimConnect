@@ -1,12 +1,10 @@
 import { sha256 } from '@noble/hashes/sha2'
 import { bytesToHex } from '@noble/hashes/utils'
-import { apiUrl, hasApiBase } from './api'
-import { signChallenge } from './nimiq'
-import { db } from '../db/db'
+import { hasApiBase } from './api'
+import { authorizedFetch } from './authorization'
 
 const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
 
-const CAPABILITY_KEY = 'inbox-read-capability'
 const CAPABILITY_MAX_AGE = 14 * 24 * 3600 * 1000
 
 /** Wire format of a mailbox message; field semantics in the design spec. */
@@ -23,13 +21,6 @@ export interface InboxEnvelope {
   received_at: number
   public_key: string
   signature: string
-}
-
-interface ReadCapability {
-  address: string
-  publicKey: string
-  signature: string
-  issuedAt: number
 }
 
 export function buildSendMessage(f: {
@@ -110,10 +101,7 @@ export async function sendPaymentRequest(input: {
   if (!hasApiBase()) throw new Error('inbox-unavailable')
   const sentAt = Date.now()
   const nonce = newNonce()
-  const payloadHash = await sha256Hex(input.payload)
-  const message = buildSendMessage({ ...input, sentAt, nonce, payloadHash })
-  const { publicKey, signature } = await signChallenge(message)
-  const res = await fetch(apiUrl('/api/inbox/messages'), {
+  const res = await authorizedFetch('/api/inbox/messages', ['inbox:send'], {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -125,43 +113,14 @@ export async function sendPaymentRequest(input: {
       recipient: input.recipient,
       payload: input.payload,
       sent_at: sentAt,
-      public_key: publicKey,
-      signature,
     }),
   })
   if (!res.ok) throw new Error(await inboxErrorMessage(res))
 }
 
-/**
- * Cached replayable read capability (see spec): one wallet signature grants
- * read+delete on our own mailbox for 14 days. Stored in Dexie, not localStorage.
- */
-async function readCapability(address: string): Promise<ReadCapability> {
-  const cached = (await db.kv.get(CAPABILITY_KEY))?.value as ReadCapability | undefined
-  if (cached && compact(cached.address) === compact(address) && capabilityFresh(cached.issuedAt)) {
-    return cached
-  }
-  const issuedAt = Date.now()
-  const { publicKey, signature } = await signChallenge(buildReadMessage(address, issuedAt))
-  const capability: ReadCapability = { address: compact(address), publicKey, signature, issuedAt }
-  await db.kv.put({ key: CAPABILITY_KEY, value: capability })
-  return capability
-}
-
-function authHeaders(c: ReadCapability): HeadersInit {
-  return {
-    'X-Inbox-Public-Key': c.publicKey,
-    'X-Inbox-Signature': c.signature,
-    'X-Inbox-Issued-At': String(c.issuedAt),
-  }
-}
-
 export async function fetchInbox(address: string): Promise<InboxEnvelope[]> {
   if (!hasApiBase()) return []
-  const capability = await readCapability(address)
-  const res = await fetch(apiUrl(`/api/inbox/${encodeURIComponent(compact(address))}/messages`), {
-    headers: authHeaders(capability),
-  })
+  const res = await authorizedFetch(`/api/inbox/${encodeURIComponent(compact(address))}/messages`, ['inbox:read'])
   if (!res.ok) throw new Error(await inboxErrorMessage(res))
   const body = await res.json() as { messages?: InboxEnvelope[] }
   return body.messages ?? []
@@ -169,10 +128,9 @@ export async function fetchInbox(address: string): Promise<InboxEnvelope[]> {
 
 export async function deleteInboxMessage(address: string, id: string): Promise<void> {
   if (!hasApiBase()) return
-  const capability = await readCapability(address)
-  const res = await fetch(
-    apiUrl(`/api/inbox/${encodeURIComponent(compact(address))}/messages/${encodeURIComponent(id)}`),
-    { method: 'DELETE', headers: authHeaders(capability) },
+  const res = await authorizedFetch(
+    `/api/inbox/${encodeURIComponent(compact(address))}/messages/${encodeURIComponent(id)}`,
+    ['inbox:delete'], { method: 'DELETE' },
   )
   if (!res.ok && res.status !== 404) throw new Error(await inboxErrorMessage(res))
 }

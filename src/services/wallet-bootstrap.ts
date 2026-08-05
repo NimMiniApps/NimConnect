@@ -9,6 +9,7 @@ import {
 } from './nimiq'
 import { incomingAddress } from './prefs'
 import { useProfilesStore } from '../stores/profiles'
+import { revokeAuthorization } from './authorization'
 
 const compact = (a: string) => a.replace(/\s+/g, '').toUpperCase()
 
@@ -34,6 +35,7 @@ async function doBootstrap() {
     const address = await connectWallet()
     if (!address) return
     if (priorSelf && !walletOwnsSelf(priorSelf, walletAddresses.value)) {
+	  await revokeAuthorization()
       await store.switchSelf(address)
       syncIncomingAddressPref()
     } else {

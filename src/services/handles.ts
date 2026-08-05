@@ -6,6 +6,7 @@ import { hubSignClaimTransaction } from './hub'
 import { fetchTransactionsByAddress } from './history'
 import { fetchChainHeight } from './marketplace'
 import { sendNim, signChallenge } from './nimiq'
+import { authorizedFetch } from './authorization'
 import type { Profile } from '../types/profile'
 
 /** Mainnet NimFeed catalog — shared on-chain username registry. */
@@ -495,22 +496,17 @@ export type ChallengeSigner = (
 export async function publishProfile(
   profile: Profile,
   share: ShareSelection,
-  sign: ChallengeSigner = signChallenge,
+  _sign: ChallengeSigner = signChallenge,
 ): Promise<void> {
   const payload = profileToPublicPayload(profile, share)
   const updatedAt = Date.now()
-  const { publicKey, signature } = await sign(
-    buildProfilePutMessage(profile.address, updatedAt, profilePayloadHash(payload)),
-  )
-  const res = await fetch(apiUrl(`/api/profile/${compact(profile.address)}`), {
+  const res = await authorizedFetch(`/api/profile/${compact(profile.address)}`, ['profile:write'], {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       address: profile.address,
       updated_at: updatedAt,
       profile: payload,
-      public_key: publicKey,
-      signature,
     }),
   })
   if (!res.ok) throw new Error(`Publish failed (${res.status})`)
@@ -518,16 +514,13 @@ export async function publishProfile(
 
 export async function unpublishProfile(
   address: string,
-  sign: ChallengeSigner = signChallenge,
+  _sign: ChallengeSigner = signChallenge,
 ): Promise<void> {
   const updatedAt = Date.now()
-  const { publicKey, signature } = await sign(buildProfileDeleteMessage(address, updatedAt))
-  const res = await fetch(apiUrl(`/api/profile/${compact(address)}`), {
+  const res = await authorizedFetch(`/api/profile/${compact(address)}`, ['profile:write'], {
     method: 'DELETE',
     headers: {
       'X-Profile-Updated-At': String(updatedAt),
-      'X-Profile-Public-Key': publicKey,
-      'X-Profile-Signature': signature,
     },
   })
   if (!res.ok && res.status !== 404) throw new Error(`Unpublish failed (${res.status})`)

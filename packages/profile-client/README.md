@@ -143,9 +143,36 @@ which is exactly the behavior you'd need to replicate yourself if you call
 this often. If that's more than you want to own, use the NimConnect-API
 path above instead — it's already doing this caching for you.
 
-## Friends (authenticated)
+## Scoped authorization (v3)
 
-Mutual friends require a short-lived server session. Wallet signing stays in
+One readable signature creates an app-specific grant for up to seven days.
+The client signs the exact server challenge and then uses `Authorization:
+Bearer`; it never holds wallet keys.
+
+```ts
+const client = createProfileClient({ audience: 'yourapp' })
+const grant = await client.createAuthorization({
+  address: myAddress,
+  scopes: ['friends:read', 'friends:write'],
+  signMessage: message => wallet.signMessage(message),
+})
+
+const friends = await client.listFriends()
+await client.sendFriendRequest('bob')
+
+// Persist grant in your app's IndexedDB and restore it later:
+const restored = createProfileClient({ audience: 'yourapp', authorization: grant })
+await restored.revokeAuthorization()       // current grant
+// await restored.revokeAuthorization(true) // every grant for this wallet
+```
+
+The grant belongs to exactly one audience, wallet, and explicit scope set. It
+does not authorize on-chain actions, which still require a wallet transaction
+confirmation. See [the v3 API contract](../../docs/api/scoped-authorization.md).
+
+## Friends compatibility API (v1/v2)
+
+Mutual friends can still use the deprecated short-lived server session. Wallet signing stays in
 your app; this client never holds keys.
 
 Pass your app's `audience` slug so the signed challenge names your app. That
@@ -178,8 +205,8 @@ Session token is held on the client instance after `createSession` (or pass
 Persist the token in your app (`sessionStorage`, etc.) if you want it to
 survive reloads — inject it via `createProfileClient({ sessionToken })`.
 
-Omitting `audience` keeps the legacy v1 challenge (0.6.x behaviour). Prefer
-setting it.
+`createSession` and `X-NimConnect-Session` remain for one compatibility
+release. New integrations should use `createAuthorization`.
 
 See [`docs/api/friends.md`](../../docs/api/friends.md).
 
@@ -188,6 +215,7 @@ See [`docs/api/friends.md`](../../docs/api/friends.md).
 - [`docs/api/public-profile-read.md`](../../docs/api/public-profile-read.md) — read endpoints
 - [`docs/api/handle-claim-protocol.md`](../../docs/api/handle-claim-protocol.md) — on-chain claim format
 - [`docs/api/friends.md`](../../docs/api/friends.md) — session + friends API
+- [`docs/api/scoped-authorization.md`](../../docs/api/scoped-authorization.md) — v3 grants and scopes
 
 Writing/editing the off-chain profile fields (bio, links, display name)
 requires NimConnect's own signed edit flow — link users to

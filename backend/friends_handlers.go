@@ -140,7 +140,7 @@ func enrichFriendEntry(actor string, f Friendship, registry *HandleRegistry, pro
 
 func friendsListHandler(sessions *UserSessions, store *FriendStore, registry *HandleRegistry, profiles *ProfileStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireUserSession(sessions, r)
+		actor, ok := requireUserSessionScope(sessions, r, ScopeFriendsRead)
 		if !ok {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -161,7 +161,7 @@ func friendsListHandler(sessions *UserSessions, store *FriendStore, registry *Ha
 
 func friendsRequestsHandler(sessions *UserSessions, store *FriendStore, registry *HandleRegistry, profiles *ProfileStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireUserSession(sessions, r)
+		actor, ok := requireUserSessionScope(sessions, r, ScopeFriendsRead)
 		if !ok {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -188,7 +188,7 @@ func friendsSendRequestHandler(
 	limiter *friendRequestLimiter,
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireUserSession(sessions, r)
+		actor, ok := requireUserSessionScope(sessions, r, ScopeFriendsWrite)
 		if !ok {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -244,7 +244,7 @@ func friendsStatusHandler(
 	action func(id, actor string) (Friendship, error),
 ) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireUserSession(sessions, r)
+		actor, ok := requireUserSessionScope(sessions, r, ScopeFriendsWrite)
 		if !ok {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return
@@ -273,7 +273,7 @@ func friendsStatusHandler(
 
 func friendsRemoveHandler(sessions *UserSessions, store *FriendStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		actor, ok := requireUserSession(sessions, r)
+		actor, ok := requireUserSessionScope(sessions, r, ScopeFriendsWrite)
 		if !ok {
 			writeJSONError(w, http.StatusUnauthorized, "unauthorized")
 			return

@@ -22,6 +22,7 @@ type UserSessions struct {
 	randRead func([]byte) (int, error)
 	tokens   map[string]userSessionEntry
 	used     map[string]time.Time // signature hash → first-use time
+	scoped   *AuthStore
 }
 
 type userSessionEntry struct {

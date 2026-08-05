@@ -63,6 +63,8 @@ services:
       DATABASE_URL: postgres://nimconnect:nimconnect@postgres:5432/nimconnect?sslmode=disable
       COINGECKO_API_BASE: https://api.coingecko.com/api/v3
       ALLOWED_ORIGIN: "*"
+      # Scoped app origins/scopes are seeded in migrations 002/003. Add owned
+      # apps there (or via a reviewed DB migration), never as wildcard scopes.
       BACKUP_DIR: /data/backups
       ADMIN_ADDRESSES: "NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD"
       # Unset by default — marketplace routes stay off (see header comment).

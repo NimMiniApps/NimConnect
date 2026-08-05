@@ -33,7 +33,11 @@ type marketplaceListingRequest struct {
 // marketplaceListingCreateHandler verifies the seller's signed listing
 // intent, independently confirms on chain that the seller currently owns the
 // handle, enforces the configured fee cap, and creates the listing.
-func marketplaceListingCreateHandler(store *MarketplaceStore, registry *HandleRegistry, maxFeeBps uint64) http.HandlerFunc {
+func marketplaceListingCreateHandler(store *MarketplaceStore, registry *HandleRegistry, maxFeeBps uint64, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req marketplaceListingRequest
 		r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
@@ -49,7 +53,14 @@ func marketplaceListingCreateHandler(store *MarketplaceStore, registry *HandleRe
 			writeJSONError(w, http.StatusBadRequest, "fee exceeds the maximum allowed")
 			return
 		}
-		if err := verifyListingIntent(req.Handle, req.Seller, req.PriceLuna, req.FeeLuna, req.OwnershipEpochTxHash, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeMarketplaceTrade)
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			req.Seller = actor.Address
+		} else if err := verifyListingIntent(req.Handle, req.Seller, req.PriceLuna, req.FeeLuna, req.OwnershipEpochTxHash, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid listing signature")
 			return
 		}
@@ -89,7 +100,11 @@ type marketplaceReserveRequest struct {
 // marketplaceTradeReserveHandler verifies the buyer's signed purchase
 // intent, reserves the listing, and advances the new trade to
 // AWAITING_DEPOSIT before returning its payment details.
-func marketplaceTradeReserveHandler(store *MarketplaceStore, escrowAddress string) http.HandlerFunc {
+func marketplaceTradeReserveHandler(store *MarketplaceStore, escrowAddress string, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req marketplaceReserveRequest
 		r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
@@ -101,7 +116,14 @@ func marketplaceTradeReserveHandler(store *MarketplaceStore, escrowAddress strin
 			writeJSONError(w, http.StatusBadRequest, "invalid reservation fields")
 			return
 		}
-		if err := verifyPurchaseIntent(req.Handle, req.Buyer, req.RefundAddress, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeMarketplaceTrade)
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			req.Buyer = actor.Address
+		} else if err := verifyPurchaseIntent(req.Handle, req.Buyer, req.RefundAddress, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
 			writeJSONError(w, http.StatusUnauthorized, "invalid purchase signature")
 			return
 		}
@@ -146,7 +168,11 @@ type marketplaceCancelRequest struct {
 
 // marketplaceTradeCancelHandler lets the buyer or seller cancel an unpaid
 // reservation and restores the listing to active (SEC-005).
-func marketplaceTradeCancelHandler(store *MarketplaceStore) http.HandlerFunc {
+func marketplaceTradeCancelHandler(store *MarketplaceStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		tradeID := r.PathValue("tradeID")
 		trade, ok := store.Resolve(tradeID)
@@ -160,6 +186,14 @@ func marketplaceTradeCancelHandler(store *MarketplaceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusBadRequest, "invalid request")
 			return
 		}
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeMarketplaceTrade)
+			if !ok {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			req.Actor = actor.Address
+		}
 		if !isValidNimiqAddress(req.Actor) {
 			writeJSONError(w, http.StatusBadRequest, "invalid actor address")
 			return
@@ -169,9 +203,11 @@ func marketplaceTradeCancelHandler(store *MarketplaceStore) http.HandlerFunc {
 			writeJSONError(w, http.StatusForbidden, "only buyer or seller may cancel")
 			return
 		}
-		if err := verifyCancelIntent(tradeID, req.Actor, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
-			writeJSONError(w, http.StatusUnauthorized, "invalid cancel signature")
-			return
+		if bearerToken(r) == "" {
+			if err := verifyCancelIntent(tradeID, req.Actor, req.Nonce, req.ExpiresAt, req.PublicKey, req.Signature); err != nil {
+				writeJSONError(w, http.StatusUnauthorized, "invalid cancel signature")
+				return
+			}
 		}
 		if err := store.ConsumeNonce(req.Nonce); err != nil {
 			writeJSONError(w, http.StatusConflict, "nonce already used")
@@ -198,9 +234,23 @@ func marketplaceTradeGetHandler(store *MarketplaceStore) http.HandlerFunc {
 	}
 }
 
-func marketplaceTradesByWalletHandler(store *MarketplaceStore) http.HandlerFunc {
+func marketplaceTradesByWalletHandler(store *MarketplaceStore, authStores ...*AuthStore) http.HandlerFunc {
+	var auth *AuthStore
+	if len(authStores) > 0 {
+		auth = authStores[0]
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		address := r.PathValue("address")
+		if bearerToken(r) != "" {
+			actor, ok := resolveScopedActor(auth, r, ScopeMarketplaceRead)
+			if !ok || compactAddress(actor.Address) != compactAddress(address) {
+				writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(store.TradesForWallet(address))
+			return
+		}
 		q := r.URL.Query()
 		expiresAt, err := strconv.ParseInt(q.Get("expires_at"), 10, 64)
 		if err != nil {

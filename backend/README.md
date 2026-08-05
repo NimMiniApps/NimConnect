@@ -20,6 +20,10 @@ gaps before touching anything in `marketplace_*.go` or `escrow_wallet.go`.
 | `POST` | `/api/admin/login` | Wallet-signed admin login → session token |
 | `POST` | `/api/session` | Wallet-signed user session → `X-NimConnect-Session` token (friends auth) |
 | `DELETE` | `/api/session` | Revoke user session |
+| `POST` | `/api/auth/challenges` | Create a five-minute scoped authorization challenge |
+| `POST` | `/api/auth/sessions` | Exchange a signed challenge for a seven-day bearer grant |
+| `GET` / `DELETE` | `/api/auth/session` | Inspect or revoke the current `Authorization: Bearer` grant |
+| `DELETE` | `/api/auth/sessions` | Revoke all scoped grants for the wallet |
 | `GET` | `/api/friends` | Accepted friends (requires `X-NimConnect-Session`) |
 | `GET` | `/api/friends/requests` | Incoming + outgoing pending friend requests |
 | `POST` | `/api/friends/requests` | Send friend request by handle or address |
@@ -87,6 +91,8 @@ refuses to serve the warm-start claim if the RPC refresh fails.
 | `MARKETPLACE_LEDGER_FILE` | `/data/marketplace_ledger.jsonl` | **Import-only / deprecated** — legacy escrow ledger JSONL for one-shot migration |
 
 Friends API details: [`docs/api/friends.md`](../docs/api/friends.md).
+Scoped authorization, registered origins, migration order, compatibility, and
+the on-chain exclusion: [`docs/api/scoped-authorization.md`](../docs/api/scoped-authorization.md).
 
 ## Local development
 

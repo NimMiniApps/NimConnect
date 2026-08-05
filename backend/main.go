@@ -110,6 +110,8 @@ func main() {
 	stats := NewStats(db)
 	adminSessions := NewAdminSessions(parseAdminAddresses(getEnv("ADMIN_ADDRESSES", "")))
 	userSessions := NewUserSessions()
+	authStore := NewAuthStore(db)
+	userSessions.scoped = authStore
 	friendStore := NewFriendStore(db)
 	friendLimiter := newFriendRequestLimiter(30, time.Hour)
 	registryAddress := getEnv("REGISTRY_ADDRESS", NimfeedCatalogAddress)
@@ -133,14 +135,19 @@ func main() {
 	mux.HandleFunc("POST /api/admin/login", adminLoginHandler(adminSessions))
 	mux.HandleFunc("POST /api/session", userSessionLoginHandler(userSessions))
 	mux.HandleFunc("DELETE /api/session", userSessionLogoutHandler(userSessions))
+	mux.HandleFunc("POST /api/auth/challenges", createAuthChallengeHandler(authStore))
+	mux.HandleFunc("POST /api/auth/sessions", createAuthSessionHandler(authStore))
+	mux.HandleFunc("GET /api/auth/session", authSessionInfoHandler(authStore))
+	mux.HandleFunc("DELETE /api/auth/session", authSessionRevokeHandler(authStore))
+	mux.HandleFunc("DELETE /api/auth/sessions", authSessionsRevokeAllHandler(authStore))
 	mux.HandleFunc("GET /api/admin/handles", adminHandlesHandler(adminSessions, registry))
 	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions, registry))
-	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore)))
-	mux.HandleFunc("HEAD /api/backup/{address}", withWalletStat(stats, backupHeadHandler(backupStore)))
-	mux.HandleFunc("PUT /api/backup/{address}", withWalletStat(stats, backupPutHandler(backupStore)))
-	mux.HandleFunc("POST /api/inbox/messages", inboxPostHandler(inboxStore))
-	mux.HandleFunc("GET /api/inbox/{address}/messages", withWalletStat(stats, inboxListHandler(inboxStore)))
-	mux.HandleFunc("DELETE /api/inbox/{address}/messages/{id}", withWalletStat(stats, inboxDeleteHandler(inboxStore)))
+	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore, authStore)))
+	mux.HandleFunc("HEAD /api/backup/{address}", withWalletStat(stats, backupHeadHandler(backupStore, authStore)))
+	mux.HandleFunc("PUT /api/backup/{address}", withWalletStat(stats, backupPutHandler(backupStore, authStore)))
+	mux.HandleFunc("POST /api/inbox/messages", inboxPostHandler(inboxStore, authStore))
+	mux.HandleFunc("GET /api/inbox/{address}/messages", withWalletStat(stats, inboxListHandler(inboxStore, authStore)))
+	mux.HandleFunc("DELETE /api/inbox/{address}/messages/{id}", withWalletStat(stats, inboxDeleteHandler(inboxStore, authStore)))
 
 	// On-chain handle registry — defaults to the shared NimFeed catalog address.
 	if registry != nil {
@@ -155,8 +162,8 @@ func main() {
 		mux.HandleFunc("GET /api/resolve/{handle}", resolveHandler(registry))
 		mux.HandleFunc("GET /api/pay/resolve/{handle}", paymentResolveHandler(syncer, registry))
 		mux.HandleFunc("GET /api/profile/{address}", profileGetHandler(profiles))
-		mux.HandleFunc("PUT /api/profile/{address}", profilePutHandler(profiles))
-		mux.HandleFunc("DELETE /api/profile/{address}", profileDeleteHandler(profiles))
+		mux.HandleFunc("PUT /api/profile/{address}", profilePutHandler(profiles, authStore))
+		mux.HandleFunc("DELETE /api/profile/{address}", profileDeleteHandler(profiles, authStore))
 		mux.HandleFunc("GET /api/handles/check", handleCheckHandler(registry))
 		mux.HandleFunc("GET /api/handles/by-address/{address}", handleByAddressHandler(registry))
 		mux.HandleFunc("POST /api/handles/claims", claimSubmitHandler(syncer, registry))
@@ -164,7 +171,7 @@ func main() {
 		publicOrigin := getEnv("PUBLIC_APP_ORIGIN", "https://nimconnect.nimiqminiapps.com")
 		mux.HandleFunc("GET /p/{handle}", publicPageHandler(registry, profiles, publicOrigin))
 
-	escrowAddress := getEnv("ESCROW_ADDRESS", "")
+		escrowAddress := getEnv("ESCROW_ADDRESS", "")
 		if escrowAddress != "" {
 			marketplaceStore := NewMarketplaceStore(db)
 			ledger, err := OpenEscrowLedger(db)
@@ -224,12 +231,12 @@ func main() {
 			})
 
 			maxFeeBps := parseUintEnv(getEnv("MARKETPLACE_MAX_FEE_BPS", "1000"), 1000)
-			mux.HandleFunc("POST /api/marketplace/listings", marketplaceListingCreateHandler(marketplaceStore, registry, maxFeeBps))
+			mux.HandleFunc("POST /api/marketplace/listings", marketplaceListingCreateHandler(marketplaceStore, registry, maxFeeBps, authStore))
 			mux.HandleFunc("GET /api/marketplace/listings", marketplaceListingsGetHandler(marketplaceStore))
-			mux.HandleFunc("POST /api/marketplace/trades", marketplaceTradeReserveHandler(marketplaceStore, escrowAddress))
+			mux.HandleFunc("POST /api/marketplace/trades", marketplaceTradeReserveHandler(marketplaceStore, escrowAddress, authStore))
 			mux.HandleFunc("GET /api/marketplace/trades/{tradeID}", marketplaceTradeGetHandler(marketplaceStore))
-			mux.HandleFunc("GET /api/marketplace/trades/by-wallet/{address}", marketplaceTradesByWalletHandler(marketplaceStore))
-			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/cancel", marketplaceTradeCancelHandler(marketplaceStore))
+			mux.HandleFunc("GET /api/marketplace/trades/by-wallet/{address}", marketplaceTradesByWalletHandler(marketplaceStore, authStore))
+			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/cancel", marketplaceTradeCancelHandler(marketplaceStore, authStore))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/release", marketplaceTradeReleaseHandler(marketplaceStore, rpc, registryAddress))
 			mux.HandleFunc("POST /api/marketplace/trades/{tradeID}/claim", marketplaceTradeClaimHandler(marketplaceStore, rpc, registryAddress))
 			mux.HandleFunc("GET /api/admin/marketplace", adminMarketplaceHandler(adminSessions, marketplaceStore, ledger, rpc, escrowAddress))
@@ -239,7 +246,7 @@ func main() {
 	registerFriendsRoutes(mux, userSessions, friendStore, registry, profiles, friendLimiter)
 
 	log.Printf("NimConnect backend listening on :%s commit=%s build_time=%s", port, CommitHash, BuildTime)
-	if err := http.ListenAndServe(":"+port, withRequestLogging(withCORS(allowedOrigin, mux))); err != nil {
+	if err := http.ListenAndServe(":"+port, withRequestLogging(withCORS(allowedOrigin, mux, authStore))); err != nil {
 		log.Fatal(err)
 	}
 }
