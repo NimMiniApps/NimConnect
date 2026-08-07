@@ -1,6 +1,6 @@
 # Ecosystem awards and the app registry
 
-Status: draft — needs approval
+Status: approved — phases 1–3 implemented (items/trading still deferred)
 Date: 2026-08-07
 
 Companion docs, one per repo:
@@ -127,10 +127,12 @@ rather than from scratch.
 3. Awards: `POST /api/awards`, `achievements:read`, profile read endpoints
 4. Items and trading, on the escrow choreography
 
-## Open questions
+## Open questions (resolved for phases 1–3)
 
-- Do app credentials for awards live only here, or does catalog registration
-  issue both? One registration is friendlier; two keeps blast radius separate.
-- Can an award be revoked, and by whom — the app, an admin, neither?
-- Are `rarity` and `progress` app-declared and untrusted, or verified? Say so
-  explicitly rather than implying a guarantee.
+- App award credentials are issued by NimConnect admin
+  (`POST /api/admin/apps/{audience}/api-key`); catalog registration does not
+  mint them yet. Blast radius stays separate until a joint registration path
+  exists.
+- Awards are not revocable in v1.
+- `rarity` and `progress` are app-declared and untrusted — stored and returned
+  verbatim; NimConnect does not verify them against game state.
