@@ -67,7 +67,8 @@ func withTestDB(t *testing.T) *sql.DB {
 	_, err = db.Exec(`
 		TRUNCATE marketplace_listings, marketplace_trades, marketplace_nonces,
 		escrow_ledger, profiles, stats_day_wallets, stats_days,
-		inbox_messages, handle_claims, friendships
+		inbox_messages, handle_claims, friendships, awards,
+		auth_sessions, auth_challenges
 		RESTART IDENTITY CASCADE`)
 	if err != nil {
 		t.Fatal(err)
