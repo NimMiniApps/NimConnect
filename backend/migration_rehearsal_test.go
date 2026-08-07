@@ -62,8 +62,8 @@ func TestProductionCutoverFrom001ToScopedAuthorizationPreservesRows(t *testing.T
 	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM friendships WHERE id = 'friend-cutover' AND status = 'accepted'`, 1)
 	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM schema_migrations WHERE version = '002_scoped_authorization'`, 1)
 	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_apps WHERE audience IN ('nimconnect', 'nimworld') AND enabled`, 2)
-	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimconnect'`, 10)
-	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimworld'`, 2)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimconnect'`, 11)
+	assertCount(t, cutoverDB, `SELECT COUNT(*) FROM auth_app_scopes WHERE audience = 'nimworld'`, 3)
 }
 
 // TestProductionCutoverRehearsal simulates a production-like JSON → Postgres cutover:

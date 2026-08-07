@@ -250,11 +250,12 @@ func TestOpenAndMigrateCreatesScopedAuthorizationSchema(t *testing.T) {
 	}
 
 	wantColumns := map[string][]string{
-		"auth_apps":        {"audience", "display_name", "enabled"},
+		"auth_apps":        {"audience", "display_name", "enabled", "icon_url", "verified", "owner_id", "api_key_hash"},
 		"auth_app_origins": {"audience", "origin"},
 		"auth_app_scopes":  {"audience", "scope"},
 		"auth_challenges":  {"id", "nonce_hash", "address", "audience", "scopes", "message", "created_at", "expires_at", "consumed_at"},
 		"auth_sessions":    {"token_hash", "address", "audience", "scopes", "created_at", "expires_at", "last_used_at", "revoked_at"},
+		"awards":           {"id", "app_id", "achievement_id", "address", "title", "description", "rarity", "progress", "visibility", "granted_at"},
 	}
 	for table, want := range wantColumns {
 		rows, err := db.Query(`
@@ -282,7 +283,7 @@ func TestOpenAndMigrateCreatesScopedAuthorizationSchema(t *testing.T) {
 		}
 	}
 
-	for _, table := range []string{"auth_apps", "auth_app_origins", "auth_app_scopes", "auth_challenges", "auth_sessions"} {
+	for _, table := range []string{"auth_apps", "auth_app_origins", "auth_app_scopes", "auth_challenges", "auth_sessions", "awards"} {
 		var primaryKeyCount int
 		if err := db.QueryRow(`
 			SELECT COUNT(*)
@@ -311,7 +312,37 @@ func TestOpenAndMigrateCreatesScopedAuthorizationSchema(t *testing.T) {
 		t.Error("auth_challenges.nonce_hash must be unique")
 	}
 
-	for _, table := range []string{"auth_app_origins", "auth_app_scopes", "auth_challenges", "auth_sessions"} {
+	awardUniqueCols := queryStrings(t, db, `
+		SELECT ccu.column_name
+		FROM information_schema.table_constraints tc
+		JOIN information_schema.constraint_column_usage ccu
+		  ON tc.constraint_name = ccu.constraint_name AND tc.constraint_schema = ccu.constraint_schema
+		WHERE tc.table_schema = 'public' AND tc.table_name = 'awards'
+		  AND tc.constraint_type = 'UNIQUE'
+		ORDER BY ccu.column_name`)
+	if !reflect.DeepEqual(awardUniqueCols, []string{"achievement_id", "address", "app_id"}) {
+		t.Errorf("awards unique columns = %v, want [achievement_id address app_id]", awardUniqueCols)
+	}
+
+	var awardsVisibilityCheck bool
+	if err := db.QueryRow(`
+		SELECT EXISTS (
+			SELECT 1
+			FROM information_schema.check_constraints cc
+			JOIN information_schema.constraint_column_usage ccu
+			  ON cc.constraint_name = ccu.constraint_name AND cc.constraint_schema = ccu.constraint_schema
+			WHERE ccu.table_schema = 'public' AND ccu.table_name = 'awards'
+			  AND ccu.column_name = 'visibility'
+			  AND cc.check_clause ILIKE '%public%'
+			  AND cc.check_clause ILIKE '%private%'
+		)`).Scan(&awardsVisibilityCheck); err != nil {
+		t.Fatal(err)
+	}
+	if !awardsVisibilityCheck {
+		t.Error("awards.visibility must CHECK IN ('public', 'private')")
+	}
+
+	for _, table := range []string{"auth_app_origins", "auth_app_scopes", "auth_challenges", "auth_sessions", "awards"} {
 		var foreignKeyCount int
 		if err := db.QueryRow(`
 			SELECT COUNT(*)
@@ -333,14 +364,14 @@ func TestOpenAndMigrateCreatesScopedAuthorizationSchema(t *testing.T) {
 			displayName: "NimConnect",
 			origins:     []string{"http://localhost:5173", "https://nimconnect.nimiqminiapps.com"},
 			scopes: []string{
-				"backup:read", "backup:write", "friends:read", "friends:write", "inbox:delete",
+				"achievements:read", "backup:read", "backup:write", "friends:read", "friends:write", "inbox:delete",
 				"inbox:read", "inbox:send", "marketplace:read", "marketplace:trade", "profile:write",
 			},
 		},
 		"nimworld": {
 			displayName: "NimWorld",
 			origins:     []string{"http://localhost:5175", "https://nimworld.nimiqminiapps.com"},
-			scopes:      []string{"friends:read", "friends:write"},
+			scopes:      []string{"achievements:read", "friends:read", "friends:write"},
 		},
 	}
 	for audience, want := range wantSeeds {
@@ -364,6 +395,7 @@ func TestOpenAndMigrateCreatesScopedAuthorizationSchema(t *testing.T) {
 		t.Fatalf("rerun migration: %v", err)
 	}
 	assertCount(t, db, `SELECT COUNT(*) FROM schema_migrations WHERE version = '002_scoped_authorization'`, 1)
+	assertCount(t, db, `SELECT COUNT(*) FROM schema_migrations WHERE version = '004_awards_and_app_registry'`, 1)
 }
 
 func queryStrings(t *testing.T, db interface {
