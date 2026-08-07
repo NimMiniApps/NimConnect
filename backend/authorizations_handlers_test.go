@@ -11,8 +11,8 @@ import (
 )
 
 func TestAuthorizationsListHandlerRequiresFirstPartySession(t *testing.T) {
-	db := withTestDB(t)
-	authStore := NewAuthStore(db)
+	authStore, db := newTestAuthStore(t)
+	_ = db
 	userSessions := NewUserSessions()
 	userSessions.scoped = authStore
 	pub, _, _ := ed25519.GenerateKey(nil)
@@ -125,6 +125,9 @@ func TestListGrantsExcludesRevokedExpiredAndDisabled(t *testing.T) {
 			UPDATE auth_apps SET enabled = true`); err != nil {
 			t.Fatal(err)
 		}
+		t.Cleanup(func() {
+			_, _ = db.Exec(`UPDATE auth_apps SET enabled = true`)
+		})
 		if _, _, err := store.IssueSession(address, "nimworld", []string{ScopeFriendsRead}); err != nil {
 			t.Fatal(err)
 		}
