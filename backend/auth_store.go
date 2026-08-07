@@ -363,6 +363,52 @@ func requireAffectedSession(result sql.Result) error {
 	return nil
 }
 
+// AuthorizedApp is one row of "which apps did I authorize" for a wallet.
+type AuthorizedApp struct {
+	AuthGrant
+	DisplayName string
+	IconURL     string
+	Verified    bool
+}
+
+// ListGrants returns the wallet's live grants (not revoked, not expired),
+// newest first, joined with the app's display identity.
+func (s *AuthStore) ListGrants(address string) ([]AuthorizedApp, error) {
+	rows, err := s.db.Query(`
+		SELECT encode(auth_sessions.token_hash, 'hex'), auth_sessions.audience,
+		       array_to_json(auth_sessions.scopes)::text,
+		       auth_sessions.created_at, auth_sessions.expires_at,
+		       auth_apps.display_name, auth_apps.icon_url, auth_apps.verified
+		FROM auth_sessions
+		JOIN auth_apps USING (audience)
+		WHERE auth_sessions.address = $1
+		  AND auth_sessions.revoked_at IS NULL
+		  AND auth_sessions.expires_at > $2
+		  AND auth_apps.enabled = true
+		ORDER BY auth_sessions.created_at DESC`, compactAddress(address), s.now().UTC())
+	if err != nil {
+		return nil, fmt.Errorf("list authorization grants: %w", err)
+	}
+	defer rows.Close()
+
+	var grants []AuthorizedApp
+	for rows.Next() {
+		var g AuthorizedApp
+		var scopesJSON string
+		if err := rows.Scan(&g.ID, &g.Audience, &scopesJSON, &g.CreatedAt, &g.ExpiresAt, &g.DisplayName, &g.IconURL, &g.Verified); err != nil {
+			return nil, fmt.Errorf("scan authorization grant: %w", err)
+		}
+		if err := json.Unmarshal([]byte(scopesJSON), &g.Scopes); err != nil {
+			return nil, fmt.Errorf("decode authorization grant scopes: %w", err)
+		}
+		g.Address = normalizeAddress(address)
+		g.CreatedAt = g.CreatedAt.UTC()
+		g.ExpiresAt = g.ExpiresAt.UTC()
+		grants = append(grants, g)
+	}
+	return grants, rows.Err()
+}
+
 func (s *AuthStore) RevokeAllSessions(address string) (int64, error) {
 	result, err := s.db.Exec(`
 		UPDATE auth_sessions

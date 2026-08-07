@@ -140,6 +140,7 @@ func main() {
 	mux.HandleFunc("GET /api/auth/session", authSessionInfoHandler(authStore))
 	mux.HandleFunc("DELETE /api/auth/session", authSessionRevokeHandler(authStore))
 	mux.HandleFunc("DELETE /api/auth/sessions", authSessionsRevokeAllHandler(authStore))
+	mux.HandleFunc("GET /api/authorizations", authorizationsListHandler(userSessions, authStore))
 	mux.HandleFunc("GET /api/admin/handles", adminHandlesHandler(adminSessions, registry))
 	mux.HandleFunc("GET /api/stats", statsHandler(stats, adminSessions, registry))
 	mux.HandleFunc("GET /api/backup/{address}", withWalletStat(stats, backupGetHandler(backupStore, authStore)))
