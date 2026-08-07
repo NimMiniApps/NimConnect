@@ -4,6 +4,7 @@ import type { AuthScope } from './types.js'
 const AUTH_SCOPES = new Set<AuthScope>([
   'friends:read', 'friends:write', 'inbox:read', 'inbox:send', 'inbox:delete',
   'profile:write', 'backup:read', 'backup:write', 'marketplace:read', 'marketplace:trade',
+  'achievements:read',
 ])
 
 export function authorizationMessage(input: {

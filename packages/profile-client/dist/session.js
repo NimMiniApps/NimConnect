@@ -1,6 +1,7 @@
 const AUTH_SCOPES = new Set([
     'friends:read', 'friends:write', 'inbox:read', 'inbox:send', 'inbox:delete',
     'profile:write', 'backup:read', 'backup:write', 'marketplace:read', 'marketplace:trade',
+    'achievements:read',
 ]);
 export function authorizationMessage(input) {
     if (!/^[a-z0-9][a-z0-9_-]{1,31}$/.test(input.audience))

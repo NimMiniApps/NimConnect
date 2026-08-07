@@ -153,17 +153,27 @@ Bearer`; it never holds wallet keys.
 const client = createProfileClient({ audience: 'yourapp' })
 const grant = await client.createAuthorization({
   address: myAddress,
-  scopes: ['friends:read', 'friends:write'],
+  scopes: ['friends:read', 'friends:write', 'achievements:read'],
   signMessage: message => wallet.signMessage(message),
 })
 
 const friends = await client.listFriends()
 await client.sendFriendRequest('bob')
+const achievements = await client.listAchievements(myAddress) // includes private with achievements:read
 
 // Persist grant in your app's IndexedDB and restore it later:
 const restored = createProfileClient({ audience: 'yourapp', authorization: grant })
 await restored.revokeAuthorization()       // current grant
 // await restored.revokeAuthorization(true) // every grant for this wallet
+```
+
+First-party session (`createSession`) can also list every live grant for the
+wallet and fetch mirrored app identity for consent:
+
+```ts
+await client.createSession({ address: myAddress, signMessage })
+const connected = await client.listAuthorizations()
+const app = await client.getApp('nimworld') // { displayName, iconUrl, verified, scopes, ... }
 ```
 
 The grant belongs to exactly one audience, wallet, and explicit scope set. It

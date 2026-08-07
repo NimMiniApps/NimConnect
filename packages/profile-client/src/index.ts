@@ -32,4 +32,7 @@ export type {
   AuthScope,
   AuthSession,
   AuthorizationChallenge,
+  AppAuthorization,
+  Achievement,
+  RegisteredApp,
 } from './types.js'

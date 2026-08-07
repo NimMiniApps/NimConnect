@@ -8,10 +8,10 @@ export const DEFAULT_BASE_URL = 'https://api-nimconnect.nimiqminiapps.com';
 export function createProfileClient(options = {}) {
     const baseUrl = (options.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, '');
     const audience = options.audience;
+    // First-party session (X-NimConnect-Session). Kept separate from scoped
+    // authorization so listAuthorizations still works after createAuthorization.
     let sessionToken = options.sessionToken ?? null;
     let authorization = options.authorization ?? null;
-    if (authorization)
-        sessionToken = authorization.token;
     async function getProfileByAddress(address) {
         const res = await fetch(`${baseUrl}/api/profile/${compactAddress(address)}`, {
             headers: { Accept: 'application/json' },
@@ -86,6 +86,24 @@ export function createProfileClient(options = {}) {
                 : undefined,
         };
     }
+    async function getApp(audienceSlug) {
+        const res = await fetch(`${baseUrl}/api/apps/${encodeURIComponent(audienceSlug)}`, {
+            headers: { Accept: 'application/json' },
+        });
+        if (res.status === 404)
+            return null;
+        if (!res.ok)
+            throw new Error(`app fetch failed: ${res.status}`);
+        const body = await res.json();
+        return {
+            audience: body.audience,
+            displayName: body.display_name,
+            iconUrl: body.icon_url ?? '',
+            verified: !!body.verified,
+            scopes: body.scopes ?? [],
+            origins: body.origins ?? [],
+        };
+    }
     async function createSession(args) {
         const timestamp = Math.floor(Date.now() / 1000);
         const message = audience
@@ -134,7 +152,6 @@ export function createProfileClient(options = {}) {
             token: body.token, address: body.address, audience: body.audience,
             scopes: body.scopes, expiresAt: body.expires_at,
         };
-        sessionToken = authorization.token;
         return authorization;
     }
     function getAuthorization() { return authorization; }
@@ -147,24 +164,71 @@ export function createProfileClient(options = {}) {
         if (!res.ok && res.status !== 401)
             throw new Error(`authorization revoke failed: ${res.status}`);
         authorization = null;
-        sessionToken = null;
     }
     function clearSession() {
         sessionToken = null;
         authorization = null;
     }
     function getSessionToken() {
-        return sessionToken;
+        return authorization?.token ?? sessionToken;
     }
     function requireSessionHeaders() {
+        if (authorization) {
+            return { Accept: 'application/json', Authorization: `Bearer ${authorization.token}` };
+        }
         if (!sessionToken)
             throw new Error('session required — call createSession first');
-        if (authorization)
-            return { Accept: 'application/json', Authorization: `Bearer ${authorization.token}` };
         return {
             Accept: 'application/json',
             'X-NimConnect-Session': sessionToken,
         };
+    }
+    function requireFirstPartySessionHeaders() {
+        if (!sessionToken)
+            throw new Error('session required — call createSession first');
+        return {
+            Accept: 'application/json',
+            'X-NimConnect-Session': sessionToken,
+        };
+    }
+    async function listAuthorizations() {
+        const res = await fetch(`${baseUrl}/api/authorizations`, {
+            headers: requireFirstPartySessionHeaders(),
+        });
+        if (!res.ok)
+            throw new Error(`list authorizations failed: ${res.status}`);
+        const body = await res.json();
+        return (body.authorizations ?? []).map((g) => ({
+            audience: g.audience,
+            displayName: g.display_name,
+            iconUrl: g.icon_url ?? '',
+            verified: !!g.verified,
+            scopes: g.scopes ?? [],
+            grantedAt: g.granted_at,
+            expiresAt: g.expires_at,
+        }));
+    }
+    async function listAchievements(address) {
+        const headers = authorization
+            ? { Accept: 'application/json', Authorization: `Bearer ${authorization.token}` }
+            : { Accept: 'application/json' };
+        const res = await fetch(`${baseUrl}/api/profiles/${compactAddress(address)}/achievements`, {
+            headers,
+        });
+        if (!res.ok)
+            throw new Error(`list achievements failed: ${res.status}`);
+        const body = await res.json();
+        return (body.achievements ?? []).map((a) => ({
+            appId: a.app_id,
+            achievementId: a.achievement_id,
+            address: a.address,
+            title: a.title,
+            description: a.description ?? '',
+            rarity: a.rarity ?? '',
+            visibility: a.visibility,
+            grantedAt: a.granted_at,
+            ...(a.progress !== undefined ? { progress: a.progress } : {}),
+        }));
     }
     function parseFriendEntry(body) {
         return {
@@ -232,12 +296,15 @@ export function createProfileClient(options = {}) {
         resolveHandleForPayment,
         getHandleByAddress,
         getDisplayIdentity,
+        getApp,
         createSession,
         createAuthorization,
         getAuthorization,
         revokeAuthorization,
         clearSession,
         getSessionToken,
+        listAuthorizations,
+        listAchievements,
         listFriends,
         listFriendRequests,
         sendFriendRequest,

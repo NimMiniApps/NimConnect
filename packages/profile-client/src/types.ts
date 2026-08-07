@@ -48,6 +48,41 @@ export type AuthScope =
   | 'profile:write'
   | 'backup:read' | 'backup:write'
   | 'marketplace:read' | 'marketplace:trade'
+  | 'achievements:read'
+
+/** Live grant returned by `GET /api/authorizations` (first-party session). */
+export interface AppAuthorization {
+  audience: string
+  displayName: string
+  iconUrl: string
+  verified: boolean
+  scopes: AuthScope[]
+  grantedAt: number
+  expiresAt: number
+}
+
+/** Achievement returned by `GET /api/profiles/{address}/achievements`. */
+export interface Achievement {
+  appId: string
+  achievementId: string
+  address: string
+  title: string
+  description: string
+  rarity: string
+  visibility: 'public' | 'private'
+  grantedAt: number
+  progress?: unknown
+}
+
+/** Mirrored catalog app identity from `GET /api/apps/{audience}`. */
+export interface RegisteredApp {
+  audience: string
+  displayName: string
+  iconUrl: string
+  verified: boolean
+  scopes: AuthScope[]
+  origins: string[]
+}
 
 export interface AuthorizationChallenge {
   challengeId: string

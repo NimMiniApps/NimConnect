@@ -7,4 +7,4 @@ export type { RegistryTx, ResolvedHandleClaim, ResolveHandleRegistryOptions, Par
 export { userFriendlyAddress } from './nimiqAddress.js';
 export { fetchHandleRegistry, fetchAllTransactionsByAddress, DEFAULT_RPC_URL, IncompleteRegistryHistoryError, AmbiguousRegistryOrderingError, } from './rpc.js';
 export type { FetchHandleRegistryOptions } from './rpc.js';
-export type { PublicProfileFields, StoredPublicProfile, HandleClaim, DisplayIdentity, ProfileClientOptions, HandleClaimPayload, SignMessageFn, FriendEntry, AuthScope, AuthSession, AuthorizationChallenge, } from './types.js';
+export type { PublicProfileFields, StoredPublicProfile, HandleClaim, DisplayIdentity, ProfileClientOptions, HandleClaimPayload, SignMessageFn, FriendEntry, AuthScope, AuthSession, AuthorizationChallenge, AppAuthorization, Achievement, RegisteredApp, } from './types.js';

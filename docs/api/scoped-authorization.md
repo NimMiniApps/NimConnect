@@ -51,11 +51,21 @@ server-returned bytes rather than reconstructing the message.
 | `backup:write` | Upload the grant wallet's encrypted backup |
 | `marketplace:read` | Read the grant wallet's private trade history |
 | `marketplace:trade` | List, reserve, or cancel off-chain intents |
+| `achievements:read` | Include the grant wallet's private achievements on profile reads |
+
+Related ecosystem endpoints (not grant-scoped themselves):
+
+| Endpoint | Auth | Notes |
+|---|---|---|
+| `GET /api/authorizations` | `X-NimConnect-Session` | Lists the caller's live app grants (first-party only) |
+| `GET /api/apps/{audience}` | public | Mirrored catalog identity for consent screens |
+| `POST /api/awards` | app API key Bearer | Idempotent achievement grant by a registered app |
+| `GET /api/profiles/{address}/achievements` | public; Bearer + `achievements:read` for private | Profile achievement panel |
 
 The server derives the actor from the grant. Body, query, and path wallet
 fields cannot substitute another actor. Apps can request only scopes seeded in
-`auth_app_scopes`; NimWorld initially has only `friends:read` and
-`friends:write`.
+`auth_app_scopes`; NimWorld initially has `friends:read`, `friends:write`, and
+`achievements:read`.
 
 ## Registration, errors, and operations
 
@@ -65,11 +75,13 @@ requests. Unknown origins or scope escalation return `403`; malformed requests
 return `400`; invalid, expired, replayed, or revoked authorization returns
 `401`.
 
-Migrations apply in order: `001_init.sql`, `002_scoped_authorization.sql`, then
-`003_authorization_provenance.sql`. Migration 003 retains legacy profile and
-inbox rows and records whether each write used a wallet signature or scoped
-session. Back up PostgreSQL before production migration. Rollback is performed
-by deploying the previous application while leaving additive tables/columns in
+Migrations apply in order: `001_init.sql`, `002_scoped_authorization.sql`,
+`003_authorization_provenance.sql`, then `004_awards_and_app_registry.sql`.
+Migration 003 retains legacy profile and inbox rows and records whether each
+write used a wallet signature or scoped session. Migration 004 adds catalog
+mirror columns on `auth_apps`, seeds `achievements:read`, and creates `awards`.
+Back up PostgreSQL before production migration. Rollback is performed by
+deploying the previous application while leaving additive tables/columns in
 place; do not reverse migrations by deleting authorization provenance.
 
 The v1/v2 `/api/session`, `X-NimConnect-Session`, and per-action signed request

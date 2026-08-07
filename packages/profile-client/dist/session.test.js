@@ -32,6 +32,15 @@ describe('authorizationMessage', () => {
         expect(() => authorizationMessage({ ...base, scopes: ['friends:read', 'friends:read'] })).toThrow();
         expect(() => authorizationMessage({ ...base, scopes: ['wallet:spend'] })).toThrow();
     });
+    it('accepts achievements:read', () => {
+        expect(authorizationMessage({
+            address: 'NQ17 VERV F3MQ 283T NRSR FPJG 55BJ PMHC N8MD',
+            audience: 'nimworld',
+            scopes: ['achievements:read'],
+            expiresAt: '2026-08-12T12:00:00Z',
+            nonce: 'AbCdEfGhIjKlMnOpQrStUw',
+        })).toContain('Access: achievements:read');
+    });
 });
 describe('createSession', () => {
     it('signs the v1 challenge when no audience is configured', async () => {
