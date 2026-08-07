@@ -1,6 +1,7 @@
 # Ecosystem awards and the app registry
 
-Status: approved — phases 1–3 implemented (items/trading still deferred)
+Status: approved — phases 1–3 implemented; registry contract locked with catalog
+  (items/trading still deferred)
 Date: 2026-08-07
 
 Companion docs, one per repo:
@@ -59,18 +60,38 @@ issuing grants. What this buys:
 - **One app id everywhere** — awards keyed on the catalog's app id render in
   the plaza, on the catalog's app page, or on a NimConnect profile.
 
+Catalog contract (NimiqMiniApps):
+
+- `GET /api/apps/{slug}/client` — service key (`NIMCONNECT_SERVICE_TOKEN`);
+  returns `app_id` (catalog UUID), name, icon, `verified`, `status`,
+  `declared_scopes`, `launch_origins`, `updated_at`. Resolves only for
+  `approved` / `verified` / `experimental`; unknown, pending, or rejected → 404.
+- `GET /api/apps/changed?since=<RFC3339>` — one poll request returning
+  `{ app_id, slug, updated_at, reasons[] }` with reasons
+  `owner_transfer` / `scopes_changed` / `status_changed` / `metadata_changed`.
+  Poll is the mirror **convergence guarantee**. Webhook-only is ruled out; a
+  webhook may come later as a latency optimization on top of the poll.
+- No separate `can_request_scopes` flag: empty `declared_scopes` or a
+  non-resolvable status means no scopes. Scope changes land only through the
+  catalog's revision review.
+- Award-posting credentials are issued **here**, not by catalog registration.
+
 Requirements this puts on us:
 
-- **Mirror minimal app records** (id, name, icon, verified, declared scopes,
-  launch origins) so consent still works when the catalog is unreachable. An
-  authorization server cannot depend on a registry's uptime.
-- **Re-consent on ownership transfer.** A grant is wallet→app. The catalog has
-  `/api/apps/{slug}/owners`; if an app changes hands, existing grants must not
-  silently transfer with it.
-- **Re-consent on scope escalation.** An app adding a scope in a revision never
-  inherits it.
-- **Exact-match launch origins.** `website_url` / `open_url` stop being
-  descriptive fields and become an allow-list.
+- **Mirror minimal app records** from `/client` so consent still works when the
+  catalog is unreachable. An authorization server cannot depend on a registry's
+  uptime. Keep the mirror honest via `/changed` polling.
+- **Re-consent on ownership transfer** (`owner_transfer`) and **scope
+  escalation** (`scopes_changed`). An app adding a scope in a revision never
+  inherits prior consent.
+- **Exact-match launch origins** from the client record.
+- **Consent UI:** visually separate `experimental` from `verified`. "This app
+  is experimental" at the moment of consent is the honest signal.
+- **Check at token validation, not only at grant.** Tokens live seven days.
+  If an app is delisted or ownership transfers, refusing `/client` only stops
+  *new* grants — every existing token keeps working until expiry unless we
+  re-check status / ownership / declared scopes when the token is used.
+  Change propagation is only as good as the moment the check happens.
 
 ### 3. Awards: `POST /api/awards`
 
