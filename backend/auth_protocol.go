@@ -20,12 +20,13 @@ const (
 	ScopeBackupWrite      = "backup:write"
 	ScopeMarketplaceRead  = "marketplace:read"
 	ScopeMarketplaceTrade = "marketplace:trade"
+	ScopeAchievementsRead = "achievements:read"
 )
 
 var authorizationScopes = map[string]struct{}{
 	ScopeFriendsRead: {}, ScopeFriendsWrite: {}, ScopeInboxRead: {}, ScopeInboxSend: {},
 	ScopeInboxDelete: {}, ScopeProfileWrite: {}, ScopeBackupRead: {}, ScopeBackupWrite: {},
-	ScopeMarketplaceRead: {}, ScopeMarketplaceTrade: {},
+	ScopeMarketplaceRead: {}, ScopeMarketplaceTrade: {}, ScopeAchievementsRead: {},
 }
 
 var authorizationAudienceRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{1,31}$`)
